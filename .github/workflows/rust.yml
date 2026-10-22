@@ -1,0 +1,253 @@
+---
+name: Rust
+
+# CI of the Rust workspace in rust/ (rust/PLAN-foundation.md section 3,
+# rust/README.md): fmt, clippy, tests, cargo-deny and the stdlib Python
+# script tests, plus the crate steps of echoport-command-guard (its PLAN.md
+# 8.1: Python 3.12 for the oracle tests, the fixture drift check). The
+# Ansible/Python test suite of the collection stays local (`just test`).
+# Members listed in `[workspace.metadata.ci] exclude` of rust/Cargo.toml are
+# left out of this job; their stream adds its own job: software-live-apt
+# (libapt-pkg, rust-apt) is built and tested in the job `software-live-apt`
+# inside its two variant images (rust/software-live/PLAN.md 7.4).
+# Actions are pinned by commit SHA (the ones mailgun-relay's workflows use).
+
+"on":
+  push:
+    branches:
+      - main
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust*.yml"
+      # The Python endpoint scripts the metrics-httpd parity harness runs.
+      - "roles/**/*httpd*"
+      # The python-apt oracle of the software-live-apt comparison and the
+      # Python side of the software-live parity harness.
+      - "roles/software_live/files/software_live.py"
+      # The software_estate reader the software-live parity harness runs.
+      - "roles/software_estate/files/collect.py"
+  pull_request:
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust*.yml"
+      # The Python endpoint scripts the metrics-httpd parity harness runs.
+      - "roles/**/*httpd*"
+      # The python-apt oracle of the software-live-apt comparison and the
+      # Python side of the software-live parity harness.
+      - "roles/software_live/files/software_live.py"
+      # The software_estate reader the software-live parity harness runs.
+      - "roles/software_estate/files/collect.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Runs on main are never cancelled; a newer push to a branch or PR supersedes.
+  group: rust-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'supersedable' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  rust:
+    name: Rust workspace (fmt, clippy, tests, deny)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        # An explicit bash adds `-o pipefail`.
+        shell: bash
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc --version
+          python3 --version
+      - name: Set up uv (echoport-command-guard oracle and fixture drift check)
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Python 3.12 for the echoport-command-guard oracle tests
+        # rust/echoport-command-guard/PLAN.md 7.3, 8.1: the tokeniser
+        # differential tests run the Python guard (parity/oracle.py) under
+        # production's Python. They fail, never skip, without it.
+        run: |
+          uv python install 3.12
+          python=$(uv python find --no-project 3.12)
+          "$python" --version
+          echo "ECHOPORT_ORACLE_PYTHON=${python}" >> "$GITHUB_ENV"
+      - name: Cache cargo registry and build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            rust/target
+          key: rust-${{ runner.os }}-ubuntu-22.04-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-ubuntu-22.04-
+      - name: Members left out of this job ([workspace.metadata.ci] exclude)
+        id: excludes
+        run: |
+          cargo metadata --format-version 1 --no-deps --locked > "$RUNNER_TEMP/metadata.json"
+          args=$(python3 -I scripts/ci_excludes.py "$RUNNER_TEMP/metadata.json")
+          echo "exclude arguments: ${args:-(none)}"
+          echo "args=${args}" >> "$GITHUB_OUTPUT"
+      - name: Format (cargo fmt)
+        run: cargo fmt --check
+      - name: Lint (cargo clippy)
+        env:
+          EXCLUDES: ${{ steps.excludes.outputs.args }}
+        # EXCLUDES holds package names only (validated by ci_excludes.py).
+        run: |
+          read -r -a exclude_args <<< "$EXCLUDES"
+          cargo clippy --workspace "${exclude_args[@]}" --all-targets --locked -- -D warnings
+      - name: Tests (cargo test)
+        env:
+          EXCLUDES: ${{ steps.excludes.outputs.args }}
+        run: |
+          read -r -a exclude_args <<< "$EXCLUDES"
+          cargo test --workspace "${exclude_args[@]}" --locked
+      - name: echoport-command-guard fixture drift check
+        # rust/echoport-command-guard/PLAN.md 7.2: the committed Layer-1
+        # fixtures must be what the Python guard decides. Regenerated from
+        # the recorded corpus under the hosts' Pythons (3.12, 3.13), then
+        # with the runners re-recorded in the repo venv (ansible-core, jinja2).
+        working-directory: .
+        run: |
+          gen=rust/echoport-command-guard/parity/gen_fixtures.py
+          uv run --python 3.12 --no-project python -I "$gen" check
+          uv run --python 3.13 --no-project python -I "$gen" check
+          uv sync --locked
+          .venv/bin/python "$gen" check --record
+      - name: metrics-httpd parity harness
+        # rust/metrics-httpd/PLAN.md 8.3: the rendered Python endpoint scripts
+        # (CPython 3.12 as on the hosts; they call htpasswd) and the Rust
+        # binary side by side on loopback, then the tests of the shadow
+        # comparer (10.3). Rendering needs the repo venv (jinja2, PyYAML).
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apache2-utils
+          (cd rust && cargo build --locked -p metrics-httpd)
+          uv sync --locked
+          python=$(uv python find --no-project 3.12)
+          .venv/bin/python rust/metrics-httpd/parity/run_parity.py \
+            --binary rust/target/debug/metrics-httpd --python "$python"
+          cd rust/metrics-httpd
+          "$python" -I -m unittest discover -s parity -p 'test_*.py' -v
+      - name: Install cargo-deny (pinned release, sha256 checked)
+        env:
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f  # pragma: allowlist secret
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl --proto '=https' --tlsv1.2 -sSfL -o "$RUNNER_TEMP/${name}.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${name}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/${name}.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/${name}.tar.gz" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/${name}/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
+          cargo deny --version
+      - name: Supply chain (cargo deny, rust/deny.toml)
+        run: cargo deny --locked check
+      - name: rust-apt only in software-live-apt (release_checks.py apt-isolation)
+        # rust/software-live/PLAN.md 7.4: deny.toml allows GPL-3.0-or-later
+        # for rust-apt and software-live-apt by crate; this check fails when
+        # any other member can reach rust-apt (normal, build or dev edges,
+        # every feature and platform). cargo metadata needs no libapt-pkg.
+        run: |
+          cargo metadata --format-version 1 --locked --all-features > "$RUNNER_TEMP/metadata-full.json"
+          python3 -I scripts/release_checks.py apt-isolation --metadata "$RUNNER_TEMP/metadata-full.json"
+      - name: Script tests (rust/scripts, stdlib Python)
+        run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: software-live parity comparator tests (stdlib Python)
+        # rust/software-live/PLAN.md 6.2: the P1/P2 rules of parity/compare.py;
+        # 6.3: parity/shadow_compare.py, whose projection check imports the
+        # Python program (3.11 or later, hence uv's 3.12, not the runner's
+        # 3.10); the harness itself runs in the software-live-apt job below.
+        run: uv run --python 3.12 --no-project python -I -m unittest discover -s software-live/parity -p 'test_*.py' -v
+
+  echoport-command-guard-lean:
+    name: echoport-command-guard lean measurements (manual runs only)
+    # rust/echoport-command-guard/PLAN.md 8.3: the Rust and the Python guard in
+    # both Layer-3 containers (Ubuntu 24.04, Debian 13) on this x86_64 runner,
+    # median of 20 runs; fails when the Rust guard exceeds a budget. Only when
+    # the workflow is started by hand (gh workflow run rust.yml --ref <ref>),
+    # not on pushes or pull requests. The report is the job summary.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lean measurements (parity/e2e/run-lean.sh)
+        env:
+          ECHOPORT_E2E_SUFFIX: -ci
+        run: |
+          echo "runner: $(uname -m), $(nproc) CPUs"
+          rust/echoport-command-guard/parity/e2e/run-lean.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  software-live-apt:
+    # rust/software-live/PLAN.md 7.1, 7.4, 13.6: the APT helper links the
+    # distribution's libapt-pkg (rust-apt), so it is built per variant inside
+    # the variant's image: clippy and tests (including version comparison
+    # against python-apt), the release build with its GLIBC ceiling and
+    # NEEDED allowlist, `--version`, then the fake APT world of
+    # container/setup-world.sh and the comparison with software_live.py's
+    # observe_apt (container/compare.py). `just rs-software-live-apt` runs
+    # the same scripts locally in Docker. Then, in the same container and on
+    # the same APT world, the software-live parity harness (PLAN.md 6.2,
+    # software-live/parity/container-run.sh; `just rs-software-live-parity`
+    # locally): software_live.py and the Rust release builds side by side.
+    name: software-live-apt and parity (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: ubuntu24.04
+            image: ubuntu:24.04
+          - variant: debian13
+            image: debian:13
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+      SOFTWARE_LIVE_APT_CONTAINER: "yes"
+    steps:
+      - name: Base packages for the checkout (git, ca-certificates)
+        working-directory: /
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and test dependencies, rustup (container/deps.sh)
+        run: |
+          software-live-apt/container/deps.sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Checks inside the variant image (container/run.sh)
+        run: software-live-apt/container/run.sh
+      - name: software-live parity harness (software-live/parity/container-run.sh)
+        run: software-live/parity/container-run.sh

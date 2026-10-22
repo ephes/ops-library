@@ -1,0 +1,262 @@
+---
+# One pass over the runtime transitions with agent_impl selected. The
+# graphyard-control-requires unit has the previous Requires= + After=.
+
+- name: "{{ agent_impl }} | Create the drop-in directory"
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ graphyard_agent_service_name }}.service.d"
+    state: directory
+    mode: "0755"
+
+- name: "{{ agent_impl }} | Select the Rust agent drop-in"
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../templates/agent-impl.conf.j2"
+    dest: "/etc/systemd/system/{{ graphyard_agent_service_name }}.service.d/agent-impl.conf"
+    mode: "0644"
+  vars:
+    graphyard_agent_rust_binary: /opt/graphyard-agent/0.1.0/graphyard-agent
+  when: agent_impl == 'rust'
+
+- name: "{{ agent_impl }} | Remove the drop-in for the Python agent"
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ graphyard_agent_service_name }}.service.d/agent-impl.conf"
+    state: absent
+  when: agent_impl == 'python'
+
+- name: "{{ agent_impl }} | Restart the agent on the selected implementation"
+  ansible.builtin.systemd:
+    name: "{{ graphyard_agent_service_name }}"
+    state: restarted
+    daemon_reload: true
+
+- name: "{{ agent_impl }} | Read the initial state"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s0
+
+- name: "{{ agent_impl }} | Assert everything runs and the agent is the selected one"
+  ansible.builtin.assert:
+    that:
+      - st.runtime.state == 'active'
+      - st.web.state == 'active'
+      - st.agent.state == 'active'
+      - st.control.state == 'active'
+      - st.web.cmd.endswith('/.venv/bin/granian --workers 1 --interface wsgi --host 127.0.0.1 --port 8051 --access-log config.wsgi_proxy:application')
+      - >-
+        st.agent.cmd.endswith(
+          '/opt/graphyard-agent/0.1.0/graphyard-agent --db /opt/apps/graphyard/site/src/django/db.sqlite3'
+          if agent_impl == 'rust' else
+          '/opt/apps/graphyard/site/.venv/bin/python manage.py start_agent')
+    fail_msg: "{{ st | to_json }}"
+  vars:
+    st: "{{ s0.stdout | from_json }}"
+
+# Case 1: systemctl restart (a deploy whose compose file changed, or a
+# Requires=docker.service restart from a Docker restart).
+- name: "{{ agent_impl }} | Case restart: reset the start rate limits"
+  # The cases start the runtime more often than StartLimitBurst allows in
+  # StartLimitIntervalSec; reset-failed clears the counters between them.
+  ansible.builtin.command: systemctl reset-failed
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case restart: restart the runtime"
+  ansible.builtin.command: systemctl restart {{ graphyard_runtime_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case restart: read the state"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s1
+
+- name: "{{ agent_impl }} | Case restart: web and agent kept running, the control was restarted"
+  ansible.builtin.assert:
+    that:
+      - st.runtime.state == 'active'
+      - st.runtime.active_enter > before.runtime.active_enter
+      - st.web.state == 'active' and st.web.pid == before.web.pid
+      - st.agent.state == 'active' and st.agent.pid == before.agent.pid
+      - st.control.state == 'active' and st.control.pid != before.control.pid
+    fail_msg: "before {{ before | to_json }} after {{ st | to_json }}"
+  vars:
+    before: "{{ s0.stdout | from_json }}"
+    st: "{{ s1.stdout | from_json }}"
+
+# Case 2: stop, then start (what the container CA activation's
+# persist_owners.py does with the owner unit; the 2026-10-21 incident).
+- name: "{{ agent_impl }} | Case stop/start: reset the start rate limits"
+  # The cases start the runtime more often than StartLimitBurst allows in
+  # StartLimitIntervalSec; reset-failed clears the counters between them.
+  ansible.builtin.command: systemctl reset-failed
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case stop/start: stop the runtime"
+  ansible.builtin.command: systemctl stop {{ graphyard_runtime_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case stop/start: read the state while stopped"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s2
+
+- name: "{{ agent_impl }} | Case stop/start: start the runtime"
+  ansible.builtin.command: systemctl start {{ graphyard_runtime_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case stop/start: read the state after the start"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s3
+
+- name: "{{ agent_impl }} | Case stop/start: web and agent never stopped, the control stays down"
+  ansible.builtin.assert:
+    that:
+      - stopped.runtime.state == 'inactive'
+      - stopped.web.state == 'active' and stopped.web.pid == before.web.pid
+      - stopped.agent.state == 'active' and stopped.agent.pid == before.agent.pid
+      - stopped.control.state == 'inactive'
+      - started.runtime.state == 'active'
+      - started.web.state == 'active' and started.web.pid == before.web.pid
+      - started.agent.state == 'active' and started.agent.pid == before.agent.pid
+      - started.control.state == 'inactive'
+    fail_msg: "before {{ before | to_json }} stopped {{ stopped | to_json }} started {{ started | to_json }}"
+  vars:
+    before: "{{ s1.stdout | from_json }}"
+    stopped: "{{ s2.stdout | from_json }}"
+    started: "{{ s3.stdout | from_json }}"
+
+- name: "{{ agent_impl }} | Case stop/start: start the control again"
+  ansible.builtin.command: systemctl start graphyard-control-requires
+  changed_when: true
+
+# Case 3: the runtime fails to start (compose up fails, or an ExecStartPre
+# such as the CA owner's prepare step refuses).
+- name: "{{ agent_impl }} | Case failed start: reset the start rate limits"
+  # The cases start the runtime more often than StartLimitBurst allows in
+  # StartLimitIntervalSec; reset-failed clears the counters between them.
+  ansible.builtin.command: systemctl reset-failed
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case failed start: create the flag directory"
+  ansible.builtin.file:
+    path: /run/graphyard-runtime-test
+    state: directory
+    mode: "0755"
+
+- name: "{{ agent_impl }} | Case failed start: create the flag"
+  ansible.builtin.file:
+    path: /run/graphyard-runtime-test/fail-up
+    state: touch
+    mode: "0644"
+
+- name: "{{ agent_impl }} | Case failed start: read the state before"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s4
+
+- name: "{{ agent_impl }} | Case failed start: stop the runtime"
+  ansible.builtin.command: systemctl stop {{ graphyard_runtime_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case failed start: start the runtime, which fails"
+  ansible.builtin.command: systemctl start {{ graphyard_runtime_service_name }}
+  changed_when: true
+  register: failed_start
+  failed_when: failed_start.rc == 0
+
+- name: "{{ agent_impl }} | Case failed start: read the state"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s5
+
+- name: "{{ agent_impl }} | Case failed start: web and agent kept running"
+  ansible.builtin.assert:
+    that:
+      - st.runtime.state == 'failed'
+      - st.web.state == 'active' and st.web.pid == before.web.pid
+      - st.agent.state == 'active' and st.agent.pid == before.agent.pid
+      - st.control.state == 'inactive'
+    fail_msg: "before {{ before | to_json }} after {{ st | to_json }}"
+  vars:
+    before: "{{ s4.stdout | from_json }}"
+    st: "{{ s5.stdout | from_json }}"
+
+# Boot or a deploy while the runtime is broken: starting web and agent pulls
+# in the runtime (Wants=), which fails again, and they start anyway. The
+# control fails with a dependency error.
+- name: "{{ agent_impl }} | Case failed start: restart web and agent"
+  ansible.builtin.command: >-
+    systemctl restart {{ graphyard_web_service_name }} {{ graphyard_agent_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case failed start: start the control, which fails"
+  ansible.builtin.command: systemctl start graphyard-control-requires
+  changed_when: true
+  register: control_start
+  failed_when: control_start.rc == 0
+
+- name: "{{ agent_impl }} | Case failed start: read the state after the restarts"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s6
+
+- name: "{{ agent_impl }} | Case failed start: web and agent started without the runtime"
+  ansible.builtin.assert:
+    that:
+      - st.runtime.state == 'failed'
+      - st.runtime.main_start > before.runtime.main_start
+      - st.web.state == 'active' and st.web.pid != before.web.pid
+      - st.agent.state == 'active' and st.agent.pid != before.agent.pid
+      - st.control.state in ['inactive', 'failed']
+    fail_msg: "before {{ before | to_json }} after {{ st | to_json }}"
+  vars:
+    before: "{{ s5.stdout | from_json }}"
+    st: "{{ s6.stdout | from_json }}"
+
+- name: "{{ agent_impl }} | Case failed start: repair compose up"
+  ansible.builtin.file:
+    path: /run/graphyard-runtime-test/fail-up
+    state: absent
+
+- name: "{{ agent_impl }} | Case failed start: start the runtime and the control"
+  ansible.builtin.command: >-
+    systemctl start {{ graphyard_runtime_service_name }} graphyard-control-requires
+  changed_when: true
+
+# Case 4: cold start (boot order): starting web alone pulls in the runtime
+# and waits for it.
+- name: "{{ agent_impl }} | Case cold start: reset the start rate limits"
+  # The cases start the runtime more often than StartLimitBurst allows in
+  # StartLimitIntervalSec; reset-failed clears the counters between them.
+  ansible.builtin.command: systemctl reset-failed
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case cold start: stop everything"
+  ansible.builtin.command: >-
+    systemctl stop {{ graphyard_web_service_name }} {{ graphyard_agent_service_name }}
+    graphyard-control-requires {{ graphyard_runtime_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case cold start: start web only"
+  ansible.builtin.command: systemctl start {{ graphyard_web_service_name }}
+  changed_when: true
+
+- name: "{{ agent_impl }} | Case cold start: read the state"
+  ansible.builtin.command: graphyard-unit-state
+  changed_when: false
+  register: s7
+
+- name: "{{ agent_impl }} | Case cold start: the runtime came up first"
+  ansible.builtin.assert:
+    that:
+      - st.runtime.state == 'active'
+      - st.web.state == 'active'
+      - st.runtime.active_enter <= st.web.main_start
+      - st.agent.state == 'inactive'
+    fail_msg: "{{ st | to_json }}"
+  vars:
+    st: "{{ s7.stdout | from_json }}"
+
+- name: "{{ agent_impl }} | Case cold start: start the agent and the control"
+  ansible.builtin.command: >-
+    systemctl start {{ graphyard_agent_service_name }} graphyard-control-requires
+  changed_when: true

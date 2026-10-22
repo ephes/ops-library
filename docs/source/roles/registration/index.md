@@ -6,6 +6,7 @@ Roles for registering services and tasks with FastDeploy.
 :maxdepth: 1
 
 fastdeploy_register_service
+fastdeploy_runner
 ```
 
 These roles:

@@ -18,6 +18,17 @@ need the dedicated MinIO restore workflow.
 - Starts MinIO, waits for the health endpoint, and replays bucket/IAM metadata via `mc admin cluster bucket|iam import` using ephemeral `MC_HOST_*` environment variables.
 - Verifies the restored instance with `mc admin info` / `mc ls`, and cleans up staging + (optionally) the safety snapshot.
 
+### Metadata-only snapshots
+
+A snapshot from `minio_backup` with `minio_backup_include_data: false` has `scope: metadata` in `metadata.yml` and no object data. Restoring it:
+
+- re-imports bucket metadata and IAM (users, groups, policies, service accounts) into the **running** MinIO with `mc admin cluster bucket|iam import`;
+- never stops MinIO, never rsyncs data and never touches the data directories (they are not checked or measured either);
+- puts the env file, systemd unit and Traefik config back only with `minio_restore_metadata_restore_system_files: true` (MinIO is restarted then);
+- fails instead when `minio_restore_allow_metadata_only: false`.
+
+Snapshots without `scope` (made before this option existed) are full snapshots. A full restore refuses to run when it would have no data directory to restore.
+
 ## Key variables
 
 ```yaml
@@ -34,6 +45,8 @@ minio_restore_restore_system_files: true
 minio_restore_restore_traefik: true
 minio_restore_restore_iam: true
 minio_restore_restore_bucket_metadata: true
+minio_restore_allow_metadata_only: true
+minio_restore_metadata_restore_system_files: false
 minio_restore_verify_http: true
 minio_restore_check_disk_space: true
 minio_restore_disk_space_multiplier: 2.0

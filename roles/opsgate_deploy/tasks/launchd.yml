@@ -1,4 +1,104 @@
 ---
+# Each plist names the implementation of its unit (opsgate_api_impl,
+# opsgate_runner_impl) and, for rust, the versioned binary, so a version
+# change or an impl flip changes only that unit's plist and
+# manage_launchd_unit.yml boots out/in and kickstarts only that unit.
+
+- name: launchd | Read the plists as they are before this run
+  ansible.builtin.slurp:
+    path: "{{ item }}"
+  loop:
+    - "{{ opsgate_api_launchd_plist_path }}"
+    - "{{ opsgate_runner_launchd_plist_path }}"
+  register: opsgate_launchd_plists_before
+  failed_when: false
+
+# The Rust version each unit's plist selected so far ('' for Python or no plist).
+- name: launchd | Derive the Rust versions the plists selected so far
+  ansible.builtin.set_fact:
+    opsgate_api_rust_version_before: "{{ opsgate_launchd_version_before[0] }}"
+    opsgate_runner_rust_version_before: "{{ opsgate_launchd_version_before[1] }}"
+  vars:
+    opsgate_launchd_version_before: >-
+      {{
+        opsgate_launchd_plists_before.results
+        | map(attribute='content', default='')
+        | map('b64decode')
+        | map('regex_search',
+              ' exec ' ~ (opsgate_rust_install_root | regex_escape)
+              ~ '/([0-9]+[.][0-9]+[.][0-9]+(?:-[0-9A-Za-z.-]+)?)/opsgate (?:serve|runner)</string>',
+              '\1')
+        | map('default', [''], true)
+        | map('first')
+        | list
+      }}
+
+# The rollback target that pruning keeps (prune.yml). Written only when a
+# unit's selection moves away from that version (to another version or to
+# Python), not when its plist changes for another reason.
+- name: launchd | Check the Rust versions the plists selected so far
+  ansible.builtin.stat:
+    path: "{{ opsgate_rust_install_root }}/{{ item.version }}"
+  loop:
+    - unit: api
+      version: "{{ opsgate_api_rust_version_before }}"
+    - unit: runner
+      version: "{{ opsgate_runner_rust_version_before }}"
+  loop_control:
+    label: "{{ item.unit }}"
+  register: opsgate_launchd_versions_before_stat
+  when: item.version | length > 0
+
+- name: launchd | Remember the Rust version a unit moves away from
+  ansible.builtin.copy:
+    content: "{{ item.item.version }}\n"
+    dest: "{{ opsgate_rust_install_root }}/.previous-{{ item.item.unit }}"
+    owner: "{{ opsgate_rust_file_owner }}"
+    group: "{{ opsgate_rust_file_group }}"
+    mode: "0644"
+  loop: "{{ opsgate_launchd_versions_before_stat.results }}"
+  loop_control:
+    label: "{{ item.item.unit }}"
+  when:
+    - item.item.version | length > 0
+    - item.stat.isdir | default(false)
+    - >-
+      item.item.version != (
+        opsgate_rust_version
+        if (opsgate_api_impl if item.item.unit == 'api' else opsgate_runner_impl) == 'rust'
+        else ''
+      )
+
+# Never loaded (launchd reads only /Library/LaunchDaemons): the Python variant
+# of each plist, for the emergency rollback on the host without Ansible.
+- name: launchd | Ensure the directory of the Python plist copies exists
+  ansible.builtin.file:
+    path: "{{ opsgate_launchd_python_plist_dir }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: launchd | Render the Python API plist copy
+  ansible.builtin.template:
+    src: opsgate.api.launchd.plist.j2
+    dest: "{{ opsgate_launchd_python_plist_dir }}/{{ opsgate_api_launchd_label }}.plist"
+    owner: root
+    group: wheel
+    mode: "0644"
+  vars:
+    opsgate_launchd_render_impl: python
+
+- name: launchd | Render the Python runner plist copy
+  ansible.builtin.template:
+    src: opsgate.runner.launchd.plist.j2
+    dest: "{{ opsgate_launchd_python_plist_dir }}/{{ opsgate_runner_launchd_label }}.plist"
+    owner: root
+    group: wheel
+    mode: "0644"
+  vars:
+    opsgate_launchd_render_impl: python
+
 - name: launchd | Render API plist
   ansible.builtin.template:
     src: opsgate.api.launchd.plist.j2
@@ -6,6 +106,8 @@
     owner: root
     group: wheel
     mode: "0644"
+  vars:
+    opsgate_launchd_render_impl: "{{ opsgate_api_impl }}"
   register: opsgate_api_launchd_template
 
 - name: launchd | Render runner plist
@@ -15,8 +117,12 @@
     owner: root
     group: wheel
     mode: "0644"
+  vars:
+    opsgate_launchd_render_impl: "{{ opsgate_runner_impl }}"
   register: opsgate_runner_launchd_template
 
+# The Python source and venv only matter to a unit that runs Python; the env
+# file matters to both implementations.
 - name: launchd | Manage API launchd state when enabled
   ansible.builtin.include_tasks: manage_launchd_unit.yml
   vars:
@@ -25,8 +131,10 @@
     opsgate_launchd_template_changed: "{{ opsgate_api_launchd_template.changed }}"
     opsgate_launchd_force_restart: >-
       {{
-        opsgate_api_source_sync.changed
-        or opsgate_uv_sync.changed
+        (
+          opsgate_api_impl == 'python'
+          and (opsgate_api_source_sync.changed or opsgate_uv_sync.changed)
+        )
         or opsgate_api_env_template.changed
       }}
     opsgate_launchd_start_unit: "{{ opsgate_api_launchd_start_service | bool }}"
@@ -40,8 +148,10 @@
     opsgate_launchd_template_changed: "{{ opsgate_runner_launchd_template.changed }}"
     opsgate_launchd_force_restart: >-
       {{
-        opsgate_runner_source_sync.changed
-        or opsgate_runner_uv_sync.changed
+        (
+          opsgate_runner_impl == 'python'
+          and (opsgate_runner_source_sync.changed or opsgate_runner_uv_sync.changed)
+        )
         or opsgate_runner_env_template.changed
       }}
     opsgate_launchd_start_unit: "{{ opsgate_runner_launchd_start_service | bool }}"

@@ -6,6 +6,47 @@
 
 - name: Deploy Tailscale metrics endpoint
   when: tailscale_metrics_endpoint_enabled | bool
+  # Inputs of the HTTP server's implementation switch (select and verify
+  # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The argv, sandbox and
+  # IP allow list mirror templates/tailscale-metrics-endpoint.service.j2.
+  vars:
+    metrics_httpd_switch_impl: "{{ tailscale_metrics_endpoint_impl }}"
+    metrics_httpd_switch_service_name: "{{ tailscale_metrics_endpoint_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ tailscale_metrics_endpoint_user }}"
+    metrics_httpd_switch_validate_group: "{{ tailscale_metrics_endpoint_group }}"
+    metrics_httpd_switch_argv:
+      - json-file
+      - --bind
+      - "{{ tailscale_metrics_endpoint_bind }}"
+      - --port
+      - "{{ tailscale_metrics_endpoint_port | string }}"
+      - --path
+      - "{{ tailscale_metrics_endpoint_path }}"
+      - --json-path
+      - "{{ tailscale_metrics_endpoint_json_path }}"
+      - --htpasswd-file
+      - "{{ tailscale_metrics_endpoint_htpasswd_path }}"
+      - --realm
+      - tailscale-metrics
+      - --server-name
+      - tailscale-metrics-httpd/0.1
+      - --path-match
+      - path-only
+    metrics_httpd_switch_unit_sandbox:
+      - NoNewPrivileges=yes
+      - ProtectSystem=strict
+      - ProtectHome=yes
+      - PrivateTmp=yes
+      - "ReadOnlyPaths={{ tailscale_metrics_endpoint_data_dir }}"
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart tailscale-metrics-endpoint
+    metrics_httpd_switch_python_script: "{{ tailscale_metrics_endpoint_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ tailscale_metrics_endpoint_bind }}"
+    metrics_httpd_switch_probe_port: "{{ tailscale_metrics_endpoint_port }}"
+    metrics_httpd_switch_probe_path: "{{ tailscale_metrics_endpoint_path }}"
+    metrics_httpd_switch_probe_realm: tailscale-metrics
+    metrics_httpd_switch_ip_address_allow: "{{ tailscale_metrics_endpoint_ip_address_allow }}"
   block:
     - name: Validate required variables
       ansible.builtin.assert:
@@ -249,6 +290,13 @@
         - reload systemd
         - restart tailscale-metrics-endpoint
 
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below.
+    - name: Select the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+
     - name: Flush handlers to ensure units are registered
       ansible.builtin.meta: flush_handlers
 
@@ -439,3 +487,10 @@
       when:
         - tailscale_metrics_endpoint_require_effective_ip_filter | bool
         - not ansible_check_mode
+
+    # The unit runs the selected implementation and answers 401 with its
+    # realm; then the metrics-httpd pin moves and old releases are pruned.
+    - name: Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify

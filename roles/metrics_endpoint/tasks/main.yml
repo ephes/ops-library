@@ -6,6 +6,46 @@
 
 - name: Deploy metrics endpoint
   when: metrics_endpoint_enabled | bool
+  # Inputs of the HTTP server's implementation switch (select and verify
+  # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The argv, sandbox and
+  # IP allow list mirror templates/metrics-endpoint.service.j2.
+  vars:
+    metrics_httpd_switch_impl: "{{ metrics_endpoint_impl }}"
+    metrics_httpd_switch_service_name: "{{ metrics_endpoint_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ metrics_endpoint_user }}"
+    metrics_httpd_switch_validate_group: "{{ metrics_endpoint_group }}"
+    metrics_httpd_switch_argv:
+      - script
+      - --bind
+      - "{{ metrics_endpoint_bind }}"
+      - --port
+      - "{{ metrics_endpoint_port | string }}"
+      - --path
+      - "{{ metrics_endpoint_path }}"
+      - --script
+      - "{{ metrics_endpoint_script_path }}"
+      - --script-timeout
+      - "{{ metrics_endpoint_script_timeout | string }}"
+      - --htpasswd-file
+      - "{{ metrics_endpoint_htpasswd_path }}"
+      - --realm
+      - metrics
+      - --server-name
+      - metrics-httpd/0.1
+    metrics_httpd_switch_unit_sandbox:
+      - NoNewPrivileges=yes
+      - ProtectSystem=strict
+      - ProtectHome=yes
+      - PrivateTmp=yes
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart metrics-endpoint
+    metrics_httpd_switch_python_script: "{{ metrics_endpoint_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ metrics_endpoint_bind }}"
+    metrics_httpd_switch_probe_port: "{{ metrics_endpoint_port }}"
+    metrics_httpd_switch_probe_path: "{{ metrics_endpoint_path }}"
+    metrics_httpd_switch_probe_realm: metrics
+    metrics_httpd_switch_ip_address_allow: [localhost, 100.64.0.0/10]
   block:
     - name: Validate required variables
       ansible.builtin.assert:
@@ -139,9 +179,27 @@
         - reload systemd
         - restart metrics-endpoint
 
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below. The script and the htpasswd
+    # file that --check-config reads are in place above.
+    - name: Select the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+
     - name: Ensure metrics endpoint service is enabled and running
       ansible.builtin.systemd:
         name: "{{ metrics_endpoint_service_name }}"
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Apply a pending implementation switch before verifying it
+      ansible.builtin.meta: flush_handlers
+
+    # The unit runs the selected implementation and answers 401 with its
+    # realm; then the metrics-httpd pin moves and old releases are pruned.
+    - name: Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify

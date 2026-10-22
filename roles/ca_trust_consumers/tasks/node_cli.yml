@@ -1,0 +1,153 @@
+---
+# pam_env reads /etc/environment for SSH, sudo, su, login and cron sessions.
+# The line is merged, not replaced: existing NODE_OPTIONS stay in place.
+# The file may hold unrelated secrets: its content is never logged or diffed.
+
+- name: node_cli | Check environment file
+  ansible.builtin.stat:
+    path: "{{ ca_trust_consumers_environment_file }}"
+    get_checksum: false
+  register: _ca_trust_consumers_envfile_stat
+
+- name: node_cli | Read environment file
+  ansible.builtin.slurp:
+    src: "{{ ca_trust_consumers_environment_file }}"
+  register: _ca_trust_consumers_envfile
+  when: _ca_trust_consumers_envfile_stat.stat.exists
+  no_log: true
+
+# The merged value (existing options kept, flag appended) is used for both
+# /etc/environment and the sudo environment file below.
+- name: node_cli | Compute NODE_OPTIONS
+  vars:
+    _existing: >-
+      {{ (_ca_trust_consumers_envfile.content | b64decode)
+         | local.ops_library.ca_trust_environment_file_node_options
+         if _ca_trust_consumers_envfile_stat.stat.exists else '' }}
+  ansible.builtin.set_fact:
+    _ca_trust_consumers_cli_node_options: >-
+      {{ _existing | local.ops_library.ca_trust_node_options_with_flag(ca_trust_consumers_node_flag) }}
+  no_log: true
+
+- name: node_cli | Set NODE_OPTIONS in environment file
+  ansible.builtin.lineinfile:
+    path: "{{ ca_trust_consumers_environment_file }}"
+    regexp: '^\s*(export\s+)?NODE_OPTIONS='
+    line: 'NODE_OPTIONS="{{ _ca_trust_consumers_cli_node_options }}"'
+    create: true
+    # Numeric root ids: no name lookup (the check-mode test runs on macOS).
+    owner: "0"
+    group: "0"
+    mode: "0644"
+  diff: false
+  no_log: true
+  register: _ca_trust_consumers_envfile_line
+
+- name: node_cli | Report environment file change
+  ansible.builtin.debug:
+    msg: >-
+      {{ ca_trust_consumers_environment_file }}: NODE_OPTIONS
+      {{ 'updated' if _ca_trust_consumers_envfile_line is changed else 'already carries' }}
+      {{ ca_trust_consumers_node_flag }}
+
+# sudo resets the environment, and not every distribution's sudo PAM stack
+# reads /etc/environment (Debian 13's does not), so `sudo -u <app>` sessions,
+# which Ansible and pyinfra use for become, would lose the flag. sudoers
+# env_file sets it from a root-owned file instead; unlike env_keep it never
+# passes a caller's NODE_OPTIONS through.
+- name: node_cli | Check for sudo
+  ansible.builtin.stat:
+    path: "{{ ca_trust_consumers_visudo }}"
+    get_checksum: false
+  register: _ca_trust_consumers_visudo_stat
+  when: ca_trust_consumers_node_cli_sudo | bool
+
+- name: node_cli | Configure sudo sessions
+  when:
+    - ca_trust_consumers_node_cli_sudo | bool
+    - _ca_trust_consumers_visudo_stat.stat.exists
+  block:
+    # sudoers accepts one env_file; refuse instead of silently replacing another.
+    # sudo's own exporter applies the real sudoers grammar and follows
+    # includes; only a verdict is printed, never the policy.
+    - name: node_cli | Inspect sudoers env_file with cvtsudoers
+      ansible.builtin.script:
+        cmd: >-
+          ca_trust_sudoers_env_file.py --cvtsudoers {{ ca_trust_consumers_cvtsudoers | quote }}
+          --sudoers {{ ca_trust_consumers_sudoers | quote }}
+          --managed {{ ca_trust_consumers_sudo_env_file | quote }}
+        executable: /usr/bin/python3
+      register: _ca_trust_consumers_sudo_policy
+      changed_when: false
+      check_mode: false
+
+    - name: node_cli | Refuse a foreign or unreadable sudoers env_file
+      vars:
+        _verdict: "{{ _ca_trust_consumers_sudo_policy.stdout | from_json }}"
+      ansible.builtin.assert:
+        that: _verdict.verdict in ['none', 'managed']
+        fail_msg: >-
+          sudoers already uses env_file in a way this role does not own
+          ({{ _verdict.reasons | join('; ') }}); a second env_file would override or be
+          overridden. Add NODE_OPTIONS there or set ca_trust_consumers_node_cli_sudo to false.
+        quiet: true
+
+    - name: node_cli | Ensure sudo environment file directory
+      ansible.builtin.file:
+        path: "{{ ca_trust_consumers_sudo_env_file | dirname }}"
+        state: directory
+        owner: "0"
+        group: "0"
+        mode: "0755"
+
+    - name: node_cli | Write sudo environment file
+      ansible.builtin.copy:
+        dest: "{{ ca_trust_consumers_sudo_env_file }}"
+        content: |
+          # Managed by ops-library ca_trust_consumers; read by sudo (env_file).
+          NODE_OPTIONS="{{ _ca_trust_consumers_cli_node_options }}"
+        owner: "0"
+        group: "0"
+        mode: "0644"
+      diff: false
+      no_log: true
+      register: _ca_trust_consumers_sudo_env
+
+    - name: node_cli | Point sudo at the environment file
+      ansible.builtin.copy:
+        dest: "{{ ca_trust_consumers_sudoers_dropin }}"
+        content: |
+          # Managed by ops-library ca_trust_consumers
+          Defaults env_file="{{ ca_trust_consumers_sudo_env_file }}"
+        owner: "0"
+        group: "0"
+        mode: "0440"
+        validate: "{{ ca_trust_consumers_visudo }} -cf %s"
+      register: _ca_trust_consumers_sudoers
+
+    - name: node_cli | Re-inspect sudoers after the change
+      ansible.builtin.script:
+        cmd: >-
+          ca_trust_sudoers_env_file.py --cvtsudoers {{ ca_trust_consumers_cvtsudoers | quote }}
+          --sudoers {{ ca_trust_consumers_sudoers | quote }}
+          --managed {{ ca_trust_consumers_sudo_env_file | quote }}
+        executable: /usr/bin/python3
+      register: _ca_trust_consumers_sudo_policy_after
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: node_cli | Require exactly the managed env_file
+      ansible.builtin.assert:
+        that: (_ca_trust_consumers_sudo_policy_after.stdout | from_json).verdict == 'managed'
+        fail_msg: >-
+          After writing {{ ca_trust_consumers_sudoers_dropin }} sudo does not see exactly one
+          managed env_file: {{ _ca_trust_consumers_sudo_policy_after.stdout }}
+        quiet: true
+      when: not ansible_check_mode
+
+    - name: node_cli | Report sudo configuration
+      ansible.builtin.debug:
+        msg: >-
+          sudo sessions: NODE_OPTIONS from {{ ca_trust_consumers_sudo_env_file }}
+          ({{ 'updated' if (_ca_trust_consumers_sudo_env is changed or _ca_trust_consumers_sudoers is changed)
+          else 'unchanged' }})

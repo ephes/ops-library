@@ -1,0 +1,120 @@
+---
+# Resolve the bcrypt hash a Traefik basicAuth middleware renders for one user.
+#
+# bcrypt salts are random, so hashing the password on every run rewrites the
+# dynamic config file on every deploy (and restarts or reloads Traefik where a
+# handler is notified). This reuses the hash already in the deployed file when
+# it still verifies against the current password, and hashes anew only when
+# there is no deployed hash or the password changed.
+#
+# Inputs:
+#   webapp_deploy_internal_basic_auth_user        basic auth user name
+#   webapp_deploy_internal_basic_auth_password    current plain-text password
+#   webapp_deploy_internal_basic_auth_config_path deployed Traefik file that
+#                                                 renders "<user>:<hash>"
+#   webapp_deploy_internal_basic_auth_hash_var    fact name to set to the hash
+#
+# Needs htpasswd (apache2-utils) on the target. The password reaches htpasswd
+# only on stdin. In check mode a password that does not match the deployed
+# hash gets a placeholder hash, so the rendered file reports the pending change
+# without htpasswd having to be installed yet.
+
+- name: traefik_basic_auth_hash | Check the deployed Traefik config
+  ansible.builtin.stat:
+    path: "{{ webapp_deploy_internal_basic_auth_config_path }}"
+  register: webapp_deploy_internal_basic_auth_config_stat
+
+- name: traefik_basic_auth_hash | Read the deployed Traefik config
+  ansible.builtin.slurp:
+    src: "{{ webapp_deploy_internal_basic_auth_config_path }}"
+  register: webapp_deploy_internal_basic_auth_config_content
+  no_log: true
+  when:
+    - webapp_deploy_internal_basic_auth_config_stat.stat.exists
+    - webapp_deploy_internal_basic_auth_config_stat.stat.isreg
+
+- name: traefik_basic_auth_hash | Find the deployed hash for the user
+  ansible.builtin.set_fact:
+    webapp_deploy_internal_basic_auth_deployed_hash: >-
+      {{
+        (
+          (webapp_deploy_internal_basic_auth_config_content.content | b64decode)
+          | regex_findall(
+              webapp_deploy_internal_basic_auth_line_start
+              ~ (webapp_deploy_internal_basic_auth_user | regex_escape)
+              ~ webapp_deploy_internal_basic_auth_hash_pattern,
+              multiline=True
+            )
+          | first
+          | default('')
+        )
+        if webapp_deploy_internal_basic_auth_config_content.content is defined
+        else ''
+      }}
+  vars:
+    # "<user>:<bcrypt hash>" as the templates render it, quoted or bare.
+    webapp_deploy_internal_basic_auth_line_start: '(?:^|[\s"''])'
+    webapp_deploy_internal_basic_auth_hash_pattern: ':(\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53})(?:["''\s]|$)'
+  no_log: true
+
+- name: traefik_basic_auth_hash | Check the deployed hash against the password
+  # htpasswd -v only reads a regular, writable file: verify against a private
+  # temporary copy of the single deployed entry and remove it again.
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    entry_file=$(mktemp)
+    trap 'rm -f -- "$entry_file"' EXIT
+    printf '%s:%s\n' "$BASIC_AUTH_USER" "$BASIC_AUTH_HASH" > "$entry_file"
+    htpasswd -vi "$entry_file" "$BASIC_AUTH_USER"
+  args:
+    executable: /bin/bash
+    stdin: "{{ webapp_deploy_internal_basic_auth_password }}"
+  environment:
+    BASIC_AUTH_USER: "{{ webapp_deploy_internal_basic_auth_user }}"
+    BASIC_AUTH_HASH: "{{ webapp_deploy_internal_basic_auth_deployed_hash }}"
+  register: webapp_deploy_internal_basic_auth_verify
+  # Read-only: also runs in check mode. A mismatch (rc 3), a missing htpasswd
+  # or any other error means "do not reuse".
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  when: webapp_deploy_internal_basic_auth_deployed_hash | length > 0
+
+- name: traefik_basic_auth_hash | Record whether the deployed hash is reusable
+  ansible.builtin.set_fact:
+    webapp_deploy_internal_basic_auth_reuse: >-
+      {{
+        webapp_deploy_internal_basic_auth_verify is not skipped
+        and (webapp_deploy_internal_basic_auth_verify.rc | default(1)) == 0
+      }}
+
+- name: traefik_basic_auth_hash | Generate a new basic auth password hash
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -nBi
+      - "{{ webapp_deploy_internal_basic_auth_user }}"
+  args:
+    stdin: "{{ webapp_deploy_internal_basic_auth_password }}"
+  register: webapp_deploy_internal_basic_auth_generated
+  changed_when: false
+  no_log: true
+  when:
+    - not (webapp_deploy_internal_basic_auth_reuse | bool)
+    - not ansible_check_mode
+
+- name: traefik_basic_auth_hash | Set the basic auth hash fact
+  ansible.builtin.set_fact:
+    "{{ webapp_deploy_internal_basic_auth_hash_var }}": >-
+      {{
+        webapp_deploy_internal_basic_auth_deployed_hash
+        if webapp_deploy_internal_basic_auth_reuse | bool
+        else (
+          '$2y$04$' ~ ('a' * 53)
+          if ansible_check_mode
+          else webapp_deploy_internal_basic_auth_generated.stdout.split(':', 1)[1] | trim
+        )
+      }}
+  no_log: true

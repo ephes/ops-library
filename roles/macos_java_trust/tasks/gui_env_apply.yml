@@ -1,0 +1,78 @@
+---
+- name: gui_env_apply | Inspect the shared LaunchAgents directory
+  ansible.builtin.stat:
+    path: "{{ macos_java_trust_context.home }}/Library/LaunchAgents"
+  register: macos_java_trust_agents_directory
+
+- name: gui_env_apply | Create LaunchAgents without changing existing directory permissions
+  ansible.builtin.file:
+    path: "{{ macos_java_trust_context.home }}/Library/LaunchAgents"
+    state: directory
+    mode: "{{ omit if macos_java_trust_agents_directory.stat.exists else '0755' }}"
+
+- name: gui_env_apply | Install the narrow PyCharm GUI environment setter
+  ansible.builtin.template:
+    src: pycharm-env.plist.j2
+    dest: "{{ macos_java_trust_context.home }}/Library/LaunchAgents/org.ops-library.pycharm-trust-env.plist"
+    mode: '0644'
+    validate: /usr/bin/plutil -lint %s
+  register: macos_java_trust_env_plist
+
+- name: gui_env_apply | Inspect only this environment setter job
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ macos_java_trust_context.uid }}/org.ops-library.pycharm-trust-env"]
+  register: macos_java_trust_env_job
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: gui_env_apply | Unload only the setter job when its definition changes
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ macos_java_trust_context.uid }}/org.ops-library.pycharm-trust-env"]
+  when: macos_java_trust_env_job.rc == 0 and macos_java_trust_env_plist.changed
+  changed_when: true
+
+- name: gui_env_apply | Enable this environment setter
+  ansible.builtin.command:
+    argv: [/bin/launchctl, enable, "gui/{{ macos_java_trust_context.uid }}/org.ops-library.pycharm-trust-env"]
+  changed_when: false
+
+- name: gui_env_apply | Register the setter in the owning GUI domain
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - bootstrap
+      - "gui/{{ macos_java_trust_context.uid }}"
+      - "{{ macos_java_trust_context.home }}/Library/LaunchAgents/org.ops-library.pycharm-trust-env.plist"
+  register: macos_java_trust_env_bootstrap
+  retries: 5
+  delay: 1
+  until: macos_java_trust_env_bootstrap.rc == 0
+  when: macos_java_trust_env_job.rc != 0 or macos_java_trust_env_plist.changed
+  changed_when: true
+
+- name: gui_env_apply | Reapply the managed GUI value only if it is missing
+  ansible.builtin.command:
+    argv: [/bin/launchctl, kickstart, "gui/{{ macos_java_trust_context.uid }}/org.ops-library.pycharm-trust-env"]
+  when:
+    - macos_java_trust_gui_current != [macos_java_trust_pycharm_vm_options]
+    - macos_java_trust_env_job.rc == 0
+    - not macos_java_trust_env_plist.changed
+  changed_when: true
+
+- name: gui_env_apply | Verify the effective GUI-domain value without exposing other variables
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ macos_java_trust_context.uid }}"]
+  register: macos_java_trust_gui_after
+  changed_when: false
+  no_log: true
+  until: >-
+    (macos_java_trust_gui_after.stdout
+     | regex_findall('(?m)^[\t ]*PYCHARM_VM_OPTIONS => (.*)$'))
+    == [macos_java_trust_pycharm_vm_options]
+  retries: 15
+  delay: 1
+
+- name: gui_env_apply | Report configured PyCharm next-launch options
+  ansible.builtin.debug:
+    msg: "GUI next launches use PYCHARM_VM_OPTIONS={{ macos_java_trust_pycharm_vm_options }}; existing IDE processes are not restarted."

@@ -434,6 +434,40 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertNotIn("postgresql_db", remove)
         self.assertNotIn("user:", remove)
 
+    def test_management_shell_environment_round_trips_and_service_file_is_unchanged(self):
+        import subprocess
+
+        role = "daybook_operations_api_deploy"
+        values, env = self.variables(role)
+        awkward = {
+            "daybook_operations_api_secret_key": "a$b`c\\d\"e'f g#h&(i)",
+            "daybook_operations_api_database_url": "postgresql://u:p$w@localhost/db",
+            "daybook_operations_api_signing_keys": {"k1": "s$cr`t"},
+            "daybook_operations_api_signing_key_id": "k1",
+        }
+        values.update(awkward)
+        template = self.text(role, "templates/environment.j2")
+        service = env.from_string(template).render(**values)
+        self.assertIn("OPERATIONS_SECRET_KEY=" + awkward["daybook_operations_api_secret_key"], service)
+        self.assertIn("OPERATIONS_SIGNING_KEYS='" + json.dumps(awkward["daybook_operations_api_signing_keys"]) + "'", service)
+        shell = env.from_string(template).render(task_shell_environment=True, **values)
+        result = subprocess.run(
+            ["/bin/sh", "-c", 'set -a; . /dev/stdin; set +a; for v in OPERATIONS_SECRET_KEY OPERATIONS_DATABASE_URL OPERATIONS_SIGNING_KEYS OPERATIONS_ALLOWED_HOSTS; do printf "%s\\0" "$(printenv "$v")"; done'],
+            input=shell, capture_output=True, text=True, check=True,
+        )
+        secret, url, keys, hosts = result.stdout.split("\0")[:4]
+        self.assertEqual(secret, awkward["daybook_operations_api_secret_key"])
+        self.assertEqual(url, awkward["daybook_operations_api_database_url"])
+        self.assertEqual(json.loads(keys), awkward["daybook_operations_api_signing_keys"])
+        self.assertTrue(hosts.startswith("localhost,127.0.0.1,"))
+        main = yaml.safe_load(self.text(role, "tasks/main.yml"))
+        companion = next(t for t in main if t.get("name") == "Write the management shell environment")
+        self.assertEqual(companion["ansible.builtin.template"]["mode"], "0600")
+        self.assertTrue(companion["vars"]["task_shell_environment"])
+        self.assertTrue(companion["no_log"])
+        management = yaml.safe_load(self.text(role, "tasks/management.yml"))[0]["block"][0]
+        self.assertNotIn("environment", management)
+
     def test_management_failure_exposes_only_known_categories(self):
         tasks = yaml.safe_load(
             self.text("daybook_operations_api_deploy", "tasks/management.yml")
@@ -494,7 +528,7 @@ class OperationsRoleTests(unittest.TestCase):
                     executable.write_text(
                         f"#!{sys.executable}\n"
                         + "import os, signal, sys\n"
-                        + f"with open({str(marker)!r}, 'a') as stream: stream.write(sys.argv[2] + '\\n')\n"
+                        + f"with open({str(marker)!r}, 'a') as stream: stream.write(sys.argv[2] + ' ' + os.environ.get('OPERATIONS_SECRET_KEY', 'MISSING') + '\\n')\n"
                         + "print('PRIVATE-CHILD-DIAGNOSTIC', file=sys.stderr)\n"
                         + (
                             "os.kill(os.getpid(), signal.SIGTERM)\n"
@@ -510,6 +544,10 @@ class OperationsRoleTests(unittest.TestCase):
                     link = root / "bin/python"
                     link.unlink(missing_ok=True)
                     link.symlink_to(executable)
+                    # The command reads its secrets from the 0600 shell companion.
+                    (root / "environment.shell").write_text(
+                        'OPERATIONS_SECRET_KEY="fixture-$ecret"\n'.replace("$", "\\$")
+                    )
                     variables = {
                         "ansible_connection": "local",
                         "ansible_become": False,
@@ -518,6 +556,7 @@ class OperationsRoleTests(unittest.TestCase):
                         else sys.executable,
                         "daybook_operations_api_venv": str(root),
                         "daybook_operations_api_site": str(root),
+                        "daybook_operations_api_config_dir": str(root),
                         "daybook_operations_api_user": getpass.getuser(),
                         "daybook_operations_api_secret_key": "CHANGE_ME",
                         "daybook_operations_api_database_url": "unused",
@@ -568,11 +607,14 @@ class OperationsRoleTests(unittest.TestCase):
                     self.assertNotIn("PRIVATE-CHILD-DIAGNOSTIC", output)
                     if mode == "success":
                         self.assertEqual(result.returncode, 0, output)
-                        self.assertEqual(calls, ["migrate", "provision_operations"])
+                        self.assertEqual(
+                            calls,
+                            ["migrate fixture-$ecret", "provision_operations fixture-$ecret"],
+                        )
                         self.assertIn("SERVICE_START_REACHED", output)
                     else:
                         self.assertNotEqual(result.returncode, 0, output)
-                        self.assertNotIn("provision_operations", calls)
+                        self.assertFalse(any(c.startswith("provision_operations") for c in calls))
                         self.assertNotIn("SERVICE_START_REACHED", output)
                         self.assertIn("management_command_failed", output)
 

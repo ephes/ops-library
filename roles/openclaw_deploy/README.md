@@ -449,6 +449,37 @@ still runs when `openclaw_codex_plugin_enabled` is true.
 | `openclaw_metrics_endpoint_synthetic_canary_sessions_dir` | `{{ openclaw_data_dir }}/agents/main/sessions` | Host OpenClaw sessions directory used to clean generated canary session files |
 | `openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds` | `86400` | Seconds to retain generated canary session/trajectory files; set `0` to disable cleanup |
 | `openclaw_metrics_endpoint_synthetic_canary_output_max_chars` | `256` | Max response chars persisted from canary output |
+| `openclaw_metrics_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | Endpoint server: `python` or `rust` (see below) |
+
+#### Metrics endpoint implementation (Python or Rust)
+
+`openclaw_metrics_endpoint_impl` selects the HTTP server of the metrics
+endpoint: `python` runs `openclaw_metrics_endpoint_server_path` (the unit's
+`ExecStart=`), `rust` runs the pinned `metrics-httpd` release through the
+drop-in `/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
+([`metrics_httpd_switch`](../metrics_httpd_switch/README.md),
+`rust/metrics-httpd/PLAN.md` section 7). The endpoint keeps its path, port,
+realm, htpasswd file, metrics JSON file, user, sandbox and IP allow list; the
+unit file and the Python script stay as they are with either value.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `openclaw_metrics_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | `python` or `rust`; override per host for a canary. |
+| `metrics_httpd_impl` | (unset: `python`) | Fleet-wide default for every metrics-httpd endpoint. |
+| `metrics_httpd_rust_version` / `metrics_httpd_rust_sha256` | (unset) | Pinned release and the sha256 of its archive. Required for `rust`; with `python` a set version is installed and checked ahead of the switch. |
+
+With `rust` the binary runs `json-file --bind --port --path --json-path
+--htpasswd-file --realm openclaw-metrics --server-name
+openclaw-metrics-httpd/0.1 --missing-message "Metrics file not found -
+collector timer may not have run yet"` from the variables above. Before the
+drop-in is written the binary's `--check-config` must pass as
+`openclaw_metrics_endpoint_user` in the unit's sandbox; after the restart the
+deploy checks that the unit runs the selected implementation and that an
+unauthenticated request gets 401 with the realm, then pins the version in
+`/opt/metrics-httpd/.pins/<service>`. Switching back to `python` removes the
+drop-in and restarts the Python script.
+
+Disabling the endpoint also removes the drop-in with the unit files.
 
 ### Mail Skill (`/mail`): IMAP Read + SMTP Send
 
@@ -1005,3 +1036,13 @@ curl -k https://openclaw.macmini.tailde2ec.ts.net/
 ## License
 
 MIT
+
+## Incident trust override
+
+Set `openclaw_ca_store_path` to a prepared per-container store from
+`container_ca_remediate` to mount it read-only and replace Node’s bundled CA
+store with `--use-openssl-ca`. Existing memory limits remain in `NODE_OPTIONS`.
+Prepare before deploy and after image/custom-CA changes, verify negative and
+positive TLS probes, then recreate the gateway. This also protects its CLI
+and native Go helper through `SSL_CERT_FILE`/`SSL_CERT_DIR`. An empty value
+(the default) preserves the image trust behavior.

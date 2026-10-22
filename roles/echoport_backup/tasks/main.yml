@@ -23,107 +23,27 @@
     - echoport_backup_minio_access_key | length > 0
     - echoport_backup_minio_secret_key | length > 0
 
-- name: Ensure backup service directory exists
-  ansible.builtin.file:
-    path: "{{ echoport_backup_service_dir }}"
-    state: directory
-    # Directory owned by root to prevent privilege escalation:
-    # fastdeploy user can read/execute but not create/delete files
-    owner: root
-    group: root
-    mode: "0755"
+# The runner runs as root (echoport_backup_user) through FastDeploy's sudo
+# chain, so it lives in a root-owned directory outside FastDeploy's site
+# (fastdeploy_runner role); config.json names that fixed path.
+- name: Remember the runner template of this role
+  ansible.builtin.set_fact:
+    echoport_backup_runner_template: "{{ role_path }}/templates/backup.py.j2"
 
-- name: Deploy backup runner script
-  ansible.builtin.template:
-    src: backup.py.j2
-    dest: "{{ echoport_backup_service_dir }}/backup.py"
-    # Script owned by root to prevent privilege escalation:
-    # fastdeploy user can execute but not modify the script
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Create service config.json
-  ansible.builtin.copy:
-    content: |
-      {
-        "name": "{{ echoport_backup_service_name }}",
-        "description": "{{ echoport_backup_service_description }}",
-        "deploy_script": "backup.py",
-        "steps": [
-          {"name": "init"},
-          {"name": "backup"},
-          {"name": "download"},
-          {"name": "upload"},
-          {"name": "verify"},
-          {"name": "extract"},
-          {"name": "stop"},
-          {"name": "restore"},
-          {"name": "start"},
-          {"name": "result"}
-        ]
-      }
-    dest: "{{ echoport_backup_service_dir }}/config.json"
-    # Config owned by root to prevent tampering
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Configure sudoers for backup execution
-  ansible.builtin.copy:
-    content: |
-      # Sudoers for echoport-backup service
-      # Two-stage sudo chain for FastDeploy execution
-      #
-      # Security notes:
-      # - NOSETENV on stage 2 prevents environment variable injection
-      # - This is safe because FastDeploy ALWAYS passes --config with a secure
-      #   config file containing all context (tokens, paths, etc.)
-      # - The script reads from config file, not environment variables
-      # - The * allows --config argument; script validates paths internally
-
-      # Stage 1: Allow fastdeploy to run backup.py as deploy user
-      {{ echoport_backup_fastdeploy_user }} ALL=({{ echoport_backup_deploy_user }}) NOPASSWD: {{ echoport_backup_service_dir }}/backup.py *
-
-      # Stage 2: Allow deploy to run backup.py as root for privileged operations
-      {{ echoport_backup_deploy_user }} ALL=({{ echoport_backup_user }}) NOPASSWD:NOSETENV: {{ echoport_backup_service_dir }}/backup.py *
-    dest: "/etc/sudoers.d/echoport_backup"
-    mode: "0440"
-    validate: 'visudo -cf %s'
-
-- name: Sync services with FastDeploy API
-  ansible.builtin.uri:
-    url: "{{ echoport_backup_api_base }}/services/sync"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ echoport_backup_api_token }}"
-    status_code: [200, 201]
-  when:
-    - echoport_backup_sync_services
-    - echoport_backup_api_token | length > 0
-  register: echoport_backup_sync_result
-  failed_when: false
-  no_log: true  # the request carries the API bearer token
-
-- name: Display sync result
-  ansible.builtin.debug:
-    msg: "Service sync result: {{ echoport_backup_sync_result.json | default('No response') }}"
-  when:
-    - echoport_backup_sync_result is defined
-    - echoport_backup_sync_result is not skipped
-    - echoport_backup_sync_result.status is defined
-    - echoport_backup_sync_result.status in [200, 201]
-
-# Print only the HTTP status and the server's response body: the module's msg
-# can quote the request headers (for example an invalid header value), which
-# would leak the bearer token that no_log hides above.
-- name: Report failed service sync
-  ansible.builtin.debug:
-    msg: >-
-      {% if (echoport_backup_sync_result.status | default(-1) | int) <= 0 %}Service sync failed before an HTTP
-      response (connection, TLS or request error).{% else %}Service sync failed (HTTP status
-      {{ echoport_backup_sync_result.status }}): {{ echoport_backup_sync_result.json | default('no JSON response body') }}{% endif %}
-  when:
-    - echoport_backup_sync_result is defined
-    - echoport_backup_sync_result is not skipped
-    - (echoport_backup_sync_result.status | default(-1)) not in [200, 201]
+- name: Install the backup runner and register it with FastDeploy
+  ansible.builtin.include_role:
+    name: local.ops_library.fastdeploy_runner
+  vars:
+    fastdeploy_runner_service: "{{ echoport_backup_service_name }}"
+    fastdeploy_runner_description: "{{ echoport_backup_service_description }}"
+    fastdeploy_runner_steps: [init, backup, download, upload, verify, extract, stop, restore, start, result]
+    fastdeploy_runner_template: "{{ echoport_backup_runner_template }}"
+    fastdeploy_runner_libexec_root: "{{ echoport_backup_libexec_root }}"
+    fastdeploy_runner_fastdeploy_root: "{{ echoport_backup_fastdeploy_root }}"
+    fastdeploy_runner_services_root: "{{ echoport_backup_fastdeploy_root }}/{{ echoport_backup_services_root }}"
+    fastdeploy_runner_config_dir: "{{ echoport_backup_service_dir }}"
+    fastdeploy_runner_fastdeploy_user: "{{ echoport_backup_fastdeploy_user }}"
+    fastdeploy_runner_deploy_user: "{{ echoport_backup_deploy_user }}"
+    fastdeploy_runner_run_as: "{{ echoport_backup_user }}"
+    fastdeploy_runner_sudoers_file: /etc/sudoers.d/echoport_backup
+    fastdeploy_runner_sync: "{{ echoport_backup_sync_services }}"

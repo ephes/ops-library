@@ -8,6 +8,30 @@ echoport_remote_command_guard_path: /usr/local/sbin/echoport-remote-command-guar
 echoport_remote_command_guard_policy_path: /etc/echoport/remote-command-guard.json
 echoport_remote_command_guard_python: /usr/bin/python3
 
+# Which guard decides (rust/echoport-command-guard/PLAN.md 6.2):
+# python | shadow | rust. python: today's forced command, byte for byte.
+# shadow: the Rust guard logs its decision, then execs the Python guard,
+# which decides. rust: the Rust guard decides.
+echoport_remote_command_guard_impl: python
+# The Rust release to install (e.g. "0.1.0"). A set version is installed even
+# with impl python, so a switch is quick; empty installs no Rust binary.
+echoport_remote_command_guard_rust_version: ""
+# sha256 of the release archive (64 hex), required unless a local archive is set.
+echoport_remote_command_guard_rust_sha256: ""
+# An archive on the controller instead of the GitHub release (dev/molecule only).
+echoport_remote_command_guard_rust_local_archive: ""
+# <root>/<version>/echoport-command-guard; root:root 0755 on every level.
+echoport_remote_command_guard_rust_install_root: /usr/local/lib/echoport-command-guard
+# Newest versions kept by confirm_live.yml's prune, on top of the pins and the
+# versions authorized_keys names.
+echoport_remote_command_guard_rust_keep_versions: 3
+
+# confirm_live.yml only (included by the playbook after its post-probe): the
+# authorized_keys file the playbook wrote and the public key whose line
+# carries the forced command ("<type> <base64> [comment]").
+echoport_remote_command_guard_authorized_keys_path: /root/.ssh/authorized_keys
+echoport_remote_command_guard_confirm_public_key: ""
+
 # What the Echoport remote runners may do on this host. Every list defaults
 # to empty, which allows nothing. Shape:
 #

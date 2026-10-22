@@ -174,3 +174,7 @@ psql -U postgres -c "SELECT version();"
 | Role fails while templating configs | Ensure `/etc/postgresql/{{ version }}/{{ cluster }}` exists (package install should create it); rerun with `-vvv` for details |
 | Cannot connect using password | Confirm `pg_hba.conf` allows the client IP and auth method, then reload via `systemctl reload postgresql` |
 | Databases/users not created | Verify the `postgres_install_admin_user` has peer access or provide `postgres_install_admin_password` |
+
+## Secret handling
+
+When `postgres_install_admin_password` is set, it is passed to the `community.postgresql` modules as `login_password` (inside the module payload), never as a `PGPASSWORD` task environment value. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

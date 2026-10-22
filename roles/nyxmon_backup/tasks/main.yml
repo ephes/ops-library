@@ -81,6 +81,24 @@
     group: "{{ nyxmon_backup_group }}"
     mode: "{{ nyxmon_backup_dir_mode }}"
 
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ nyxmon_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: nyxmon_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ nyxmon_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: Ensure backup directory exists
   ansible.builtin.file:
     path: "{{ nyxmon_backup_dir }}"
@@ -118,10 +136,13 @@
     - name: Create SQLite backup with .backup
       ansible.builtin.command:
         cmd: >
-          sqlite3 "{{ nyxmon_backup_sqlite_path }}"
+          sqlite3 "{{ nyxmon_backup_sqlite_path }}" ".timeout 30000"
           ".backup '{{ nyxmon_backup_dir }}/database/{{ nyxmon_backup_sqlite_path | basename }}'"
       when: nyxmon_backup_use_sqlite_backup
       register: nyxmon_sqlite_backup_cmd
+      retries: 2
+      delay: 5
+      until: nyxmon_sqlite_backup_cmd.rc == 0
       changed_when: true
 
     - name: Copy SQLite database file directly (fallback)
@@ -244,6 +265,16 @@
     - nyxmon_backup_create_archive
     - nyxmon_backup_archive_format == 'tar.gz'
   changed_when: true
+
+# tar writes the archive with the default umask; make it owner-only.
+- name: Restrict archive permissions
+  ansible.builtin.file:
+    path: "{{ nyxmon_backup_archive }}"
+    mode: "0600"
+  when:
+    - nyxmon_backup_create_archive
+    - nyxmon_backup_archive_format == 'tar.gz'
+    - not ansible_check_mode
 
 - name: Ensure local archive directory exists
   ansible.builtin.file:

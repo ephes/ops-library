@@ -60,6 +60,20 @@
         label: "{{ item.item.dest }}"
       changed_when: true
 
+    # Again after the rsync: `rsync -a src/ dest/` also copies the archived
+    # directory's own mode onto dest, and nyxmon_backup creates every archive
+    # directory 0700 (a directory left out of the backup, such as cache by
+    # default, stays that way). Setting the mode afterwards keeps the 0755
+    # nyxmon_deploy gives these directories, so a restore does not change them.
+    - name: Reset destination directory modes after the rsync
+      ansible.builtin.file:
+        path: "{{ item.dest }}"
+        state: directory
+        owner: "{{ nyxmon_restore_site_owner }}"
+        group: "{{ nyxmon_restore_site_group }}"
+        mode: "0755"
+      loop: "{{ nyxmon_restore_dirs }}"
+
     - name: Check config file presence
       ansible.builtin.stat:
         path: "{{ nyxmon_restore_content_path }}/config/{{ item.name }}"

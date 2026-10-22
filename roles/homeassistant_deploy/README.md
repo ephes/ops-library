@@ -2,6 +2,44 @@
 
 Ansible role that installs and configures a Home Assistant Core instance on bare metal/VM hosts using `uv` managed Python environments. The role mirrors the previous bespoke playbook but adapts it to the shared `ops-library` conventions (idempotent tasks, guard rails, and Traefik integration).
 
+## Built-in OpenAI-compatible voice bridge
+
+Set `homeassistant_llama_cpp_enabled: true` on Core 2026.10.2 or newer to use
+Home Assistant's built-in `llama_cpp` conversation agent. Surrounding prompt
+whitespace is normalized to match Core storage for repeat deployments; blank
+prompts are rejected. Configure
+`homeassistant_llama_cpp_base_url`, `homeassistant_llama_cpp_api_key`,
+`homeassistant_llama_cpp_model` and `homeassistant_llama_cpp_instructions`, then
+select `conversation_engine: "auto:llama_cpp"` in managed Assist pipelines.
+Keep `prefer_local_intents: true` for local device commands. The endpoint must
+support authenticated model listing and Chat Completions, including the built-in
+setup probe. No llama.cpp server is required when another compatible gateway is used.
+
+The role owns at most one `llama_cpp` entry titled `Managed voice bridge` with
+one conversation subentry; other entries are left alone. Duplicate managed
+entries fail before any change. On enable, an unmarked entry at the configured endpoint
+(for example after an interrupted creation) also fails with an ownership/rename
+diagnostic, preventing duplicate credentials. It creates the entry
+through supported config flows, sets the instructions and **no HA LLM tools**
+through the subentry flow, and requires a live entity and a successful canary
+before switching pipelines. The built-in integration sends the HA conversation
+ID to the gateway as `user`, allowing per-conversation gateway sessions.
+Connection/key changes recreate the managed entry; prompt/model changes update
+its subentry. Credentials travel on stdin under `no_log`, never in argv or the
+sudo-logged environment. Disabling this flag while retaining `auto:llama_cpp` in the managed pipelines
+moves them to `conversation.home_assistant` and removes only the managed entry
+and its stored gateway credential.
+
+This flag is mutually exclusive with `homeassistant_custom_conversation_enabled`.
+When enabled, the role removes the legacy Custom Conversation entry through HA's
+API before upgrading, removes its component directory, and rebuilds HA's venv if
+the old component or LiteLLM package metadata exists. This prevents the legacy
+integration from reinstalling LiteLLM at startup. Configuration, recorder data and
+the separate Matter environment are retained. A pre-upgrade backup is required
+operationally: after Core storage migrations, restore the matching configuration
+and recorder before downgrading Core. No custom integration or LiteLLM is installed
+by this bridge. `homeassistant_llama_cpp_canary_text` defaults to a request for OK.
+
 ## Features
 
 - Creates the `homeassistant` unix user, directory layout, and Zigbee/Matter udev rule.
@@ -225,7 +263,84 @@ password when migrating to avoid changing the integration credentials.
 
 ## Verified uv bootstrap
 
-`homeassistant_uv_version` defaults to `0.13.0`, matching the verified release
+`homeassistant_uv_version` defaults to `0.13.4`, matching the verified release
 checksums in `uv_install`. When overriding this version, also supply matching
 `uv_checksum` entries for each target (see the `uv_install` role README).
 Bump the version and checksum together; `latest` is no longer accepted.
+
+## Secret handling
+
+The WebSocket helpers that run as `homeassistant_user` receive `homeassistant_api_token` (and the Custom Conversation API key) as JSON on stdin, never in the task environment. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.
+
+## Certifi/pip security floor
+
+With `homeassistant_python_security_floor_enabled` (default `true`) the role uses
+[`python_security_floor`](../python_security_floor/README.md):
+
+- Before changing anything it verifies the existing Home Assistant (and, when
+  managed, Matter server) environment: certifi/pip at their floors, no
+  distrusted root in their bundles. The installs below run only on a version
+  change, a recreated environment or `homeassistant_force_reinstall`, so an
+  environment below the floor is refused rather than left as it is; bring it to
+  the floor with the host's supported remediation first.
+- Every `uv pip install` the role runs (Home Assistant, extra packages, Matter
+  server) gets `--constraint` with `homeassistant_python_security_constraints_path`.
+  Constraints never add packages; a dependency capping certifi below the floor
+  makes the install fail before anything changes.
+- Afterwards the environments are verified again.
+
+Home Assistant installs integration requirements itself at runtime with its
+bundled uv, `--upgrade` and its own `package_constraints.txt`; those installs do
+not use this constraint file. `--upgrade` resolves certifi to the newest allowed
+release, and the next deploy's preflight reports any environment that fell
+below the floor.
+
+Set `homeassistant_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.
+
+## Integration downloads: `UV_SYSTEM_CERTS`
+
+Home Assistant installs integration requirements at runtime with the uv it
+bundles (`python -m uv pip install --upgrade --constraint
+homeassistant/package_constraints.txt`), inheriting the service environment.
+That bundled uv uses its own built-in roots by default, which can lag behind CA
+distrust decisions (Home Assistant 2026.7.2's uv 0.11.25 still embeds emSign
+ECC Root CA - G3). With `homeassistant_uv_system_certs` (default `true`) the
+role installs a managed drop-in,
+`homeassistant_uv_system_certs_dropin_path`, containing only
+`Environment=UV_SYSTEM_CERTS=1` (uv's documented setting for using the
+operating system's CA store), so those downloads trust the patched system
+store. Package resolution is unchanged; Home Assistant, its bundled uv,
+`package_constraints.txt` and integration versions are not touched.
+
+Before any change the role refuses, with key names and paths only:
+
+- a unit (as systemd parsed it: `Environment`, `PassEnvironment`), the
+  service-manager environment, or a running service, that already sets `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`,
+  `CURL_CA_BUNDLE`, `UV_SYSTEM_CERTS`, `UV_NATIVE_TLS` or `UV_INSECURE_HOST`
+  (explicit trust settings are never replaced); its own managed
+  `UV_SYSTEM_CERTS=1`, with the exact managed drop-in, is accepted on repeat;
+- an `EnvironmentFile` (precedence cannot be established), a unit changed on
+  disk but not reloaded, any other drop-in (list reviewed ones in
+  `homeassistant_uv_system_certs_allowed_dropins`) or a modified managed drop-in
+  (also on a first deploy, when the unit does not exist yet);
+- a system CA store that still holds a distrusted root, in the CA file or any
+  certificate file of the certificate directories uv's native loader reads
+  (`python_security_floor`, `tasks_from: system_store.yml`).
+
+A normal deploy installs the drop-in after the unit and restarts through the
+existing handlers, then verifies the running service. For an existing service
+without a full deploy, use the maintenance entry point; it only checks, writes
+the drop-in, restarts when it changed, waits for
+`homeassistant_uv_system_certs_health_url` and verifies the running service:
+
+```yaml
+- hosts: homeassistant
+  tasks:
+    - ansible.builtin.include_role:
+        name: local.ops_library.homeassistant_deploy
+        tasks_from: uv_system_certs.yml
+```
+
+Scope: this covers downloads made by Home Assistant's bundled uv. Custom
+components, HACS and other downloaders with their own certificate handling are
+not inspected. The legacy `UV_NATIVE_TLS` name is not used.

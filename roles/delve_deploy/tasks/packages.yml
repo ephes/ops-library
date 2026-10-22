@@ -1,7 +1,9 @@
 ---
 - name: packages | Ensure delve runtime packages are present
   ansible.builtin.apt:
-    name: "{{ delve_deploy_packages }}"
+    name: >-
+      {{ delve_deploy_packages
+         + (delve_smart_skip_packages if delve_smart_skip_analysis | bool else []) }}
     state: present
     update_cache: true
     cache_valid_time: 3600

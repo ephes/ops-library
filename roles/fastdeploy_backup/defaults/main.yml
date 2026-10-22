@@ -85,6 +85,11 @@ fastdeploy_backup_metadata_extra: {}
 
 # File permissions
 fastdeploy_backup_file_mode: "0640"
+# Mode of the finished archive on the host. The fetch to the control machine
+# reads it as the SSH user: keep 0600 when that user is root or the archive
+# owner; a different SSH user needs a group it belongs to as the archive group
+# and "0640".
+fastdeploy_backup_archive_mode: "0600"
 
 # Components toggles for metadata
 fastdeploy_backup_component_flags:

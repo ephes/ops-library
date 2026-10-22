@@ -1,0 +1,227 @@
+---
+# Verify the selection of select.yml (rust/metrics-httpd/PLAN.md 7.2).
+# Included by the consumer role after `meta: flush_handlers`, so the drop-in
+# change has restarted the unit. Proves the unit runs the selected
+# implementation and answers, then moves the pin and prunes old releases. A
+# failed check stops the play before any pin moves or anything is pruned. No
+# credentials are used: the probe is unauthenticated. Skipped in check mode
+# (the handlers did not run).
+
+- name: verify | Assert select ran for this unit
+  ansible.builtin.assert:
+    that:
+      - _metrics_httpd_switch_selected is defined
+      - _metrics_httpd_switch_selected.service == metrics_httpd_switch_service_name
+      - _metrics_httpd_switch_selected.impl == metrics_httpd_switch_impl
+      - >-
+        metrics_httpd_switch_impl == 'rust'
+        or metrics_httpd_switch_python_script is match('^/')
+      - metrics_httpd_switch_probe_expect in ['unauthorized', 'logyard-health', 'static']
+      - metrics_httpd_switch_probe_expect != 'unauthorized' or metrics_httpd_switch_probe_realm | length > 0
+      - (metrics_httpd_switch_probe_port | string) is match('^[1-9][0-9]*$')
+      - (metrics_httpd_switch_probe_timeout | string) is match('^[1-9][0-9]*$')
+      - metrics_httpd_switch_probe_path is match('^/')
+      - metrics_httpd_switch_ip_address_allow is sequence and metrics_httpd_switch_ip_address_allow is not string
+    fail_msg: >-
+      metrics_httpd_switch verify needs a preceding select for
+      {{ metrics_httpd_switch_service_name }} with the same impl, the role's
+      Python script path (impl python), a probe expectation (unauthorized with
+      a realm, logyard-health or static), a probe port, path and timeout
+      (whole seconds), and the unit's IPAddressAllow= list.
+    quiet: true
+
+- name: verify | Verify the switch
+  when: not ansible_check_mode
+  block:
+    # Rust is identified by /proc/<pid>/exe, Python by its command line (the
+    # interpreter is /usr/bin/python3.x for every role).
+    - name: verify | Read the live process of the unit
+      ansible.builtin.shell: |
+        set -o pipefail
+        unit={{ metrics_httpd_switch_service_name | quote }}
+        proc={{ metrics_httpd_switch_proc_root | quote }}
+        binary={{ _metrics_httpd_switch_selected.binary | quote }}
+        printf 'state=%s\n' "$(systemctl is-active "$unit")"
+        if [ -n "$binary" ] && [ -e "$binary" ]; then
+          printf 'want=%s\n' "$binary"
+          printf 'want=%s\n' "$(realpath -- "$binary")"
+        fi
+        pid=$(systemctl show --property=MainPID --value "$unit")
+        printf 'pid=%s\n' "$pid"
+        case "$pid" in
+          ''|*[!0-9]*|0) exit 0 ;;
+        esac
+        printf 'exe=%s\n' "$(readlink -- "$proc/$pid/exe")"
+        while IFS= read -r -d '' arg; do
+          printf 'arg=%s\n' "$arg"
+        done < "$proc/$pid/cmdline"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: _metrics_httpd_switch_live
+      retries: "{{ metrics_httpd_switch_verify_retries }}"
+      delay: "{{ metrics_httpd_switch_verify_delay }}"
+      until: >-
+        'state=active' in _metrics_httpd_switch_live.stdout_lines | default([])
+        and (
+          (metrics_httpd_switch_impl == 'rust'
+           and (_metrics_httpd_switch_live.stdout_lines | default([])
+                | select('match', '^exe=') | map('regex_replace', '^exe=', 'want=') | list)
+               | intersect(_metrics_httpd_switch_live.stdout_lines | default([])
+                           | select('match', '^want=') | list) | length > 0)
+          or (metrics_httpd_switch_impl == 'python'
+              and ('arg=' ~ metrics_httpd_switch_python_script) in _metrics_httpd_switch_live.stdout_lines | default([]))
+        )
+
+    - name: verify | Assert the unit runs the selected implementation
+      ansible.builtin.assert:
+        that:
+          - "'state=active' in _metrics_httpd_switch_live.stdout_lines"
+          - >-
+            (metrics_httpd_switch_impl == 'rust'
+             and (_metrics_httpd_switch_live.stdout_lines
+                  | select('match', '^exe=') | map('regex_replace', '^exe=', 'want=') | list)
+                 | intersect(_metrics_httpd_switch_live.stdout_lines | select('match', '^want=') | list)
+                 | length > 0)
+            or (metrics_httpd_switch_impl == 'python'
+                and ('arg=' ~ metrics_httpd_switch_python_script) in _metrics_httpd_switch_live.stdout_lines)
+        fail_msg: |-
+          {{ metrics_httpd_switch_service_name }}.service does not run the selected
+          implementation (impl {{ metrics_httpd_switch_impl }}; expected
+          {{ ('/proc/<pid>/exe = ' ~ _metrics_httpd_switch_selected.binary)
+             if metrics_httpd_switch_impl == 'rust'
+             else ('a command line with ' ~ metrics_httpd_switch_python_script) }}).
+          Nothing was pinned or pruned. Live state:
+          {{ _metrics_httpd_switch_live.stdout_lines | join('\n') }}
+          {{ _metrics_httpd_switch_live.stderr | default('') }}
+        quiet: true
+
+    # A bind address that is not an IP literal (a Python unit may bind a host
+    # name such as localhost; metrics-httpd's --check-config refuses one, so
+    # only impl python gets here with it) is not probed: which address it
+    # resolves to, and so whether the IP filter admits the probe, is unknown.
+    # Every IP literal is covered by "any".
+    - name: verify | Decide how to probe the endpoint
+      ansible.builtin.set_fact:
+        _metrics_httpd_switch_probe_ip: >-
+          {{ metrics_httpd_switch_probe_bind | local.ops_library.metrics_httpd_probe_covered(['any']) }}
+        _metrics_httpd_switch_probe_covered: >-
+          {{ metrics_httpd_switch_probe_bind
+             | local.ops_library.metrics_httpd_probe_covered(metrics_httpd_switch_ip_address_allow) }}
+
+    - name: verify | Set the probe URL
+      ansible.builtin.set_fact:
+        _metrics_httpd_switch_probe_url: >-
+          http://{{ metrics_httpd_switch_probe_bind | local.ops_library.metrics_httpd_probe_host }}:{{
+          metrics_httpd_switch_probe_port }}{{ metrics_httpd_switch_probe_path }}
+      when: _metrics_httpd_switch_probe_covered | bool
+
+    - name: verify | Report a probe the unit's IP filter would drop
+      ansible.builtin.debug:
+        msg: >-
+          Skipping the HTTP probe of {{ metrics_httpd_switch_service_name }}:
+          {{ ('its IPAddressAllow= (' ~ (metrics_httpd_switch_ip_address_allow | join(', '))
+              ~ ') does not cover ' ~ metrics_httpd_switch_probe_bind
+              ~ ', the source address of a probe from this host')
+             if _metrics_httpd_switch_probe_ip | bool
+             else ('its bind address ' ~ metrics_httpd_switch_probe_bind
+                   ~ ' is not an IP address, so the address to probe is unknown') }}.
+          The process check above passed.
+      when: not _metrics_httpd_switch_probe_covered | bool
+
+    # Unauthenticated on purpose: no credential is used anywhere in the switch
+    # (also none from a ~/.netrc of the connection user).
+    - name: verify | Probe the endpoint without credentials
+      ansible.builtin.uri:
+        url: "{{ _metrics_httpd_switch_probe_url }}"
+        method: GET
+        follow_redirects: none
+        use_proxy: false
+        use_netrc: false
+        force_basic_auth: false
+        timeout: "{{ metrics_httpd_switch_probe_timeout | int }}"
+        return_content: true
+        status_code: [200, 401]
+      failed_when: false
+      register: _metrics_httpd_switch_probe
+      retries: "{{ metrics_httpd_switch_verify_retries }}"
+      delay: "{{ metrics_httpd_switch_verify_delay }}"
+      until: >-
+        (metrics_httpd_switch_probe_expect == 'unauthorized'
+         and _metrics_httpd_switch_probe.status | default(-1) == 401
+         and _metrics_httpd_switch_probe.www_authenticate | default('')
+             == 'Basic realm="' ~ metrics_httpd_switch_probe_realm ~ '"')
+        or (metrics_httpd_switch_probe_expect == 'logyard-health'
+            and _metrics_httpd_switch_probe.status | default(-1) == 200
+            and _metrics_httpd_switch_probe.json is defined
+            and _metrics_httpd_switch_probe.json is mapping
+            and 'status' in _metrics_httpd_switch_probe.json)
+        or (metrics_httpd_switch_probe_expect == 'static'
+            and _metrics_httpd_switch_probe.status | default(-1) == 200)
+      when: _metrics_httpd_switch_probe_covered | bool
+
+    - name: verify | Assert the endpoint answers as expected
+      ansible.builtin.assert:
+        that:
+          - >-
+            (metrics_httpd_switch_probe_expect == 'unauthorized'
+             and _metrics_httpd_switch_probe.status | default(-1) == 401
+             and _metrics_httpd_switch_probe.www_authenticate | default('')
+                 == 'Basic realm="' ~ metrics_httpd_switch_probe_realm ~ '"')
+            or (metrics_httpd_switch_probe_expect == 'logyard-health'
+                and _metrics_httpd_switch_probe.status | default(-1) == 200
+                and _metrics_httpd_switch_probe.json is defined
+                and _metrics_httpd_switch_probe.json is mapping
+                and 'status' in _metrics_httpd_switch_probe.json)
+            or (metrics_httpd_switch_probe_expect == 'static'
+                and _metrics_httpd_switch_probe.status | default(-1) == 200)
+        fail_msg: >-
+          GET {{ _metrics_httpd_switch_probe_url }} (no credentials) answered
+          status {{ _metrics_httpd_switch_probe.status | default('none') }}
+          {{ ('with WWW-Authenticate ' ~ (_metrics_httpd_switch_probe.www_authenticate | default('(none)')))
+             if metrics_httpd_switch_probe_expect == 'unauthorized' else '' }};
+          expected {{ {'unauthorized': '401 with WWW-Authenticate: Basic realm="' ~ metrics_httpd_switch_probe_realm ~ '"',
+                       'logyard-health': '200 with a JSON object holding status',
+                       'static': '200'}[metrics_httpd_switch_probe_expect] }}.
+          Nothing was pinned or pruned.
+        quiet: true
+      when: _metrics_httpd_switch_probe_covered | bool
+
+    # The unit runs the selected implementation: move this unit's pin
+    # (rust_release_binary keeps the version it ran before as the rollback pin).
+    - name: verify | Move the pin of this unit
+      ansible.builtin.include_role:
+        name: local.ops_library.rust_release_binary
+        tasks_from: pin
+      vars:
+        rust_release_binary_name: metrics-httpd
+        rust_release_binary_install_root: "{{ metrics_httpd_switch_install_root }}"
+        rust_release_binary_owner: "{{ metrics_httpd_switch_owner }}"
+        rust_release_binary_group: "{{ metrics_httpd_switch_group }}"
+        rust_release_binary_consumer: "{{ metrics_httpd_switch_service_name }}"
+        rust_release_binary_state: "{{ 'present' if metrics_httpd_switch_impl == 'rust' else 'absent' }}"
+        rust_release_binary_version: "{{ _metrics_httpd_switch_selected.version }}"
+      # Only impl python gets here with an invalid root (select warned): no
+      # release can be installed there, so there is no pin to move.
+      when: metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok
+
+    # Never pruned: every pin of every unit, the newest keep_versions, the
+    # version this unit runs and the one its drop-in named before this run.
+    - name: verify | Prune old metrics-httpd releases
+      ansible.builtin.include_role:
+        name: local.ops_library.rust_release_binary
+        tasks_from: prune
+      vars:
+        rust_release_binary_name: metrics-httpd
+        rust_release_binary_install_root: "{{ metrics_httpd_switch_install_root }}"
+        rust_release_binary_owner: "{{ metrics_httpd_switch_owner }}"
+        rust_release_binary_group: "{{ metrics_httpd_switch_group }}"
+        rust_release_binary_keep_versions: "{{ metrics_httpd_switch_keep_versions }}"
+        rust_release_binary_protect: >-
+          {{
+            ((_metrics_httpd_switch_live.stdout_lines | select('match', '^exe=.') | map('regex_replace', '^exe=', '') | list)
+             + [_metrics_httpd_switch_selected.before_binary])
+            | select | unique | list
+          }}
+      when: metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok

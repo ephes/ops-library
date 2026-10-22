@@ -15,26 +15,18 @@
     - open_webui_basic_auth_enabled | bool
     - ansible_facts['os_family'] == 'Debian'
 
-- name: traefik | Build basic auth hash from password
-  ansible.builtin.command:
-    argv:
-      - htpasswd
-      - -nbB
-      - "{{ open_webui_basic_auth_user }}"
-      - "{{ open_webui_basic_auth_password }}"
-  register: open_webui_basic_auth_htpasswd
-  changed_when: false
-  no_log: true
+- name: traefik | Resolve basic auth password hash (reuse the deployed one while it matches)
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_basic_auth_hash
+  vars:
+    webapp_deploy_internal_basic_auth_user: "{{ open_webui_basic_auth_user }}"
+    webapp_deploy_internal_basic_auth_password: "{{ open_webui_basic_auth_password }}"
+    webapp_deploy_internal_basic_auth_config_path: "{{ open_webui_traefik_config_path }}"
+    webapp_deploy_internal_basic_auth_hash_var: open_webui_basic_auth_password_hash
   when:
     - open_webui_basic_auth_enabled | bool
-    - open_webui_basic_auth_password | length > 0
     - open_webui_basic_auth_password_hash | length == 0
-
-- name: traefik | Set Open WebUI basic auth hash fact
-  ansible.builtin.set_fact:
-    open_webui_basic_auth_password_hash: "{{ open_webui_basic_auth_htpasswd.stdout.split(':', 1)[1] if open_webui_basic_auth_htpasswd.stdout is defined else open_webui_basic_auth_password_hash }}"
-  no_log: true
-  when: open_webui_basic_auth_enabled | bool
 
 - name: traefik | Render Traefik configuration for Open WebUI
   ansible.builtin.template:

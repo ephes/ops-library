@@ -1,0 +1,69 @@
+---
+# The playbook's sequence (ops-control playbooks/authorize-root-ssh.yml): the
+# role, the authorized_keys line with the published forced command, the
+# post-probe through that line, then confirm_live.yml. The scenario sets the
+# impl in MOLECULE_GUARD_IMPL (python, shadow, rust; molecule.yml); shadow and
+# rust install the guard built from this checkout (prepare.yml) as its crate
+# version (rust/echoport-command-guard/Cargo.toml, 0.2.0; the role tests
+# check that the scenario follows it) from a local archive.
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    guard_impl: "{{ lookup('env', 'MOLECULE_GUARD_IMPL') or 'python' }}"
+    guard_archive: >-
+      {{ lookup('env', 'ECHOPORT_GUARD_LOCAL_ARCHIVE')
+         or lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') ~ '/echoport-command-guard-local.tar.gz' }}
+    echoport_remote_command_guard_impl: "{{ guard_impl }}"
+    echoport_remote_command_guard_rust_version: "{{ '' if guard_impl == 'python' else '0.2.0' }}"
+    echoport_remote_command_guard_rust_local_archive: "{{ '' if guard_impl == 'python' else guard_archive }}"
+    echoport_remote_command_guard_policy:
+      postgres:
+        dump_databases: [homepage]
+        restore_databases: {homepage: homepage}
+        temp_file_prefixes: [homepage]
+        scratch_restore_prefixes: [molecule_restore]
+      units: [cron.service]
+      private_media_paths: []
+      path_roots:
+        - {path: /srv/marina/site, owner: "nobody:nogroup"}
+      temp_dirs: [/var/tmp/molecule-restore.XXXXXXXX]
+      sqlite_snapshots:
+        - {database: /srv/gts/sqlite.db, owner: "nobody:nogroup", temp_dir: /var/tmp/molecule-gts.XXXXXX}
+      read_files: [/etc/hostname]
+  tasks:
+    - name: Install the guard
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+
+    - name: Read the client public key
+      ansible.builtin.slurp:
+        src: /root/molecule_deploy_key.pub
+      register: molecule_deploy_key_pub
+
+    - name: Pin the client key to the guard
+      ansible.builtin.copy:
+        dest: /root/.ssh/authorized_keys
+        owner: root
+        group: root
+        mode: "0600"
+        content: >
+          from="127.0.0.1",restrict,command="{{ echoport_remote_command_guard_forced_command }}"
+          {{ molecule_deploy_key_pub.content | b64decode | trim }}
+
+    - name: Check that the pinned key reaches the guard
+      ansible.builtin.shell:
+        cmd: >-
+          /usr/bin/ssh -T -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          root@127.0.0.1 < /dev/null
+      register: guard_post_probe
+      changed_when: false
+      failed_when: "'interactive sessions are not allowed' not in guard_post_probe.stderr"
+
+    - name: Confirm the forced command live, pin and prune
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+        tasks_from: confirm_live.yml
+      vars:
+        echoport_remote_command_guard_confirm_public_key: "{{ molecule_deploy_key_pub.content | b64decode | trim }}"

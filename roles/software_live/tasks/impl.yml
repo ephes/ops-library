@@ -1,0 +1,96 @@
+---
+# The switch between the Python program and the Rust release
+# (rust/software-live/PLAN.md 7.3 steps 0-4, shadow units 8.1). Included by
+# main.yml after the policy and endpoint configuration, before the units.
+#
+# 0. live_state.yml reads what runs now (read-only).
+# 1. Rollback first: with impl python the drop-ins are removed and the
+#    handlers flushed right away, so the production units run Python before
+#    any Rust task. Nothing below can block that.
+# 2./3. rust.yml (impl rust or the shadow): install the release with
+#    rust_release_binary and validate the candidate by its versioned path.
+# 8.1 shadow.yml: the shadow units (on) or their removal (off); they touch only
+#    the shadow units, their configuration and <data_dir>/shadow.
+# 4. Drop-ins naming the versioned binary, present iff impl rust.
+#
+# Verification (step 6) and pins/prune (step 7) follow in main.yml after the
+# units were restarted and the initial collection ran.
+
+- name: impl | Read the live state
+  ansible.builtin.include_tasks: live_state.yml
+
+- name: impl | Set the release paths
+  ansible.builtin.set_fact:
+    _software_live_rust_binary: >-
+      {{ (software_live_install_dir ~ '/releases/' ~ software_live_rust_version ~ '/software-live')
+         if software_live_rust_version | string | length > 0 else '' }}
+    _software_live_rust_apt_binary: >-
+      {{ (software_live_install_dir ~ '/releases/' ~ software_live_rust_version ~ '/software-live-apt')
+         if software_live_rust_version | string | length > 0 else '' }}
+
+# --- 1. Rollback first ---------------------------------------------------------
+
+- name: impl | Select the Python implementation
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: absent
+  loop: '{{ _software_live_dropins }}'
+  register: _software_live_python_selected
+  notify:
+    - Reload software live systemd
+    - Restart software live endpoint
+    - Restart software live timer
+  when: software_live_impl == 'python'
+
+# Only when a drop-in was removed: the units exist then, and the endpoint and
+# the timer restart with the Python program before any Rust task runs.
+- name: impl | Restart the production units with Python now
+  ansible.builtin.include_tasks: flush_handlers.yml
+  when:
+    - software_live_impl == 'python'
+    - _software_live_python_selected is changed
+
+# --- 2./3. Install and validate the release ------------------------------------
+
+- name: impl | Install and validate the Rust release
+  ansible.builtin.include_tasks: rust.yml
+  when: _software_live_rust_wanted | bool
+
+# --- 8.1 Shadow units ----------------------------------------------------------
+
+- name: impl | Configure the shadow units
+  ansible.builtin.include_tasks: shadow.yml
+
+# --- 4. Drop-ins ---------------------------------------------------------------
+
+- name: impl | Select the Rust implementation
+  when: software_live_impl == 'rust'
+  block:
+    - name: impl | Ensure the drop-in directories exist
+      ansible.builtin.file:
+        path: '{{ item | dirname }}'
+        state: directory
+        owner: '{{ software_live_rust_owner }}'
+        group: '{{ software_live_rust_group }}'
+        mode: '0755'
+      loop: '{{ _software_live_dropins }}'
+
+    # The version is part of ExecStart=, so every version change and every
+    # impl flip changes the file and restarts the units; an unchanged deploy
+    # restarts nothing.
+    - name: impl | Point the production units at the Rust release
+      ansible.builtin.template:
+        src: '{{ item.src }}'
+        dest: '{{ item.dest }}'
+        owner: '{{ software_live_rust_owner }}'
+        group: '{{ software_live_rust_group }}'
+        mode: '0644'
+      loop:
+        - {src: impl-endpoint.conf.j2, dest: '{{ _software_live_dropins[0] }}'}
+        - {src: impl-collector.conf.j2, dest: '{{ _software_live_dropins[1] }}'}
+      loop_control:
+        label: '{{ item.dest }}'
+      notify:
+        - Reload software live systemd
+        - Restart software live endpoint
+        - Restart software live timer

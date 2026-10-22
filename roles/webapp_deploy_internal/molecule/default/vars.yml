@@ -1,0 +1,6 @@
+---
+molecule_basic_auth_user: molecule-admin
+# Test-only value for the throwaway container.
+molecule_basic_auth_password: "molecule test password"  # pragma: allowlist secret
+molecule_shared_route: /etc/traefik/dynamic/molecule-shared.yml
+molecule_own_route: /etc/traefik/dynamic/molecule-own.yml

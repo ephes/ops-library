@@ -6,7 +6,11 @@ snappymail_backup_prefix: "snappymail"
 snappymail_backup_archive_format: "tar.gz"  # tar.gz | tar.zst
 snappymail_backup_owner: "root"
 snappymail_backup_group: "root"
-snappymail_backup_mode: "0640"
+# Mode of the archive and its manifest (the archive holds the SnappyMail data
+# directory with its configuration and secrets).
+snappymail_backup_mode: "0600"
+# Mode of the backup root directory.
+snappymail_backup_dir_mode: "0700"
 snappymail_backup_preserve_permissions: true
 snappymail_backup_stop_services: false
 snappymail_backup_retain: 0          # keep 0 = no pruning; otherwise keep N newest archives

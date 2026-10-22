@@ -1,0 +1,128 @@
+---
+- name: Validate explicit incident scope
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - security_trust_ca_version | length > 0
+      - security_trust_uv_bin is match('^/[a-zA-Z0-9_./-]+/uv$')
+      - security_trust_uv_bin | basename == 'uv'
+      - security_trust_backup_dir is match('^/var/backups/[a-zA-Z0-9_-]+$')
+      - security_trust_wheels | length == 2
+
+- name: Validate every environment before OS mutation or restart evidence
+  ansible.builtin.assert:
+    that:
+      - item.path is match('^/(home|opt)/[a-zA-Z0-9_./-]+$')
+      - "'/../' not in item.path"
+      - item.cache_recovery_paths | default([]) is sequence
+      - item.cache_recovery_paths | default([]) is not string
+      - item.cache_recovery_paths | default([]) is not mapping
+      - item.cache_recovery_paths | default([]) | select('string') | list | length == item.cache_recovery_paths | default([]) | length
+      - item.cache_recovery_paths | default([]) | length == 0 or item.path is match('^/home/[a-zA-Z0-9_-]+/(site/)?\\.?venv$')
+      - item.cache_recovery_paths | default([]) | reject('match', '^' ~ (item.path | regex_escape) ~ '/lib/python3\\.[0-9]+/site-packages/certifi/__pycache__(/[a-zA-Z0-9_.-]+\\.pyc)?$') | list | length == 0
+      - item.services is defined
+      - item.health_urls is defined
+      - item.services | length == 0 or item.health_urls | length > 0
+  loop: "{{ security_trust_environments }}"
+
+- name: Create root-only incident evidence directory
+  ansible.builtin.file:
+    path: "{{ security_trust_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Read installed distribution CA revision before any update
+  ansible.builtin.command:
+    argv: [dpkg-query, --show, '--showformat=${Version}', ca-certificates]
+  register: security_trust_prior_ca
+  changed_when: false
+  check_mode: false
+
+- name: Check completed restart evidence for every allowlisted environment
+  ansible.builtin.stat:
+    path: "{{ security_trust_backup_dir }}/{{ item.path | hash('sha256') }}.{{ [security_trust_ca_version, security_trust_certifi_version, security_trust_pip_version] | join(':') | hash('sha256') }}.restart-complete"
+  loop: "{{ security_trust_environments }}"
+  register: security_trust_completed_restarts
+
+- name: Preserve all restart requirements before OS trust can change
+  ansible.builtin.copy:
+    content: "Restart services after trust remediation for {{ item.item.path }}\n"
+    dest: "{{ security_trust_backup_dir }}/{{ item.item.path | hash('sha256') }}.restart-required"
+    mode: '0600'
+    force: false
+  loop: "{{ security_trust_completed_restarts.results }}"
+  when:
+    - not ansible_check_mode
+    - item.item.services | length > 0
+    - not item.stat.exists or security_trust_prior_ca.stdout != security_trust_ca_version
+
+- name: Refresh indexes and install only the pinned CA package
+  ansible.builtin.apt:
+    name: "ca-certificates={{ security_trust_ca_version }}"
+    update_cache: true
+    cache_valid_time: 0
+    state: present
+    only_upgrade: true
+  register: security_trust_apt
+
+- name: Verify distribution default TLS trust
+  ansible.builtin.script:
+    cmd: inspect_os_trust.py
+    executable: /usr/bin/python3
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Install pinned maintained packaging client
+  ansible.builtin.include_role:
+    name: local.ops_library.uv_install
+  vars:
+    uv_install_dir: "{{ security_trust_uv_bin | dirname }}"
+  when: security_trust_environments | length > 0 or security_trust_lockfiles | length > 0
+
+- name: Create public read-only wheel staging directory
+  ansible.builtin.file:
+    path: "{{ security_trust_wheel_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Stage verified offline update wheels
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ security_trust_wheel_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ security_trust_wheels }}"
+  when: not ansible_check_mode
+
+- name: Verify staged wheel SHA256
+  ansible.builtin.stat:
+    path: "{{ security_trust_wheel_dir }}/{{ item.name }}"
+    checksum_algorithm: sha256
+  loop: "{{ security_trust_wheels }}"
+  register: security_trust_wheel_stats
+  when: not ansible_check_mode
+
+- name: Enforce pinned wheel hashes
+  ansible.builtin.assert:
+    that: item.stat.checksum == item.item.sha256
+  loop: "{{ security_trust_wheel_stats.results }}"
+  when: not ansible_check_mode
+
+- name: Repair explicitly guarded deployed trust lockfiles
+  ansible.builtin.include_tasks: lockfile.yml
+  loop: "{{ security_trust_lockfiles }}"
+  loop_control:
+    loop_var: trust_lock
+  when: not ansible_check_mode
+
+- name: Remediate only explicit environment allowlist
+  ansible.builtin.include_tasks: environment.yml
+  loop: "{{ security_trust_environments }}"
+  loop_control:
+    loop_var: trust_env
+  when: not ansible_check_mode

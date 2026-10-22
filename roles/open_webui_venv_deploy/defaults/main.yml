@@ -15,10 +15,22 @@ open_webui_venv_path: "{{ open_webui_site_dir }}/.venv"
 open_webui_package_spec: open-webui
 open_webui_python_version: "3.11"
 
+# Keep certifi/pip at python_security_floor's floors: refuse an existing
+# environment below them before changing anything (certifi excepted: the
+# constrained install raises it), pass a constraint file to the uv pip
+# install (constraints never add packages; a dependency capping certifi below
+# the floor fails the resolution before anything is installed) and verify the
+# environment afterwards.
+open_webui_python_security_floor_enabled: true
+open_webui_python_security_constraints_path: "{{ open_webui_site_dir }}/.python-security-constraints.txt"
+open_webui_python_security_constraint_args: >-
+  {{ ('--constraint ' ~ (open_webui_python_security_constraints_path | quote))
+     if (open_webui_python_security_floor_enabled | bool) else '' }}
+
 open_webui_manage_uv: true
 open_webui_uv_install_dir: /usr/local/bin
 open_webui_uv_path: "{{ open_webui_uv_install_dir }}/uv"
-open_webui_uv_version: "0.13.0"  # Keep aligned with uv_install version/checksums.
+open_webui_uv_version: "0.13.4"  # Keep aligned with uv_install version/checksums.
 open_webui_uv_update_existing: true
 open_webui_uv_force_reinstall: false
 

@@ -1,0 +1,139 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  vars:
+    molecule_rotated_password: "molecule rotated password"  # pragma: allowlist secret
+    molecule_hash_regex: '"molecule-admin:(\$2y\$[0-9]{2}\$[./A-Za-z0-9]{53})"'
+
+  tasks:
+    - name: Verify | read both converged routes
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - "{{ molecule_shared_route }}"
+        - "{{ molecule_own_route }}"
+      register: molecule_converged
+
+    - name: Verify | record the converged hashes
+      ansible.builtin.set_fact:
+        molecule_converged_hashes: >-
+          {{ molecule_converged.results
+             | map(attribute='content') | map('b64decode')
+             | map('regex_findall', molecule_hash_regex) | map('first') | list }}
+
+    - name: Verify | the converged hashes verify against the password
+      ansible.builtin.shell: |
+        set -eu
+        f=$(mktemp)
+        trap 'rm -f -- "$f"' EXIT
+        printf 'molecule-admin:%s\n' "$HASH" > "$f"
+        htpasswd -vi "$f" molecule-admin
+      args:
+        executable: /bin/bash
+        stdin: "{{ molecule_basic_auth_password }}"
+      environment:
+        HASH: "{{ item }}"
+      loop: "{{ molecule_converged_hashes }}"
+      changed_when: false
+
+    - name: Verify | rotate the password through traefik_config
+      ansible.builtin.include_role:
+        name: local.ops_library.webapp_deploy_internal
+        tasks_from: traefik_config
+      vars:
+        webapp_deploy_internal_caller_role_path: "{{ playbook_dir }}"
+        webapp_deploy_internal_traefik_template_src: templates/route.yml.j2
+        webapp_deploy_internal_traefik_dest: "{{ molecule_shared_route }}"
+        webapp_deploy_internal_traefik_basic_auth_enabled: true
+        webapp_deploy_internal_traefik_basic_auth_user: "{{ molecule_basic_auth_user }}"
+        webapp_deploy_internal_traefik_basic_auth_password: "{{ molecule_rotated_password }}"
+        webapp_deploy_internal_traefik_password_hash_var: molecule_basic_auth_password_hash
+
+    - name: Verify | read the rotated route
+      ansible.builtin.slurp:
+        src: "{{ molecule_shared_route }}"
+      register: molecule_rotated
+
+    - name: Verify | record the rotated hash
+      ansible.builtin.set_fact:
+        molecule_rotated_hash: >-
+          {{ molecule_rotated.content | b64decode | regex_findall(molecule_hash_regex) | first }}
+
+    - name: Verify | check old and new passwords against the rotated hash
+      ansible.builtin.shell: |
+        set -eu
+        f=$(mktemp)
+        trap 'rm -f -- "$f"' EXIT
+        printf 'molecule-admin:%s\n' "$HASH" > "$f"
+        htpasswd -vi "$f" molecule-admin
+      args:
+        executable: /bin/bash
+        stdin: "{{ item }}"
+      environment:
+        HASH: "{{ molecule_rotated_hash }}"
+      loop:
+        - "{{ molecule_rotated_password }}"
+        - "{{ molecule_basic_auth_password }}"
+      register: molecule_rotated_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | a changed password replaced the hash
+      ansible.builtin.assert:
+        that:
+          - molecule_rotated_hash != molecule_converged_hashes[0]
+          - molecule_rotated_checks.results[0].rc == 0
+          - molecule_rotated_checks.results[1].rc != 0
+
+    - name: Verify | resolve the rotated password once more
+      ansible.builtin.include_role:
+        name: local.ops_library.webapp_deploy_internal
+        tasks_from: traefik_basic_auth_hash
+      vars:
+        webapp_deploy_internal_basic_auth_user: "{{ molecule_basic_auth_user }}"
+        webapp_deploy_internal_basic_auth_password: "{{ molecule_rotated_password }}"
+        webapp_deploy_internal_basic_auth_config_path: "{{ molecule_shared_route }}"
+        webapp_deploy_internal_basic_auth_hash_var: molecule_resolved_again
+
+    - name: Verify | the rotated hash is reused from then on
+      ansible.builtin.assert:
+        that:
+          - molecule_resolved_again == molecule_rotated_hash
+
+    - name: Verify | resolve against a route with a malformed hash
+      block:
+        - name: Verify | write a route whose hash is not bcrypt
+          ansible.builtin.copy:
+            dest: /etc/traefik/dynamic/molecule-malformed.yml
+            content: |
+              http:
+                middlewares:
+                  molecule-auth:
+                    basicAuth:
+                      users:
+                        - "molecule-admin:$2y$00$notavalidbcrypthash"
+            mode: "0644"
+
+        - name: Verify | resolve the hash for the malformed route
+          ansible.builtin.include_role:
+            name: local.ops_library.webapp_deploy_internal
+            tasks_from: traefik_basic_auth_hash
+          vars:
+            webapp_deploy_internal_basic_auth_user: "{{ molecule_basic_auth_user }}"
+            webapp_deploy_internal_basic_auth_password: "{{ molecule_basic_auth_password }}"
+            webapp_deploy_internal_basic_auth_config_path: /etc/traefik/dynamic/molecule-malformed.yml
+            webapp_deploy_internal_basic_auth_hash_var: molecule_malformed_resolved
+
+        - name: Verify | a malformed hash is replaced by a fresh bcrypt hash
+          ansible.builtin.assert:
+            that:
+              - molecule_malformed_resolved is match('^\$2y\$[0-9]{2}\$[./A-Za-z0-9]{53}$')
+      always:
+        - name: Verify | remove the malformed route
+          ansible.builtin.file:
+            path: /etc/traefik/dynamic/molecule-malformed.yml
+            state: absent

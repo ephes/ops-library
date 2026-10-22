@@ -6,6 +6,48 @@
 
 - name: Deploy DNS metrics endpoint
   when: dns_metrics_endpoint_enabled | bool
+  # Inputs of the HTTP server's implementation switch (select and verify
+  # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The argv, sandbox and
+  # IP allow list mirror templates/dns-metrics-endpoint.service.j2.
+  vars:
+    metrics_httpd_switch_impl: "{{ dns_metrics_endpoint_impl }}"
+    metrics_httpd_switch_service_name: "{{ dns_metrics_endpoint_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ dns_metrics_endpoint_user }}"
+    metrics_httpd_switch_validate_group: "{{ dns_metrics_endpoint_group }}"
+    metrics_httpd_switch_argv:
+      - json-file
+      - --bind
+      - "{{ dns_metrics_endpoint_bind }}"
+      - --port
+      - "{{ dns_metrics_endpoint_port | string }}"
+      - --path
+      - "{{ dns_metrics_endpoint_path }}"
+      - --json-path
+      - "{{ dns_metrics_endpoint_json_path }}"
+      - --htpasswd-file
+      - "{{ dns_metrics_endpoint_htpasswd_path }}"
+      - --realm
+      - dns-metrics
+      - --server-name
+      - dns-metrics-httpd/0.1
+      - --meta
+      - merge
+      - --request-timeout
+      - "{{ dns_metrics_endpoint_request_timeout | string }}"
+    metrics_httpd_switch_unit_sandbox:
+      - NoNewPrivileges=yes
+      - ProtectSystem=strict
+      - ProtectHome=yes
+      - PrivateTmp=yes
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart dns-metrics-endpoint
+    metrics_httpd_switch_python_script: "{{ dns_metrics_endpoint_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ dns_metrics_endpoint_bind }}"
+    metrics_httpd_switch_probe_port: "{{ dns_metrics_endpoint_port }}"
+    metrics_httpd_switch_probe_path: "{{ dns_metrics_endpoint_path }}"
+    metrics_httpd_switch_probe_realm: dns-metrics
+    metrics_httpd_switch_ip_address_allow: [localhost, 100.64.0.0/10, "fd7a:115c:a1e0::/48"]
   block:
     - name: Validate configuration
       ansible.builtin.import_tasks: validate.yml
@@ -144,6 +186,13 @@
         - reload systemd
         - restart dns-metrics-endpoint
 
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below.
+    - name: Select the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+
     - name: Flush handlers to ensure units are registered
       ansible.builtin.meta: flush_handlers
 
@@ -173,3 +222,13 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Apply a pending implementation switch before verifying it
+      ansible.builtin.meta: flush_handlers
+
+    # The unit runs the selected implementation and answers 401 with its
+    # realm; then the metrics-httpd pin moves and old releases are pruned.
+    - name: Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify

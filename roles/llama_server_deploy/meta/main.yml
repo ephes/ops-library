@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Run a pinned llama.cpp llama-server (Delve's ad detector) on macOS under launchd
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: macOS
+      versions:
+        - all
+  galaxy_tags:
+    - macos
+    - launchd
+    - llm
+    - llamacpp
+dependencies: []

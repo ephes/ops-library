@@ -1,0 +1,116 @@
+---
+# A real sshd on 127.0.0.1:2222 whose root login uses fish (as on production
+# and staging) and a client key that verify.yml pins to the guard.
+- name: Prepare a real OpenSSH harness
+  hosts: all
+  become: true
+  tasks:
+    - name: Install OpenSSH, rsync, sqlite3 and fish
+      ansible.builtin.apt:
+        name:
+          - openssh-client
+          - openssh-server
+          - rsync
+          - sqlite3
+          - fish
+        state: present
+        update_cache: true
+
+    - name: Generate container SSH host keys
+      ansible.builtin.command:
+        argv: [/usr/bin/ssh-keygen, -A]
+      changed_when: false
+
+    - name: Configure isolated sshd test port
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-molecule-port.conf
+        content: |
+          Port 2222
+          ListenAddress 127.0.0.1
+          UsePAM no
+          PermitRootLogin prohibit-password
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Disable socket activation so sshd honors the test port
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        state: stopped
+        enabled: false
+
+    - name: Start sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+
+    - name: Use fish as root's login shell
+      ansible.builtin.user:
+        name: root
+        shell: /usr/bin/fish
+
+    - name: Ensure root's .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Create the client key
+      ansible.builtin.command:
+        argv: [/usr/bin/ssh-keygen, -q, -t, ed25519, -N, "", -f, /root/molecule_deploy_key]
+        creates: /root/molecule_deploy_key
+
+    - name: Create an allowed root and an outside directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: "0755"
+      loop:
+        - /srv/marina/site
+        - /srv/marina/site/media
+        - /srv/outside
+
+    - name: Create a service data directory for the SQLite snapshot steps
+      ansible.builtin.file:
+        path: /srv/gts
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: "0700"
+
+    - name: Create the service's SQLite database
+      ansible.builtin.command:
+        argv: [/usr/bin/sqlite3, /srv/gts/sqlite.db, "CREATE TABLE accounts (id TEXT); INSERT INTO accounts VALUES ('a1');"]
+        creates: /srv/gts/sqlite.db
+
+    - name: Hand the database to the service user
+      ansible.builtin.file:
+        path: /srv/gts/sqlite.db
+        owner: nobody
+        group: nogroup
+        mode: "0600"
+
+# shadow and rust install the guard built from this checkout. The binary is
+# built in a Debian 12 container for the Docker host's architecture
+# (rust/echoport-command-guard/parity/e2e/build-local-archive.sh); set
+# ECHOPORT_GUARD_LOCAL_ARCHIVE to use an archive built elsewhere instead.
+- name: Build the local Rust guard archive
+  hosts: localhost
+  gather_facts: false
+  vars:
+    guard_impl: "{{ lookup('env', 'MOLECULE_GUARD_IMPL') or 'python' }}"
+    guard_archive: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') ~ '/echoport-command-guard-local.tar.gz' }}"
+  tasks:
+    - name: Build echoport-command-guard into a release-layout archive
+      ansible.builtin.command:
+        argv:
+          - "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/../../rust/echoport-command-guard/parity/e2e/build-local-archive.sh"
+          - "{{ guard_archive }}"
+      changed_when: true
+      when:
+        - guard_impl != 'python'
+        - not lookup('env', 'ECHOPORT_GUARD_LOCAL_ARCHIVE')

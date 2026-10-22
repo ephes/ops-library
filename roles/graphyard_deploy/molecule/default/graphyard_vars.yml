@@ -1,0 +1,16 @@
+---
+# Shared by every play of converge.yml. Graphyard comes from the public
+# repository, pinned to a commit: a push to main between two plays would
+# restart both units and break the "no restart" assertions. The dependency
+# runtime (InfluxDB/Grafana in Docker) is off; the agent's InfluxDB writes and
+# queries fail against the unused URL, which the Python agent reports per run
+# without exiting. /v1/health answers 200 with a non-ok status.
+graphyard_deploy_method: git
+graphyard_git_repo: "https://github.com/ephes/graphyard.git"
+# Merge of the Rust agent implementation plan (agent-rs/PLAN.md).
+graphyard_git_version: 9d0fbb7b75a361597634f79cc257284343ea989c  # pragma: allowlist secret
+graphyard_runtime_enabled: false
+graphyard_django_secret_key: "molecule-django-secret-key-not-a-real-secret"  # pragma: allowlist secret
+graphyard_influx_token: "molecule-influx-token"  # pragma: allowlist secret
+graphyard_influx_url: "http://127.0.0.1:9"
+graphyard_influx_timeout_ms: 1000

@@ -1,7 +1,7 @@
 ---
 # Expand mastodon_nginx_federation_cache_prime(+_extra) into host/path/accept
 # items (see the defaults for the host rules).
-- name: Build the federation cache fill list
+- name: federation_cache_items | Build the federation cache fill list
   ansible.builtin.set_fact:
     mastodon_federation_cache_prime_items: >-
       {%- set items = [] -%}

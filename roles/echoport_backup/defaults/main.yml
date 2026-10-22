@@ -10,7 +10,11 @@ echoport_backup_fastdeploy_root: "/home/fastdeploy/site"
 echoport_backup_fastdeploy_user: "fastdeploy"
 echoport_backup_deploy_user: "deploy"  # User that FastDeploy runs scripts as
 echoport_backup_services_root: "services"
+# FastDeploy service directory: holds only config.json (root-owned).
 echoport_backup_service_dir: "{{ echoport_backup_fastdeploy_root }}/{{ echoport_backup_services_root }}/{{ echoport_backup_service_name }}"
+# The runner script: <libexec root>/<service name>/backup.py, root-owned
+# (fastdeploy_runner role).
+echoport_backup_libexec_root: "/usr/local/libexec/fastdeploy"
 
 # Runner user (who executes the backup)
 echoport_backup_user: "root"
@@ -32,6 +36,10 @@ echoport_backup_minio_retired_aliases: []
 # (Echoport's key prefix is the target name), e.g. {nyxmon: backup-nyxmon}.
 # A key without an entry uses echoport_backup_minio_alias.
 echoport_backup_minio_prefix_aliases: {}
+# Refuse keys without an entry in echoport_backup_minio_prefix_aliases instead
+# of falling back to echoport_backup_minio_alias. Either way the runner checks
+# that the alias exists in mc's configuration before every mc cp/stat.
+echoport_backup_minio_require_prefix_alias: false
 
 # mc (MinIO client) installation
 echoport_backup_mc_install_path: "/usr/local/bin/mc"
@@ -51,7 +59,10 @@ echoport_backup_allowed_roots:
   - "/opt/"
   - "/var/lib/"
 
-# FastDeploy API (for sync)
+# Run FastDeploy's `commands.py syncservices` as the fastdeploy user after
+# installing the runner (fastdeploy_runner_sync).
+echoport_backup_sync_services: true
+# No longer used: the sync runs locally as the fastdeploy user instead of
+# through POST /services/sync. Kept so existing playbooks still parse.
 echoport_backup_api_base: "http://localhost:8000"
 echoport_backup_api_token: ""
-echoport_backup_sync_services: true

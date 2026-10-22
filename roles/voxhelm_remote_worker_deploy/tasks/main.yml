@@ -76,6 +76,17 @@
     - voxhelm_remote_worker_enabled | bool
     - voxhelm_remote_worker_diarization_backend | string | trim | lower == "pyannote"
 
+- name: runtime | Resolve the Homebrew packages to install
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_brew_packages_resolved: >-
+      {{
+        (voxhelm_remote_worker_brew_packages
+         + (voxhelm_remote_worker_ad_analysis_brew_packages
+            if voxhelm_remote_worker_ad_analysis_enabled | bool else []))
+        | unique | list
+      }}
+  when: voxhelm_remote_worker_enabled | bool
+
 - name: runtime | Ensure uv is available
   ansible.builtin.command:
     argv:
@@ -132,7 +143,7 @@
       while Ansible is running as root.
   when:
     - voxhelm_remote_worker_enabled | bool
-    - voxhelm_remote_worker_brew_packages | length > 0
+    - voxhelm_remote_worker_brew_packages_resolved | length > 0
 
 - name: runtime | Update Homebrew formulae
   ansible.builtin.command: "{{ voxhelm_remote_worker_brew_bin_resolved }} update"
@@ -143,7 +154,7 @@
   become_flags: "-i"
   when:
     - voxhelm_remote_worker_enabled | bool
-    - voxhelm_remote_worker_brew_packages | length > 0
+    - voxhelm_remote_worker_brew_packages_resolved | length > 0
     - voxhelm_remote_worker_brew_update | bool
 
 - name: runtime | Check required Homebrew packages
@@ -151,13 +162,13 @@
   register: voxhelm_remote_worker_brew_package_checks
   changed_when: false
   failed_when: false
-  loop: "{{ voxhelm_remote_worker_brew_packages }}"
+  loop: "{{ voxhelm_remote_worker_brew_packages_resolved }}"
   become: "{{ voxhelm_remote_worker_brew_user | length > 0 }}"
   become_user: "{{ voxhelm_remote_worker_brew_user | default(omit) }}"
   become_flags: "-i"
   when:
     - voxhelm_remote_worker_enabled | bool
-    - voxhelm_remote_worker_brew_packages | length > 0
+    - voxhelm_remote_worker_brew_packages_resolved | length > 0
 
 - name: runtime | Install missing Homebrew packages
   ansible.builtin.command: "{{ voxhelm_remote_worker_brew_bin_resolved }} install {{ item.item }}"
@@ -169,7 +180,7 @@
   loop: "{{ voxhelm_remote_worker_brew_package_checks.results | default([]) }}"
   when:
     - voxhelm_remote_worker_enabled | bool
-    - voxhelm_remote_worker_brew_packages | length > 0
+    - voxhelm_remote_worker_brew_packages_resolved | length > 0
     - item.rc != 0
 
 - name: runtime | Ensure remote worker service user exists
@@ -361,6 +372,12 @@
     - voxhelm_remote_worker_enabled | bool
     - voxhelm_remote_worker_parakeet_enabled | bool
 
+- name: runtime | Install the ad-analysis-v1 profile runtime
+  ansible.builtin.include_tasks: ad_analysis.yml
+  when:
+    - voxhelm_remote_worker_enabled | bool
+    - voxhelm_remote_worker_ad_analysis_enabled | bool
+
 - name: config | Render Voxhelm remote worker environment file
   ansible.builtin.template:
     src: worker.env.j2
@@ -443,5 +460,6 @@
       or (voxhelm_remote_worker_launcher_template.changed | default(false))
       or (voxhelm_remote_worker_install.changed | default(false))
       or (voxhelm_remote_worker_parakeet_install.changed | default(false))
+      or (voxhelm_remote_worker_window_model_changed | default(false) | bool)
       or voxhelm_remote_worker_launchd_status.rc != 0
       or 'state = running' not in (voxhelm_remote_worker_launchd_status.stdout | default(''))

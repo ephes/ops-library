@@ -240,6 +240,35 @@ def safe_extract(tarball: Path, dest: Path) -> None:
         tar.extractall(dest, members=members, filter="data")
 
 
+{% include '_sqlite_backup.py.j2' %}
+
+
+def take_remote_snapshot(as_owner: list, remote_tmp: str) -> str:
+    """Online `.backup` on the host, waiting for writers and retrying; returns the snapshot path.
+
+    Every attempt writes a new file in the private temp dir (the guard allows no
+    rm there), so a partial copy of a failed attempt is never reused.
+    """
+    taken = {}
+
+    def attempt(number: int) -> Optional[str]:
+        snap = f"{remote_tmp}/{ARCHIVE_DB}" if number == 1 else f"{remote_tmp}/retry{number}-{ARCHIVE_DB}"
+        result = remote([*as_owner, *sqlite_backup_argv(DB_PATH, snap)], check=False)
+        if result.returncode != 0:
+            return f"sqlite3 backup failed: {sqlite_process_error(result)}"
+        error = sqlite_integrity_result_error(
+            remote([*as_owner, "sqlite3", snap, "PRAGMA integrity_check;"], check=False))
+        if error:
+            return f"snapshot {error}"
+        taken["path"] = snap
+        return None
+
+    error = sqlite_retry(attempt)
+    if error:
+        raise StepFailure("snapshot", f"Snapshot of {DB_PATH} failed on the host: {error}")
+    return taken["path"]
+
+
 # --- backup ------------------------------------------------------------------
 
 def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
@@ -256,15 +285,11 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
         remote_tmp = remote(["mktemp", "-d", f"{REMOTE_TMP_PARENT}/gotosocial-echoport.XXXXXX"]).stdout.strip()
         if not remote_tmp.startswith(f"{REMOTE_TMP_PARENT}/gotosocial-echoport."):
             raise StepFailure("snapshot", f"unexpected remote temp dir: {remote_tmp!r}")
-        snap = f"{remote_tmp}/{ARCHIVE_DB}"
         # As the service user: root opening the database could leave root-owned
         # -wal/-shm files behind that GoToSocial then cannot write.
         as_owner = ["runuser", "-u", SERVICE_USER, "--"]
         remote(["chown", SERVICE_OWNER, remote_tmp])
-        remote([*as_owner, "sqlite3", DB_PATH, f".backup '{snap}'"])
-        checked = remote([*as_owner, "sqlite3", snap, "PRAGMA integrity_check;"]).stdout.strip()
-        if checked != "ok":
-            raise StepFailure("snapshot", f"integrity_check on the host: {checked[:200]}")
+        snap = take_remote_snapshot(as_owner, remote_tmp)
         emit_step("snapshot", "success", "Snapshot taken and checked on the host")
 
         emit_step("copy", "running", "Copying snapshot, storage, config and layout")

@@ -217,8 +217,18 @@ privilege boundaries and runner registration, not about generating arbitrary wra
 2. Optionally installs a SOPS age key for that runner user.
 3. Syncs an `ops-control` checkout to `/home/deploy/ops-control` when using the default `rsync` method.
 4. Writes the runner script to `/home/deploy/runners/<service>/deploy.py`.
-5. Copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` and renders `config.json`.
-6. Installs a sudoers rule so the `fastdeploy` user can invoke that one runner as `deploy`, while `deploy` can escalate to root for the actual Ansible run.
+5. Copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` and renders `config.json` (both root-owned).
+6. Installs a sudoers rule so the `fastdeploy` user can invoke that one runner as `deploy` (no `deploy -> root` rule).
+
+### Runners FastDeploy starts through sudo
+
+Scripts that a sudoers rule lets FastDeploy run (as `deploy`, or as root
+through a second rule) live in a root-owned directory outside FastDeploy's
+site: `/usr/local/libexec/fastdeploy/<service>/` (role `fastdeploy_runner`,
+used by `echoport_backup` and the ops-control backup registrations). The
+service's `config.json` names that absolute path. Nothing below
+`/home/fastdeploy/site` may be named in sudoers: the `fastdeploy` user owns
+the site directory and can rename anything inside it.
 7. Optionally calls `POST /services/sync` on the FastDeploy API after registration.
 
 ### Example: Service Registration

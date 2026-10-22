@@ -1,0 +1,16 @@
+---
+rustup_security_become: true
+rustup_security_owner: ""
+rustup_security_home: ""
+rustup_security_cargo_home: ""
+rustup_security_rustup_home: ""
+rustup_security_triple: ""
+rustup_security_old_sha256: ""
+rustup_security_version: "1.29.2"
+rustup_security_ca_file: ""
+rustup_security_python: /usr/bin/python3
+rustup_security_checksums:
+  x86_64-unknown-linux-gnu: "sha256:5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4"
+  aarch64-unknown-linux-gnu: "sha256:a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697"
+  aarch64-apple-darwin: "sha256:f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9"
+  x86_64-apple-darwin: "sha256:b9610730ddeef52765723847866fd1e3540b2bf7d5ab0c324aa143a5edf25ba0"

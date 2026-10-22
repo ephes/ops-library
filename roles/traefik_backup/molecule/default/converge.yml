@@ -1,0 +1,60 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Create fake Traefik dynamic and ACME directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/traefik/dynamic
+        - /etc/traefik/acme
+
+    - name: Create a route config
+      ansible.builtin.copy:
+        dest: /etc/traefik/dynamic/whoami.yml
+        content: "http: {}\n"
+        mode: "0644"
+
+    - name: Create a fake ACME state file
+      ansible.builtin.copy:
+        dest: /etc/traefik/acme/acme.json
+        content: '{"letsencrypt": {}}'
+        mode: "0600"
+
+    # The state an earlier role version left behind: a world-traversable
+    # backup root with a world-readable archive in it.
+    - name: Create a backup root as earlier runs left it
+      ansible.builtin.file:
+        path: /tmp/traefik-backups
+        state: directory
+        mode: "0755"
+
+    - name: Create a world-readable archive from an earlier run
+      ansible.builtin.copy:
+        dest: /tmp/traefik-backups/manual-20260101T000000.tar.gz
+        content: "old archive"
+        mode: "0644"
+
+    - name: Create a file that is not an archive
+      ansible.builtin.copy:
+        dest: /tmp/traefik-backups/README.txt
+        content: "not an archive"
+        mode: "0644"
+
+  vars:
+    traefik_backup_root: /tmp/traefik-backups
+    traefik_backup_include_acme: true
+    traefik_backup_fetch_local: false
+
+  roles:
+    - role: traefik_backup

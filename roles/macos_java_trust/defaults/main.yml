@@ -1,0 +1,9 @@
+---
+ops_library_documentation_category: infrastructure
+macos_java_trust_python: /opt/homebrew/bin/python3
+macos_java_trust_directory: "{{ macos_java_trust_context.home }}/Library/Application Support/ops-library/java-trust"
+# Each target requires jdk and output; options/default_options are optional.
+macos_java_trust_targets: []
+
+# Optional external VM option file; only PyCharm consumes this GUI variable.
+macos_java_trust_pycharm_vm_options: ""

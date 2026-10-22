@@ -4,6 +4,9 @@ Removes the Nyxmon monitoring service from a host.
 
 ## Features
 - Stops and disables Nyxmon-related systemd services (app and monitor).
+- Removes the `sqlite-privacy.conf` drop-ins `nyxmon_deploy` installs for both
+  units, and the `<unit>.service.d` directories when nothing else is left in
+  them (drop-ins of your own stay).
 - Removes application directories, virtual environment, and cached assets.
 - Optionally preserves the SQLite database for later reuse.
 - Cleans up Traefik configuration and Telegram secrets stored on disk.

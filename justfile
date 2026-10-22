@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-apt-repository-cleanup test-root-downloads test-lowfindings test-mail-monitoring-probe test-docker-cache-cleanup test-time-sync-check test-paperless-search-index test-daybook-operations test-macos-ssh-tunnel test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-gateway-config test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-doctor-activation test-openclaw-compose-lifecycle test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-mailgun-relay-deploy test-rsync-git-excludes test-deploy-restart-notifications test-certbot-dns-renewal-hooks test-certbot-dns-rfc2136 test-ddns-update test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-bind-authoritative-dynamic test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-work-app-deploy test-opaq-app-deploy test-homelab-lifecycle-safety test-heis-production-backup test-fastdeploy-backup-key test-fastdeploy-retired-restore test-echoport-remote-command-guard test-python-podcast-production-db-backup test-postfixadmin-echoport-backup test-mail-db-echoport-backup test-django-chat-staging-db-backup test-takahe-deploy test-gotosocial-deploy test-gotosocial-echoport-backup test-mastodon-slim test-mastodon-nginx test-mastodon-traefik test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf test-voxhelm-parakeet test-secret-file-modes test-unifi-traefik-allowlist test-paperless-backup-exposure test-fetched-backup-archive-modes test-secret-no-log test-task-credentials test-shell-pipefail test-backup-service-restart test-graphyard-auth-bootstrap-changed-when test-logyard-ingress test-delve-recorder-flags test-molecule-run-isolation test-restore-safety test-fastdeploy-service-token-settings test-fastdeploy-runner-step-states test-voxhelm-prune-and-service-knobs test-traefik-frame-options test-traefik-logrotate test-traefik-backup-dynamic test-minio-backup-accounts lint docs-build docs-lint
+test: venv test-apt-repository-cleanup test-rustup-security test-ca-trust-consumers test-voxhelm-trust-refresh test-container-ca-activate test-chrome-ca-distrust test-container-ca-remediate test-macos-python-ca-remediate test-linuxserver-ca-remediate test-macos-ca-remediate test-security-trust-remediate test-aws-ca-bundle test-python-security-floor test-homeassistant-uv-system-certs test-homeassistant-llama-cpp test-root-downloads test-lowfindings test-mail-monitoring-probe test-docker-cache-cleanup test-time-sync-check test-paperless-search-index test-daybook-operations test-macos-ssh-tunnel test-macos-java-trust test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-live-impl test-software-live-rust-fixtures test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-gateway-config test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-doctor-activation test-openclaw-compose-lifecycle test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-mailgun-relay-deploy test-graphyard-deploy-agent test-rsync-git-excludes test-deploy-restart-notifications test-certbot-dns-renewal-hooks test-certbot-dns-rfc2136 test-ddns-update test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-bind-authoritative-dynamic test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-work-app-deploy test-opaq-app-deploy test-homelab-lifecycle-safety test-heis-production-backup test-fastdeploy-backup-key test-fastdeploy-retired-restore test-echoport-remote-command-guard test-metrics-httpd-fixtures test-python-podcast-production-db-backup test-postfixadmin-echoport-backup test-mail-db-echoport-backup test-django-chat-staging-db-backup test-takahe-deploy test-gotosocial-deploy test-gotosocial-echoport-backup test-mastodon-slim test-mastodon-nginx test-mastodon-traefik test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf test-voxhelm-parakeet test-secret-file-modes test-unifi-traefik-allowlist test-paperless-backup-exposure test-fetched-backup-archive-modes test-backup-archive-modes test-secret-no-log test-task-credentials test-become-environment-secrets test-shell-pipefail test-backup-service-restart test-graphyard-auth-bootstrap-changed-when test-metube-uv-sync-changed-when test-ansible-core-floor test-logyard-ingress test-delve-recorder-flags test-server-ad-analysis test-molecule-run-isolation test-restore-safety test-fastdeploy-service-token-settings test-fastdeploy-runner-step-states test-voxhelm-prune-and-service-knobs test-traefik-frame-options test-traefik-hsts test-traefik-logrotate test-traefik-backup-dynamic test-minio-backup-accounts test-echoport-sqlite-backup test-encrypted-volume-fstab test-minio-metadata-backup test-ssh-authorized-keys-manage test-opsgate-deploy-keys test-opsgate-rsync-excludes test-opsgate-deploy-impl test-collection-build-ignore test-rust-release-binary test-metrics-httpd-switch lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -98,6 +98,67 @@ test-tailscale-metrics-timer: venv
 test-nyxmon-deploy: venv
     @echo "Testing Nyxmon rsync safety and notification policy contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_deploy
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_lifecycle
+
+# Builds the collection into a temp dir (rust/PLAN-foundation.md section 5).
+# galaxy.yml build_ignore keeps rust/ and .github/ out of the collection archive
+test-collection-build-ignore: venv
+    @echo "Testing that the collection archive packs neither rust/ nor .github/..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_collection_build_ignore
+
+# Static checks, filter unit tests and ansible-playbook runs against localhost
+# with fake release archives (macOS needs Homebrew coreutils for GNU mv).
+test-rust-release-binary: venv
+    @echo "Testing rust_release_binary install, pin and prune (including the fail-closed prune cases)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_rust_release_binary
+
+# The metrics-httpd implementation switch (rust/metrics-httpd/PLAN.md 7.2/7.3):
+# filter unit tests, consumer argv/drop-in/unit renders against goldens and
+# ansible-playbook runs of select/verify against localhost with fakes
+# (logyard_deploy and static_site_deploy in their own module).
+test-metrics-httpd-switch: venv
+    @echo "Testing metrics_httpd_switch and its consumer roles (drop-in, check-config, verify, pins)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_metrics_httpd_switch tests.test_metrics_httpd_switch_logyard_static
+
+# Needs cargo and cargo-deny 0.20.2 (rust/README.md); run it from a worktree.
+# Not part of `just test`, which works without a Rust toolchain.
+# Rust workspace: the checks of the `rust` CI job (fmt, clippy, tests, deny, scripts)
+rust-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd rust
+    # Package names only (validated by the script), word-split on purpose.
+    excludes=$(cargo metadata --format-version 1 --no-deps --locked | python3 -I scripts/ci_excludes.py)
+    cargo fmt --check
+    cargo clippy --workspace $excludes --all-targets --locked -- -D warnings
+    cargo test --workspace $excludes --locked
+    cargo deny --locked check
+    python3 -I -m unittest discover -s scripts -p 'test_*.py'
+
+# Rust workspace tests only (cargo test and the rust/scripts tests).
+rust-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd rust
+    excludes=$(cargo metadata --format-version 1 --no-deps --locked | python3 -I scripts/ci_excludes.py)
+    cargo test --workspace $excludes --locked
+    python3 -I -m unittest discover -s scripts -p 'test_*.py'
+
+# Parity harness of the Rust metrics-httpd port (rust/metrics-httpd/PLAN.md
+# 8.3): builds the binary, runs it side by side with the rendered Python
+# endpoint scripts under CPython 3.12 (the hosts' version; needs htpasswd),
+# then the shadow comparer's tests under 3.12 and 3.13. Needs cargo; not part
+# of `just test`. The `rust` CI job runs the same.
+rust-parity-metrics-httpd: venv
+    #!/usr/bin/env bash
+    set -euo pipefail
+    (cd rust && cargo build --locked -p metrics-httpd)
+    python=$(uv run --python 3.12 --no-project python -c 'import sys; print(sys.executable)')
+    UV_PROJECT_ENVIRONMENT=.venv uv run python rust/metrics-httpd/parity/run_parity.py \
+        --binary rust/target/debug/metrics-httpd --python "$python"
+    cd rust/metrics-httpd
+    uv run --python 3.12 --no-project python -I -m unittest discover -s parity -p 'test_*.py'
+    uv run --python 3.13 --no-project python -I -m unittest discover -s parity -p 'test_*.py'
 
 test-mailgun-relay-deploy: venv
     @echo "Testing the mailgun-relay rsync excludes and the Python/Rust implementation switch..."
@@ -112,6 +173,24 @@ test-rsync-git-excludes: venv
 # Python 3.14 and the relay's dependencies).
 test-mailgun-relay-deploy-molecule: venv
     @just molecule-test mailgun_relay_deploy
+
+test-graphyard-deploy-agent: venv
+    @echo "Testing the graphyard agent Python/Rust switch and the agent-rs/target rsync exclude..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_graphyard_deploy_agent
+
+# Graphyard core from the public repo (dependency runtime off) plus fake Rust
+# agent release archives in a systemd container: install next to Python,
+# switch, version change and pruning, refusals, rollback (downloads uv's
+# Python 3.12 and Graphyard's dependencies).
+test-graphyard-deploy-molecule: venv
+    @just molecule-test graphyard_deploy
+
+# graphyard-web/graphyard-agent as the role renders them, with stub programs,
+# against systemd on Ubuntu 24.04 and Debian 13: a restart, a stop and start
+# and a failed start of graphyard-runtime leave both running, with the Python
+# and the Rust agent selected (no Docker or downloads inside the instances).
+test-graphyard-deploy-runtime-deps-molecule: venv
+    @just molecule-test-scenario graphyard_deploy runtime_deps
 
 test-deploy-restart-notifications: venv
     @echo "Testing that app deploy roles restart after source and dependency changes..."
@@ -213,17 +292,80 @@ test-daybook-weeknotes-identity-ops: venv
 test-weeknotes-home-deploy: venv
     @echo "Testing weeknotes.home deployment templates and ingress validation..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_deploy.yml
-    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_auth_check_mode.yml --check
+    @ANSIBLE_COLLECTIONS_PATH="$(scripts/checkout-collections-path.sh)" UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_auth_check_mode.yml --check
 
 test-heis-production-backup: venv
     @echo "Testing Heis production backup safety contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_heis_production_backup
 
 # Forced-command allowlist for the Echoport remote runners' root SSH key: guard
-# rules, plus every command each remote runner template really sends.
+# rules, plus every command each remote runner template really sends, plus the
+# Rust port's decision fixtures (GUARD_SHA256, drift, prefilter contract), plus
+# the role's impl selector and confirm_live.yml (localhost ansible-playbook runs).
 test-echoport-remote-command-guard: venv
     @echo "Testing the Echoport remote command guard..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard tests.test_echoport_command_guard_fixtures tests.test_echoport_remote_command_guard_role
+
+# The guard role's molecule scenarios (rust/echoport-command-guard/PLAN.md 6.2):
+# impl python, shadow and rust on Ubuntu 24.04 and Debian 13 against a real
+# sshd (shadow and rust build the guard from this checkout in Docker), and the
+# pin/prune scenario with stub releases. Needs Docker; not part of `just test`.
+test-echoport-remote-command-guard-molecule:
+    @just molecule-test-scenario echoport_remote_command_guard default
+    @just molecule-test-scenario echoport_remote_command_guard shadow
+    @just molecule-test-scenario echoport_remote_command_guard rust
+    @just molecule-test-scenario echoport_remote_command_guard pins
+
+# Regenerate the Rust guard port's Layer-1 fixtures from the Python guard
+# (rust/echoport-command-guard/PLAN.md 7.2): record the test policies and the
+# runners' commands in the repo venv, generate under Python 3.12 (production),
+# and require identical output under 3.13 (staging) and the venv.
+echoport-command-guard-fixtures: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python rust/echoport-command-guard/parity/gen_fixtures.py record
+    @uv run --python 3.12 --no-project python -I rust/echoport-command-guard/parity/gen_fixtures.py generate
+    @uv run --python 3.13 --no-project python -I rust/echoport-command-guard/parity/gen_fixtures.py check
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python rust/echoport-command-guard/parity/gen_fixtures.py check --record
+
+# Fixtures of the Rust metrics-httpd port (rust/metrics-httpd/PLAN.md 8.2): they
+# must regenerate byte for byte from the rendered Python endpoint scripts, the
+# real htpasswd and CPython; differences to Rust must name a PLAN.md D item.
+test-metrics-httpd-fixtures: venv
+    @echo "Testing that the metrics-httpd fixtures match the Python endpoints..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_metrics_httpd_fixtures
+
+# Regenerate the metrics-httpd fixtures in the repo venv (rendered templates,
+# real htpasswd), then require identical stdlib families (JSON, float repr,
+# meta) under CPython 3.12 (production hosts) and 3.13 (staging).
+metrics-httpd-fixtures: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python rust/metrics-httpd/fixtures/generate.py write
+    @uv run --python 3.12 --no-project python -I rust/metrics-httpd/fixtures/generate.py check --stdlib-only
+    @uv run --python 3.13 --no-project python -I rust/metrics-httpd/fixtures/generate.py check --stdlib-only
+
+# Layer 2 of the Rust echoport-command-guard (rust/echoport-command-guard/PLAN.md
+# 7.5): realpath, lstat and user lookups, then the decisions (Python's check()
+# against `--decide`), of the Rust guard against Python 3.12 (Ubuntu 24.04)
+# and 3.13 (Debian 13), as root on real trees in containers. Needs Docker.
+echoport-command-guard-layer2:
+    @rust/echoport-command-guard/parity/e2e/run-layer2.sh
+
+# Layer 3 of the Rust echoport-command-guard (PLAN.md 7.6): the Python, Rust
+# and shadow forced commands end to end through sshd in Ubuntu 24.04 and
+# Debian 13 containers, compared. Needs Docker.
+echoport-command-guard-layer3:
+    @rust/echoport-command-guard/parity/e2e/run-layer3.sh
+
+# Lean measurements of the Rust echoport-command-guard (PLAN.md 8.3): the Rust
+# and the Python guard in the Layer-3 containers, median of 20 runs, against
+# the budgets. Needs Docker; the recorded numbers come from the x86_64 runner
+# of the `rust` workflow started by hand (`gh workflow run rust.yml`).
+echoport-command-guard-lean:
+    @rust/echoport-command-guard/parity/e2e/run-lean.sh
+
+# Fuzz the Rust echoport-command-guard (PLAN.md 7.4): the four cargo-fuzz
+# targets for an hour each (or `seconds`), in containers with a pinned
+# nightly. Needs Docker; updates rust/echoport-command-guard/fuzz/corpus/.
+echoport-command-guard-fuzz seconds="3600":
+    @rust/echoport-command-guard/fuzz/run-fuzz.sh {{seconds}}
 
 # A FastDeploy restore must not bring back what the privilege reduction retired
 # (services, sudoers files, rules with more than one narrow script).
@@ -322,6 +464,30 @@ lint: venv
 test-minio-backup-accounts: venv
     @echo "Testing per-target MinIO backup accounts and stdin-only mc aliases..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_minio_backup_accounts
+
+test-ssh-authorized-keys-manage: venv
+    @echo "Testing ssh_authorized_keys_manage full-file and non-exclusive modes..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_ssh_authorized_keys_manage
+
+test-opsgate-deploy-keys: venv
+    @echo "Testing opsgate_deploy per-repository GitHub deploy keys..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_opsgate_deploy_keys
+
+test-opsgate-rsync-excludes: venv
+    @echo "Testing that the opsgate_deploy source sync leaves rust/ out of the Python app dirs..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_opsgate_rsync_excludes
+
+test-opsgate-deploy-impl: venv
+    @echo "Testing the opsgate_deploy Python/Rust switch (install, plists, verify, prune)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_opsgate_deploy_impl
+
+test-echoport-sqlite-backup: venv
+    @echo "Testing the SQLite backups of the Echoport runners and backup roles under a write lock..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_sqlite_backup tests.test_sqlite_backup_runners
+
+test-encrypted-volume-fstab: venv
+    @echo "Testing that the encrypted volume fstab entry is stable (no rewrite, no remount)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_encrypted_volume_fstab
 
 test-secret-no-log: venv
     @echo "Checking that uri/command tasks carrying credentials or secret variables set no_log..."
@@ -659,6 +825,10 @@ test-voxhelm-csrf: venv
 test-voxhelm-prune-and-service-knobs: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_voxhelm_prune_and_service_knobs
 
+# Collection-wide policy: role templates omit the HSTS preload directive.
+test-traefik-hsts: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_traefik_hsts
+
 test-traefik-frame-options: venv
     @echo "Testing that no Traefik edge weakens a backend's X-Frame-Options..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_traefik_frame_options
@@ -679,8 +849,24 @@ test-shell-pipefail: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_shell_pipefail
 
 test-graphyard-auth-bootstrap-changed-when: venv
-    @echo "Testing that the Grafana datasource provisioning rewrite reports changed only on a real change..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_graphyard_auth_bootstrap_changed_when
+    @echo "Testing the Graphyard auth bootstrap status-line checks (provisioning rewrite, Grafana password)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_graphyard_auth_bootstrap_changed_when tests.test_graphyard_auth_bootstrap_password_check
+
+test-homeassistant-uv-system-certs: venv
+    @echo "Testing the Home Assistant UV_SYSTEM_CERTS drop-in checks and wiring..."
+    @ANSIBLE_COLLECTIONS_PATH="$(scripts/checkout-collections-path.sh)" UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_homeassistant_uv_system_certs
+
+test-python-security-floor: venv
+    @echo "Testing certifi/pip security floors (filters, resolver lifecycle, collection loader, role wiring)..."
+    @ANSIBLE_COLLECTIONS_PATH="$(scripts/checkout-collections-path.sh)" UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_python_security_floor tests.test_python_security_floor_roles
+
+test-metube-uv-sync-changed-when: venv
+    @echo "Testing that MeTube's uv sync reports changed only on package changes..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_metube_uv_sync_changed_when
+
+test-ansible-core-floor: venv
+    @echo "Testing that the collection and its test environment require ansible-core >= 2.20.3..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_ansible_core_floor
 
 test-backup-service-restart: venv
     @echo "Testing that backup roles restart stopped services in an always block..."
@@ -690,9 +876,47 @@ test-backup-service-restart: venv
 test-software-live: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live tests.test_software_health_bridge
 
+# rust/software-live/PLAN.md 7.3/8.1: the role's switch between Python and the
+# Rust release (filters, templates, ansible-playbook runs against localhost
+# with fakes; macOS needs Homebrew coreutils for GNU mv)
+test-software-live-impl: venv
+    @echo "Testing the software_live switch between Python and Rust (drop-ins, shadow, pins, prune)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_live_impl
+
+# rust/software-live/PLAN.md 6.1: fixtures regenerate byte-identical, TESTMAP names every Python test.
+# software-live Rust port: its fixtures and TESTMAP still match the Python program
+test-software-live-rust-fixtures: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live_rust_fixtures
+
+# Generates under Python 3.12 (Ubuntu hosts), requires the same output under 3.13 (Debian).
+# software-live Rust port: regenerate its fixtures from the Python program
+rs-software-live-fixtures:
+    @uv run --python 3.12 --no-project python -I rust/software-live/fixtures/generate.py
+    @uv run --python 3.13 --no-project python -I rust/software-live/fixtures/generate.py --check
+
+# rust/software-live/PLAN.md 6.4. Run it from a worktree; it writes rust/target/.
+# software-live Rust port: cargo fmt --check, clippy -D warnings and tests of its crate
+rs-software-live:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd rust
+    cargo fmt -p software-live --check
+    cargo clippy -p software-live --all-targets --locked -- -D warnings
+    cargo test -p software-live --locked
+
+# rust/software-live/PLAN.md 7.4, 13.6: the `software-live-apt` CI job in Docker (variants: ubuntu24.04 debian13; default both).
+# software-live Rust port: the APT helper's checks and python-apt comparison in its variant containers
+rs-software-live-apt *variants:
+    @rust/software-live-apt/container/docker-check.sh {{variants}}
+
+# rust/software-live/PLAN.md 6.2, 6.4: the parity harness in Docker (variants: ubuntu24.04 debian13; default both; after `--`: run_parity.py arguments).
+# software-live Rust port: the Python program and the Rust binary side by side (validate, serve, export, collect)
+rs-software-live-parity *args:
+    @rust/software-live/parity/docker-parity.sh {{args}}
+
 # Typed Python added by the software observation roles.
 typecheck: venv
-    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py roles/zfs_usb_replication/files/zfs_usb_bookmark_anchors.py roles/zfs_usb_replication/files/zfs_usb_replication_state.py roles/zfs_usb_replication/files/zfs_usb_snapshot_retention.py
+    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py roles/zfs_usb_replication/files/zfs_usb_bookmark_anchors.py roles/zfs_usb_replication/files/zfs_usb_replication_state.py roles/zfs_usb_replication/files/zfs_usb_snapshot_retention.py roles/ca_trust_consumers/files/ca_trust_roots_check.py plugins/filter/ca_trust_consumers.py roles/ca_trust_consumers/files/ca_trust_sudoers_env_file.py plugins/filter/rust_release.py plugins/filter/echoport_guard.py plugins/filter/metrics_httpd.py plugins/filter/software_live_impl.py roles/rustup_security/files/rustup_security.py
 
 # Exercise guarded binary/config transactions and controller failure journaling.
 test-unifi-traefik-allowlist: venv
@@ -713,6 +937,28 @@ test-fetched-backup-archive-modes: venv
     @echo "Testing that fetched backup archives are 0600 on the controller..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_fetched_backup_archive_modes
 
+test-minio-metadata-backup: venv
+    @echo "Testing metadata-only MinIO backup and restore gating..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_minio_metadata_backup
+
+# MINIO_TEST_IMAGE (default in the Dockerfile) must be available locally or
+# pullable for the Docker host's architecture.
+test-minio-backup-molecule: venv
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(just _export-docker-host)"
+    docker build -q -t ops-library-molecule-minio-backup:local \
+        ${MINIO_TEST_IMAGE:+--build-arg MINIO_TEST_IMAGE="$MINIO_TEST_IMAGE"} \
+        roles/minio_backup/molecule/default
+    just molecule-test minio_backup
+
+test-backup-archive-modes: venv
+    @echo "Testing that backup archives on the host are 0600 and older ones get tightened..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_backup_archive_modes
+
+test-traefik-backup-molecule: venv
+    @just molecule-test traefik_backup
+
 test-logyard-ingress: venv
     @echo "Testing that the Logyard ingress routes only the Loki push path and /ready..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_logyard_ingress
@@ -726,6 +972,10 @@ test-molecule-run-isolation: venv
 test-delve-recorder-flags: venv
     @echo "Testing the optional Delve legacy/notification flags and the recorder chunk cap..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_delve_recorder_flags.yml
+
+test-server-ad-analysis: venv
+    @echo "Testing Delve's server ad analysis settings, the llama-server role and the worker profile runtime..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_server_ad_analysis
 
 test-traefik-transactions: venv
     @uv run python -m unittest tests.test_traefik_transaction
@@ -779,9 +1029,76 @@ test-root-downloads: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/test_root_downloads.py
 
 # Portable task credential delivery regressions (no host/database access).
+# Static check: tasks that become an unprivileged user must not put secrets into
+# the task environment (sudo logs it) or onto the command line.
+test-become-environment-secrets: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_become_environment_secrets
+
 test-task-credentials: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest discover -s tests -p 'test_*_credentials.py'
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_task_credential_contracts
+
+test-aws-ca-bundle: venv
+    @uv run python -m unittest tests.test_aws_ca_bundle
+
+# Exercise the real Java keytool transformation and recovery guards.
+test-macos-java-trust: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_macos_java_trust -v
+
+# Dependency preflight for incident trust remediation.
+test-security-trust-remediate: venv
+    @uv run python -m unittest tests.test_security_trust_remediate
+
+test-macos-ca-remediate:
+    @python3 -m unittest tests.test_macos_ca_remediate
+
+
+test-linuxserver-ca-remediate: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_linuxserver_ca_remediate
+
+
+test-macos-python-ca-remediate: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_macos_python_ca_remediate
+
+
+test-container-ca-remediate:
+    @python3 -m unittest tests.test_container_ca_remediate
+
+
+test-chrome-ca-distrust: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_chrome_ca_distrust
+
+# Validate trust-only activation and recovery
+test-container-ca-activate: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_container_ca_activate tests.test_livekit_idle_preflight tests.test_container_ca_owners
+
+# Verify idle and launchd trust refresh guards
+test-voxhelm-trust-refresh: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_voxhelm_trust_refresh
+
+# NODE_OPTIONS merging, forbidden-root scan and restart gating for ca_trust_consumers.
+test-ca-trust-consumers: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_ca_trust_consumers tests.test_ca_trust_consumers_run
+
+# Explicit required Docker/real-UV recovery integration gate.
+test-security-trust-recover: venv
+    @uv run python -m unittest tests.test_security_trust_recover_live
+
+# Guarded manager-only Rustup security patch contracts.
+test-rustup-security: venv
+    @uv run python -m unittest tests.test_rustup_security
+
+# Opt-in real pinned updater fixture; local disposable homes/containers only.
+test-rustup-security-native:
+    @python3 tests/run_rustup_security_native.py
+
+# Opt-in privileged isolated real-systemd/nested-Docker regression (local Docker only).
+test-container-ca-owner-systemd:
+    @python3 tests/run_container_ca_owner_systemd.py
+
+# Core conversation provisioning, legacy retirement and safe rollback.
+test-homeassistant-llama-cpp: venv
+    @UV_PYTHON=3.14 uv run --with aiohttp python -m unittest tests.test_homeassistant_llama_cpp
 
 # Exercise real cleanup tasks against consolidated-source fixtures.
 test-apt-repository-cleanup: venv

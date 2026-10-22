@@ -44,6 +44,8 @@
         state: absent
       loop:
         - "/etc/systemd/system/{{ openclaw_metrics_endpoint_service_name }}.service"
+        # The implementation drop-in of metrics_httpd_switch (Rust selected).
+        - "/etc/systemd/system/{{ openclaw_metrics_endpoint_service_name }}.service.d/metrics-httpd-impl.conf"
         - "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.service"
         - "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.timer"
 
@@ -80,6 +82,48 @@
 
 - name: metrics | Deploy OpenClaw metrics endpoint
   when: openclaw_metrics_endpoint_enabled | bool
+  # Inputs of the HTTP server's implementation switch (select and verify
+  # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The argv, sandbox and
+  # IP allow list mirror templates/openclaw-metrics-endpoint.service.j2 and the
+  # constants of templates/openclaw-metrics-httpd.py.j2.
+  vars:
+    metrics_httpd_switch_impl: "{{ openclaw_metrics_endpoint_impl }}"
+    metrics_httpd_switch_service_name: "{{ openclaw_metrics_endpoint_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ openclaw_metrics_endpoint_user }}"
+    metrics_httpd_switch_validate_group: "{{ openclaw_metrics_endpoint_group }}"
+    metrics_httpd_switch_argv:
+      - json-file
+      - --bind
+      - "{{ openclaw_metrics_endpoint_bind }}"
+      - --port
+      - "{{ openclaw_metrics_endpoint_port | string }}"
+      - --path
+      - "{{ openclaw_metrics_endpoint_path }}"
+      - --json-path
+      - "{{ openclaw_metrics_endpoint_json_path }}"
+      - --htpasswd-file
+      - "{{ openclaw_metrics_endpoint_htpasswd_path }}"
+      - --realm
+      - openclaw-metrics
+      - --server-name
+      - openclaw-metrics-httpd/0.1
+      - --missing-message
+      - Metrics file not found - collector timer may not have run yet
+    metrics_httpd_switch_unit_sandbox:
+      - NoNewPrivileges=yes
+      - ProtectSystem=strict
+      - ProtectHome=yes
+      - PrivateTmp=yes
+      - "ReadOnlyPaths={{ openclaw_metrics_endpoint_data_dir }}"
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart openclaw-metrics-endpoint
+    metrics_httpd_switch_python_script: "{{ openclaw_metrics_endpoint_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ openclaw_metrics_endpoint_bind }}"
+    metrics_httpd_switch_probe_port: "{{ openclaw_metrics_endpoint_port }}"
+    metrics_httpd_switch_probe_path: "{{ openclaw_metrics_endpoint_path }}"
+    metrics_httpd_switch_probe_realm: openclaw-metrics
+    metrics_httpd_switch_ip_address_allow: [localhost, 100.64.0.0/10]
   block:
     - name: metrics | Validate required variables
       ansible.builtin.assert:
@@ -235,6 +279,14 @@
         - reload systemd
         - restart openclaw-metrics-endpoint
 
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below. The htpasswd file and the
+    # data directory that --check-config reads are in place above.
+    - name: metrics | Select the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+
     - name: metrics | Flush handlers so units are reloaded before first run
       ansible.builtin.meta: flush_handlers
 
@@ -257,3 +309,13 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: metrics | Apply a pending implementation switch before verifying it
+      ansible.builtin.meta: flush_handlers
+
+    # The endpoint runs the selected implementation and answers 401 with its
+    # realm; then the metrics-httpd pin moves and old releases are pruned.
+    - name: metrics | Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify

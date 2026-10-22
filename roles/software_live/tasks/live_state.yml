@@ -1,0 +1,151 @@
+---
+# Step 0 of rust/software-live/PLAN.md 7.3: what this host runs or is
+# configured to run right now, read before any task of the switch changes
+# anything. Read-only.
+#
+# Sources (plugins/filter/software_live_impl.py, software_live_live_state):
+# - the production drop-ins (step 4) and the shadow units (8.1): every path
+#   any of their directives names (continuation lines joined);
+# - systemd's loaded Exec*= commands of the four units (also an edit that was
+#   not reloaded yet);
+# - every process of the four units: MainPID and ControlPID, and while a
+#   unit is activating, active, deactivating, reloading or refreshing every
+#   PID of its control group (cgroup.procs). So a collector run (oneshot, up
+#   to 90 s) that still executes vN after its unit, the endpoint and the pins
+#   moved on, its software-live-apt child and the ExecStartPost= export all
+#   protect vN;
+# - the production pin (the version last verified live) and the shadow pin.
+#
+# A file that exists but cannot be read, a path under the release root that
+# is not <version>/<file>, a release executable outside the root, a running
+# unit whose control group cannot be listed, or a listed PID that still exists
+# but whose executable cannot be resolved makes the live state unknown: then
+# rust_pins.yml prunes nothing in this play (fail closed). A PID that exited
+# between listing and reading names nothing; a Python process names nothing.
+
+- name: live_state | Set the switch paths
+  ansible.builtin.set_fact:
+    _software_live_releases_dir: '{{ software_live_install_dir }}/releases'
+    _software_live_dropins:
+      - '{{ software_live_systemd_dir }}/software-live-endpoint.service.d/impl.conf'
+      - '{{ software_live_systemd_dir }}/software-live-collector.service.d/impl.conf'
+    _software_live_shadow_units:
+      - '{{ software_live_systemd_dir }}/software-live-shadow-collector.service'
+      - '{{ software_live_systemd_dir }}/software-live-shadow-endpoint.service'
+    _software_live_pin_paths:
+      pin: '{{ software_live_install_dir }}/releases/.pins/software-live'
+      shadow_pin: '{{ software_live_install_dir }}/releases/.pins/software-live-shadow'
+
+- name: live_state | Check the drop-ins, the shadow units and the pins
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+  loop: >-
+    {{ _software_live_dropins + _software_live_shadow_units
+       + [_software_live_pin_paths.pin, _software_live_pin_paths.shadow_pin] }}
+  register: _software_live_live_stats
+  failed_when: false
+
+- name: live_state | Read the drop-ins, the shadow units and the pins
+  ansible.builtin.slurp:
+    src: '{{ item.item }}'
+  loop: '{{ _software_live_live_stats.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: item.stat.exists | default(true)
+  register: _software_live_live_reads
+  failed_when: false
+
+# One line per fact, tab-separated:
+#   root     <resolved release root>
+#   unit     <unit> <ActiveState> <MainPID> <ControlPID> <ControlGroup>
+#   prop     <unit> <an Exec*= command as systemctl shows it>
+#   exe      <unit> <pid> <readlink /proc/<pid>/exe>
+#   noexe    <unit> <pid>       (the PID exists, its executable cannot be read)
+#   nocgroup <unit>             (running, but cgroup.procs cannot be read)
+#   error    <unit>             (systemctl show failed)
+#   done
+- name: live_state | Read the processes of the units
+  ansible.builtin.shell: |
+    set -o pipefail
+    proc={{ software_live_proc_root | quote }}
+    cgroup={{ software_live_cgroup_root | quote }}
+    root={{ _software_live_releases_dir | quote }}
+    if real=$(realpath -- "$root" 2>/dev/null); then
+      printf 'root\t%s\n' "$real"
+    fi
+    for unit in software-live-endpoint.service software-live-collector.service \
+                software-live-shadow-endpoint.service software-live-shadow-collector.service; do
+      if ! show=$(systemctl show --property=ActiveState,MainPID,ControlPID,ControlGroup,ExecCondition,ExecStartPre,ExecStart,ExecStartPost,ExecReload,ExecStop,ExecStopPost -- "$unit"); then
+        printf 'error\t%s\n' "$unit"
+        continue
+      fi
+      state='' main=0 control=0 cg=''
+      while IFS= read -r line; do
+        case "$line" in
+          ActiveState=*) state=${line#*=} ;;
+          MainPID=*) main=${line#*=} ;;
+          ControlPID=*) control=${line#*=} ;;
+          ControlGroup=*) cg=${line#*=} ;;
+          Exec*=*) printf 'prop\t%s\t%s\n' "$unit" "$line" ;;
+        esac
+      done <<< "$show"
+      printf 'unit\t%s\t%s\t%s\t%s\t%s\n' "$unit" "$state" "$main" "$control" "$cg"
+      pids="$main $control"
+      case "$state" in
+        activating|active|deactivating|reloading|refreshing)
+          if [ -n "$cg" ] && procs=$(cat -- "$cgroup$cg/cgroup.procs" 2>/dev/null); then
+            pids="$pids $procs"
+          elif [ -n "$cg" ] && procs=$(cat -- "$cgroup/systemd$cg/cgroup.procs" 2>/dev/null); then
+            pids="$pids $procs"
+          else
+            printf 'nocgroup\t%s\n' "$unit"
+          fi
+          ;;
+      esac
+      for pid in $pids; do
+        case "$pid" in
+          ''|0|*[!0-9]*) continue ;;
+        esac
+        if exe=$(readlink -- "$proc/$pid/exe"); then
+          printf 'exe\t%s\t%s\t%s\n' "$unit" "$pid" "$exe"
+        elif [ -e "$proc/$pid" ]; then
+          printf 'noexe\t%s\t%s\n' "$unit" "$pid"
+        fi
+      done
+    done
+    printf 'done\n'
+  args:
+    executable: /bin/bash
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  register: _software_live_live_probe
+
+- name: live_state | Decide what runs now
+  ansible.builtin.set_fact:
+    _software_live_live: >-
+      {{
+        _software_live_live_probe
+        | local.ops_library.software_live_live_state(
+            _software_live_live_stats.results
+            | local.ops_library.software_live_files(_software_live_live_reads.results),
+            [_software_live_releases_dir],
+            {'dropins': _software_live_dropins, 'units': _software_live_shadow_units,
+             'pin': _software_live_pin_paths.pin, 'shadow_pin': _software_live_pin_paths.shadow_pin})
+      }}
+
+- name: live_state | Record the protect list and the last live version
+  ansible.builtin.set_fact:
+    _software_live_protect: '{{ _software_live_live.versions }}'
+    _software_live_live_unknown: '{{ _software_live_live.unknown | length > 0 }}'
+    _software_live_last_live: '{{ _software_live_live.last_live }}'
+
+- name: live_state | Report the live state
+  ansible.builtin.debug:
+    msg: >-
+      Live release versions: {{ _software_live_protect | join(', ') or 'none' }};
+      last verified live: {{ _software_live_last_live or 'none' }}.
+      {{ ('The live state is not completely known, so nothing is pruned in this run: '
+          ~ (_software_live_live.unknown | join('; '))) if _software_live_live_unknown | bool else '' }}

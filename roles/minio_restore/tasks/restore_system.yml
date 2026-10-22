@@ -1,4 +1,10 @@
 ---
+- name: Refuse a full restore without data directories
+  ansible.builtin.assert:
+    that:
+      - minio_restore_scope == 'metadata' or (minio_restore_target_data_dirs_helper | length > 0)
+    fail_msg: "A full MinIO restore needs at least one data directory; refusing to continue."
+
 - name: Stop MinIO service
   ansible.builtin.systemd:
     name: "{{ minio_service_name }}"

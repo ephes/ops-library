@@ -1,0 +1,2 @@
+# This stdlib helper runs on Python 3.11+ inventory hosts, not just the controller.
+target-version = "py311"

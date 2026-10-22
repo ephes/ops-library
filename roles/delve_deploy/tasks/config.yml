@@ -8,3 +8,54 @@
     mode: "0640"
   no_log: true
   notify: restart delve
+
+# Server ad analysis: the profile, and the two secrets in files delved reads
+# (DELVE_VOXHELM_TOKEN_FILE, DELVE_DETECTOR_API_KEY_FILE) so they never sit in
+# the environment. Files of a switched-off analysis or an unset URL are removed.
+- name: config | Install the server ad analysis profile
+  ansible.builtin.copy:
+    src: "{{ delve_smart_skip_analysis_profile_src }}"
+    dest: "{{ delve_smart_skip_analysis_profile_path }}"
+    owner: root
+    group: "{{ delve_group }}"
+    mode: "0640"
+  when: delve_smart_skip_analysis | bool
+  notify: restart delve
+
+- name: config | Write the voxhelm producer token file
+  ansible.builtin.copy:
+    content: "{{ delve_voxhelm_token | string | trim }}\n"
+    dest: "{{ delve_voxhelm_token_path }}"
+    owner: root
+    group: "{{ delve_group }}"
+    mode: "0640"
+  no_log: true
+  when:
+    - delve_smart_skip_analysis | bool
+    - delve_voxhelm_url | length > 0
+  notify: restart delve
+
+- name: config | Write the detector API key file
+  ansible.builtin.copy:
+    content: "{{ delve_detector_api_key | string | trim }}\n"
+    dest: "{{ delve_detector_api_key_path }}"
+    owner: root
+    group: "{{ delve_group }}"
+    mode: "0640"
+  no_log: true
+  when:
+    - delve_smart_skip_analysis | bool
+    - delve_detector_url | length > 0
+  notify: restart delve
+
+- name: config | Remove the voxhelm token file when it is not configured
+  ansible.builtin.file:
+    path: "{{ delve_voxhelm_token_path }}"
+    state: absent
+  when: not (delve_smart_skip_analysis | bool) or delve_voxhelm_url | length == 0
+
+- name: config | Remove the detector API key file when it is not configured
+  ansible.builtin.file:
+    path: "{{ delve_detector_api_key_path }}"
+    state: absent
+  when: not (delve_smart_skip_analysis | bool) or delve_detector_url | length == 0

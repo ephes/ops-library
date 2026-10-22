@@ -10,7 +10,7 @@ This role supports two runtime modes:
 ## Requirements
 
 - Ubuntu/Debian target system
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 - `community.general` collection (UFW module)
 - Outbound internet on target host for Forge installer mode (Mojang + Maven mirrors)
 

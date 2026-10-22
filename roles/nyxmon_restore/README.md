@@ -14,6 +14,7 @@ playbooks and legacy/manual workflows.
 - Validates `metadata.yml` and `manifest.sha256`, checks disk space, and supports dry-run verification.
 - Creates a safety snapshot of `/home/nyxmon/site` before applying changes for quick manual rollback.
 - Stops both `nyxmon.service` and `nyxmon-monitor.service`, restores SQLite/database/config/media/logs, and optionally systemd + Traefik files.
+- Leaves the restored directories (media, static, cache, logs) at `0755` as `nyxmon_deploy` creates them: `rsync -a` would otherwise copy the archive directory's `0700` onto them.
 - Restarts services, runs Django + SQLite checks, and probes the HTTP endpoint before cleaning up staging/safety directories.
 - Uses a top-level block/always flow for cleanup, while the restore phase itself uses block/rescue to reapply the safety snapshot on failure.
 

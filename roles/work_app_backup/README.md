@@ -1,7 +1,7 @@
 # Work App Backup Role
 
 `work_app_backup` snapshots the work app's SQLite database (hot `sqlite3
-.backup`, offline copy as fallback), static files, `.env`, systemd unit and
+.backup` with `.timeout 30000`, offline copy as fallback), static files, `.env`, systemd unit and
 Traefik config into `/opt/backups/work_app/<prefix>-<timestamp>`, writes
 `metadata.yml` and a SHA256 manifest, creates a tarball and fetches it to
 `~/backups/work_app` on the controller. The offline fallback only copies the

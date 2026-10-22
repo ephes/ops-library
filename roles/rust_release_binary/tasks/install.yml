@@ -1,0 +1,404 @@
+---
+# Install one pinned release into <root>/<version>/ and validate it by its
+# versioned path (rust/PLAN-foundation.md 6.2, generalised from
+# mailgun_relay_deploy tasks/rust.yml).
+#
+# An installed version directory is never modified: the same version must come
+# from the same archive. A failure removes a version installed by this run and
+# leaves every other version and every pin alone. With fail_hard it stops the
+# play; without it, it records the failure and warns, so the consumer can go on
+# (e.g. with its Python rollback). Installing never deletes a version and never
+# moves a pin.
+
+# Reset before anything can fail, so the rescue below acts on this include's
+# paths only, never on values a previous include left behind.
+- name: install | Reset the install state
+  ansible.builtin.set_fact:
+    _rust_release_binary_paths_ok: false
+    _rust_release_binary_fresh: false
+    rust_release_binary_failed: false
+    rust_release_binary_path: ""
+
+# Inside the block, so with fail_hard false even invalid inputs only warn and
+# never block the consumer's Python rollback.
+- name: install | Install and validate the pinned release
+  block:
+    - name: install | Validate the common inputs
+      ansible.builtin.include_tasks: common.yml
+
+    - name: install | Assert the install inputs
+      ansible.builtin.assert:
+        that:
+          - rust_release_binary_version | local.ops_library.rust_release_version_ok
+          - rust_release_binary_local_archive is string
+          - >-
+            rust_release_binary_sha256 | local.ops_library.rust_release_sha256_ok or
+            (rust_release_binary_sha256 == '' and rust_release_binary_local_archive | length > 0)
+          - rust_release_binary_release_url is string
+          - rust_release_binary_release_url is match('^(https|file)://[^\s]+$')
+          - rust_release_binary_members is sequence and rust_release_binary_members is not string
+          - rust_release_binary_executables is sequence and rust_release_binary_executables is not string
+          - >-
+            _rust_release_binary_want_members | select('string')
+            | select('match', '^[A-Za-z0-9][A-Za-z0-9._-]*$') | reject('search', '\n') | list | length
+            == _rust_release_binary_want_members | length
+          - _rust_release_binary_want_members | unique | length == _rust_release_binary_want_members | length
+          - rust_release_binary_name in _rust_release_binary_want_members
+          - "'.archive-sha256' not in _rust_release_binary_want_members"
+          - rust_release_binary_name in _rust_release_binary_want_executables
+          - _rust_release_binary_want_executables | difference(_rust_release_binary_want_members) | length == 0
+          - rust_release_binary_validate_user is string
+        fail_msg: >-
+          rust_release_binary install needs a release version
+          (got {{ rust_release_binary_version | to_json }}), a 64-hex sha256 unless a
+          local archive is given, an https:// (or file://) release URL, unique plain
+          member names that include {{ rust_release_binary_name }}, and executables
+          that are members and include {{ rust_release_binary_name }}
+          (members {{ _rust_release_binary_want_members | to_json }},
+          executables {{ _rust_release_binary_want_executables | to_json }}).
+        quiet: true
+      vars:
+        _rust_release_binary_want_members: "{{ rust_release_binary_members or [rust_release_binary_name, 'LICENSE'] }}"
+        _rust_release_binary_want_executables: "{{ rust_release_binary_executables or [rust_release_binary_name] }}"
+
+    - name: install | Set the install paths
+      ansible.builtin.set_fact:
+        _rust_release_binary_dir: "{{ rust_release_binary_install_root }}/{{ rust_release_binary_version }}"
+        _rust_release_binary_staging: >-
+          {{ rust_release_binary_install_root }}/.staging-{{ rust_release_binary_version }}
+        _rust_release_binary_binary: >-
+          {{ rust_release_binary_install_root }}/{{ rust_release_binary_version }}/{{ rust_release_binary_name }}
+        _rust_release_binary_members: "{{ rust_release_binary_members or [rust_release_binary_name, 'LICENSE'] }}"
+        _rust_release_binary_executables: "{{ rust_release_binary_executables or [rust_release_binary_name] }}"
+        _rust_release_binary_paths_ok: true
+
+    - name: install | Check whether the version is installed
+      ansible.builtin.stat:
+        path: "{{ _rust_release_binary_dir }}"
+        follow: false
+        get_checksum: false
+      register: _rust_release_binary_dir_stat
+
+    - name: install | Assert an installed version is a plain directory
+      ansible.builtin.assert:
+        that:
+          - _rust_release_binary_dir_stat.stat.isdir
+          - not _rust_release_binary_dir_stat.stat.islnk
+        fail_msg: "{{ _rust_release_binary_dir }} exists but is not a directory (or is a symlink)."
+        quiet: true
+      when: _rust_release_binary_dir_stat.stat.exists
+
+    - name: install | Record whether this run installs the version
+      ansible.builtin.set_fact:
+        _rust_release_binary_fresh: "{{ not _rust_release_binary_dir_stat.stat.exists }}"
+
+    - name: install | Ensure the install root exists
+      ansible.builtin.file:
+        path: "{{ rust_release_binary_install_root }}"
+        state: directory
+        owner: "{{ rust_release_binary_owner }}"
+        group: "{{ rust_release_binary_group }}"
+        mode: "0755"
+
+    - name: install | Remove leftovers of an interrupted install
+      ansible.builtin.file:
+        path: "{{ _rust_release_binary_staging }}"
+        state: absent
+
+    - name: install | Checksum the local archive
+      ansible.builtin.stat:
+        path: "{{ rust_release_binary_local_archive }}"
+        get_checksum: true
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: _rust_release_binary_local_archive_stat
+      when: rust_release_binary_local_archive | length > 0
+
+    - name: install | Assert the local archive exists and matches a pinned checksum
+      ansible.builtin.assert:
+        that:
+          - _rust_release_binary_local_archive_stat.stat.exists
+          - _rust_release_binary_local_archive_stat.stat.isreg
+          - >-
+            rust_release_binary_sha256 == '' or
+            _rust_release_binary_local_archive_stat.stat.checksum == rust_release_binary_sha256
+        fail_msg: >-
+          rust_release_binary_local_archive {{ rust_release_binary_local_archive }} is
+          missing, not a file, or its sha256
+          ({{ _rust_release_binary_local_archive_stat.stat.checksum | default('n/a') }})
+          differs from rust_release_binary_sha256.
+        quiet: true
+      when: rust_release_binary_local_archive | length > 0
+
+    - name: install | Determine the expected archive checksum
+      ansible.builtin.set_fact:
+        _rust_release_binary_archive_sha256: >-
+          {{
+            _rust_release_binary_local_archive_stat.stat.checksum
+            if rust_release_binary_local_archive | length > 0
+            else rust_release_binary_sha256
+          }}
+
+    - name: install | Read the archive checksum of the installed version
+      ansible.builtin.slurp:
+        path: "{{ _rust_release_binary_dir }}/.archive-sha256"
+      register: _rust_release_binary_installed_sha256
+      failed_when: false
+      when: _rust_release_binary_dir_stat.stat.exists
+
+    - name: install | Refuse a different archive for an installed version
+      ansible.builtin.assert:
+        that:
+          - _rust_release_binary_installed_sha256.content is defined
+          - >-
+            (_rust_release_binary_installed_sha256.content | b64decode | trim)
+            == _rust_release_binary_archive_sha256
+        fail_msg: >-
+          {{ _rust_release_binary_dir }} is installed from an archive with sha256
+          {{ (_rust_release_binary_installed_sha256.content | default('') | b64decode | trim) or 'unknown' }},
+          but this run pins {{ _rust_release_binary_archive_sha256 }}. An installed
+          version is never replaced in place. Pin the matching archive, or remove
+          the directory by hand when no consumer runs or pins it
+          ({{ _rust_release_binary_pins_dir }}).
+        quiet: true
+      when: _rust_release_binary_dir_stat.stat.exists
+
+    - name: install | Stage the pinned release
+      when:
+        - not _rust_release_binary_dir_stat.stat.exists
+        - not ansible_check_mode
+      block:
+        - name: install | Create the staging directory
+          ansible.builtin.file:
+            path: "{{ _rust_release_binary_staging }}/tree"
+            state: directory
+            owner: "{{ rust_release_binary_owner }}"
+            group: "{{ rust_release_binary_group }}"
+            mode: "0755"
+
+        - name: install | Download the release archive
+          ansible.builtin.get_url:
+            url: "{{ rust_release_binary_release_url }}"
+            dest: "{{ _rust_release_binary_staging }}/archive.tar.gz"
+            checksum: "sha256:{{ rust_release_binary_sha256 }}"
+            owner: "{{ rust_release_binary_owner }}"
+            group: "{{ rust_release_binary_group }}"
+            mode: "0600"
+          when: rust_release_binary_local_archive | length == 0
+
+        - name: install | Copy the local archive
+          ansible.builtin.copy:
+            src: "{{ rust_release_binary_local_archive }}"
+            dest: "{{ _rust_release_binary_staging }}/archive.tar.gz"
+            owner: "{{ rust_release_binary_owner }}"
+            group: "{{ rust_release_binary_group }}"
+            mode: "0600"
+          when: rust_release_binary_local_archive | length > 0
+
+        - name: install | Checksum the staged archive
+          ansible.builtin.stat:
+            path: "{{ _rust_release_binary_staging }}/archive.tar.gz"
+            get_checksum: true
+            checksum_algorithm: sha256
+          register: _rust_release_binary_staged_archive
+
+        - name: install | Assert the staged archive is the pinned one
+          ansible.builtin.assert:
+            that:
+              - _rust_release_binary_staged_archive.stat.checksum == _rust_release_binary_archive_sha256
+            fail_msg: >-
+              The staged archive has sha256 {{ _rust_release_binary_staged_archive.stat.checksum }},
+              expected {{ _rust_release_binary_archive_sha256 }}.
+            quiet: true
+
+        # Checked before extraction: exactly the regular files of members, each
+        # once, at the archive root. A link, device or directory member could
+        # otherwise make the following tasks act on a path outside the staging
+        # directory.
+        - name: install | List the archive members
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --list
+              - --gzip
+              - --file
+              - "{{ _rust_release_binary_staging }}/archive.tar.gz"
+          changed_when: false
+          register: _rust_release_binary_member_names
+
+        - name: install | List the archive member types
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --list
+              - --verbose
+              - --gzip
+              - --file
+              - "{{ _rust_release_binary_staging }}/archive.tar.gz"
+          changed_when: false
+          register: _rust_release_binary_member_types
+
+        - name: install | Assert the archive holds exactly the release members as regular files
+          ansible.builtin.assert:
+            that:
+              - _rust_release_binary_found | sort == _rust_release_binary_members | sort
+              - _rust_release_binary_member_types.stdout_lines | length == _rust_release_binary_members | length
+              - _rust_release_binary_member_types.stdout_lines | reject('match', '-') | list | length == 0
+            fail_msg: >-
+              The release archive must hold exactly the regular files
+              {{ _rust_release_binary_members | sort | join(', ') }} at its root,
+              once each; found {{ _rust_release_binary_member_types.stdout_lines }}.
+            quiet: true
+          vars:
+            _rust_release_binary_found: >-
+              {{ _rust_release_binary_member_names.stdout_lines | map('regex_replace', '^[.]/', '') | list }}
+
+        # tar instead of unarchive: the members are checked above, and the
+        # explicit owner/mode tasks below set every attribute that matters.
+        - name: install | Unpack the release archive
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --extract
+              - --gzip
+              - --no-same-owner
+              - --no-same-permissions
+              - --file
+              - "{{ _rust_release_binary_staging }}/archive.tar.gz"
+              - --directory
+              - "{{ _rust_release_binary_staging }}/tree"
+          changed_when: true
+
+        - name: install | Check the unpacked members
+          ansible.builtin.stat:
+            path: "{{ _rust_release_binary_staging }}/tree/{{ item }}"
+            follow: false
+            get_checksum: false
+          loop: "{{ _rust_release_binary_members }}"
+          register: _rust_release_binary_unpacked
+
+        - name: install | Assert every unpacked member is a regular file
+          ansible.builtin.assert:
+            that:
+              - _rust_release_binary_unpacked.results | rejectattr('stat.isreg', 'defined') | list | length == 0
+              - _rust_release_binary_unpacked.results | rejectattr('stat.isreg') | list | length == 0
+            fail_msg: >-
+              Not every member of {{ _rust_release_binary_members }} unpacked as a
+              regular file into {{ _rust_release_binary_staging }}/tree.
+            quiet: true
+
+        - name: install | Set owner and mode of the members
+          ansible.builtin.file:
+            path: "{{ _rust_release_binary_staging }}/tree/{{ item }}"
+            state: file
+            follow: false
+            owner: "{{ rust_release_binary_owner }}"
+            group: "{{ rust_release_binary_group }}"
+            mode: "{{ '0755' if item in _rust_release_binary_executables else '0644' }}"
+          loop: "{{ _rust_release_binary_members }}"
+
+        - name: install | Record the archive checksum with the version
+          ansible.builtin.copy:
+            content: "{{ _rust_release_binary_archive_sha256 }}\n"
+            dest: "{{ _rust_release_binary_staging }}/tree/.archive-sha256"
+            owner: "{{ rust_release_binary_owner }}"
+            group: "{{ rust_release_binary_group }}"
+            mode: "0644"
+
+        - name: install | Move the staged version into place
+          ansible.builtin.command:
+            argv:
+              - mv
+              - --no-target-directory
+              - "{{ _rust_release_binary_staging }}/tree"
+              - "{{ _rust_release_binary_dir }}"
+            creates: "{{ _rust_release_binary_dir }}"
+
+        - name: install | Remove the staging directory
+          ansible.builtin.file:
+            path: "{{ _rust_release_binary_staging }}"
+            state: absent
+
+    # By the versioned path, before any consumer points at it. In check mode a
+    # version that is not installed yet cannot be validated; an installed one is.
+    - name: install | Validate the installed binary
+      when: not ansible_check_mode or _rust_release_binary_dir_stat.stat.exists
+      block:
+        - name: install | Read the version of the installed binary
+          ansible.builtin.command:
+            argv:
+              - "{{ _rust_release_binary_binary }}"
+              - --version
+          become: "{{ rust_release_binary_validate_user | length > 0 }}"
+          become_user: >-
+            {{ rust_release_binary_validate_user if rust_release_binary_validate_user | length > 0 else omit }}
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: _rust_release_binary_version_check
+
+        - name: install | Assert the binary reports the pinned version
+          ansible.builtin.assert:
+            that:
+              - _rust_release_binary_version_check.rc == 0
+              - >-
+                (_rust_release_binary_version_check.stdout_lines | first | default('')).startswith(
+                rust_release_binary_name ~ ' ' ~ rust_release_binary_version ~ ' (')
+            fail_msg: >-
+              {{ _rust_release_binary_binary }} --version exited
+              {{ _rust_release_binary_version_check.rc }} with
+              '{{ _rust_release_binary_version_check.stdout | default('') | trim }}'
+              {{ _rust_release_binary_version_check.stderr | default('') | trim }};
+              expected '{{ rust_release_binary_name }} {{ rust_release_binary_version }} (<commit>)'.
+            quiet: true
+
+    - name: install | Report the installed binary
+      ansible.builtin.set_fact:
+        rust_release_binary_path: "{{ _rust_release_binary_binary }}"
+
+  rescue:
+    - name: install | Remove the rejected fresh install
+      ansible.builtin.file:
+        path: "{{ _rust_release_binary_dir }}"
+        state: absent
+      when:
+        - _rust_release_binary_paths_ok | bool
+        - _rust_release_binary_fresh | bool
+
+    - name: install | Remove the staging directory after a failure
+      ansible.builtin.file:
+        path: "{{ _rust_release_binary_staging }}"
+        state: absent
+      when: _rust_release_binary_paths_ok | bool
+
+    # Sticky for the rest of the run: prune of this crate deletes nothing after it.
+    - name: install | Record the rejected release
+      ansible.builtin.set_fact:
+        rust_release_binary_failed: true
+        rust_release_binary_path: ""
+        rust_release_binary_failed_names: >-
+          {{ (rust_release_binary_failed_names | default([]) + [rust_release_binary_name]) | unique }}
+
+    - name: install | Stop on a rejected release
+      ansible.builtin.fail:
+        msg: >-
+          {{ rust_release_binary_name }} {{ rust_release_binary_version }} failed
+          installation or validation at '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}). Nothing else
+          changed: the other installed versions and every pin are untouched.
+      when: rust_release_binary_fail_hard | bool
+
+    # A failed task that is ignored, so the warning stands out in red and as
+    # `ignored=1` in the play recap instead of scrolling past as a debug line.
+    - name: install | Warn about the rejected release and continue
+      ansible.builtin.fail:
+        msg: >-
+          WARNING: {{ rust_release_binary_name }} {{ rust_release_binary_version }}
+          failed installation or validation at
+          '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}).
+          rust_release_binary_fail_hard is false, so the play continues with
+          rust_release_binary_failed set; nothing is pinned and prune of
+          {{ rust_release_binary_name }} deletes nothing for the rest of this run.
+      ignore_errors: true

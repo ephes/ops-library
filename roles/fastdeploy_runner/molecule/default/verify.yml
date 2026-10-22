@@ -1,0 +1,204 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    site: /home/fastdeploy/site
+    libexec_root: /usr/local/libexec/fastdeploy
+    runner_dir: /usr/local/libexec/fastdeploy/demo-backup
+    runner_script: /usr/local/libexec/fastdeploy/demo-backup/backup.py
+    config_dir: /home/fastdeploy/site/services/demo-backup
+    legacy_script: /home/fastdeploy/site/services/demo-backup/backup.py
+    marker: /var/tmp/demo-backup-ran
+
+  tasks:
+    - name: Stat the script and its directories
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/libexec
+        - "{{ libexec_root }}"
+        - "{{ runner_dir }}"
+        - "{{ runner_script }}"
+      register: runner_paths
+
+    - name: Directories are root:root 0755, the script root:deploy 0750
+      ansible.builtin.assert:
+        that:
+          - runner_paths.results[0].stat.pw_name == 'root'
+          - runner_paths.results[0].stat.mode == '0755'
+          - runner_paths.results[1].stat.pw_name == 'root'
+          - runner_paths.results[1].stat.gr_name == 'root'
+          - runner_paths.results[1].stat.mode == '0755'
+          - runner_paths.results[2].stat.pw_name == 'root'
+          - runner_paths.results[2].stat.gr_name == 'root'
+          - runner_paths.results[2].stat.mode == '0755'
+          - runner_paths.results[3].stat.pw_name == 'root'
+          - runner_paths.results[3].stat.gr_name == 'deploy'
+          - runner_paths.results[3].stat.mode == '0750'
+
+    - name: Stat the old location
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ site }}/services"
+        - "{{ config_dir }}"
+        - "{{ config_dir }}/config.json"
+        - "{{ legacy_script }}"
+      register: old_paths
+
+    - name: The old script is gone; services root, service directory and config.json are root-owned
+      ansible.builtin.assert:
+        that:
+          - old_paths.results[0].stat.pw_name == 'root'
+          - old_paths.results[0].stat.mode == '0755'
+          - old_paths.results[1].stat.pw_name == 'root'
+          - old_paths.results[1].stat.mode == '0755'
+          - old_paths.results[2].stat.pw_name == 'root'
+          - old_paths.results[2].stat.mode == '0644'
+          - not old_paths.results[3].stat.exists
+
+    - name: Read config.json
+      ansible.builtin.slurp:
+        src: "{{ config_dir }}/config.json"
+      register: config_json
+
+    - name: config.json names the fixed script path
+      ansible.builtin.assert:
+        that:
+          - (config_json.content | b64decode | from_json).deploy_script == runner_script
+          - (config_json.content | b64decode | from_json).name == 'demo-backup'
+          - (config_json.content | b64decode | from_json).steps | map(attribute='name') | list == ['init', 'backup', 'result']
+
+    - name: Read the sudoers file
+      ansible.builtin.slurp:
+        src: /etc/sudoers.d/demo_backup
+      register: sudoers_file
+
+    - name: sudoers names only the fixed script path
+      ansible.builtin.assert:
+        that:
+          - "('fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: ' ~ runner_script ~ ' *') in sudoers_text"
+          - "('deploy ALL=(root) NOPASSWD:NOSETENV: ' ~ runner_script ~ ' *') in sudoers_text"
+          - "'/home/fastdeploy' not in sudoers_text"
+      vars:
+        sudoers_text: "{{ sudoers_file.content | b64decode }}"
+
+    - name: Read what the sync recorded
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - "{{ site }}/synced.json"
+        - "{{ site }}/sync-uid"
+      register: sync_state
+
+    - name: Look up the fastdeploy user
+      ansible.builtin.getent:
+        database: passwd
+        key: fastdeploy
+
+    - name: The sync ran as fastdeploy and stored the new script path
+      ansible.builtin.assert:
+        that:
+          - (sync_state.results[0].content | b64decode | from_json)['demo-backup'].deploy_script == runner_script
+          - (sync_state.results[1].content | b64decode | trim) == ansible_facts.getent_passwd.fastdeploy[1]
+
+    # Every way fastdeploy (or deploy) could swap the code that sudo runs as root.
+    - name: Try to change the runner as {{ item.user }} ({{ item.what }})
+      ansible.builtin.command:
+        argv: ["runuser", "-u", "{{ item.user }}", "--", "sh", "-c", "{{ item.cmd }}"]
+      loop:
+        - {user: fastdeploy, what: append to the script, cmd: "echo x >> {{ runner_script }}"}
+        - {user: fastdeploy, what: replace the script, cmd: "cp /bin/true {{ runner_dir }}/new && mv -f {{ runner_dir }}/new {{ runner_script }}"}
+        - {user: fastdeploy, what: rename the script directory, cmd: "mv {{ runner_dir }} {{ libexec_root }}/moved"}
+        - {user: fastdeploy, what: rename the libexec root, cmd: "mv {{ libexec_root }} /usr/local/libexec/moved"}
+        - {user: fastdeploy, what: create a file next to the script, cmd: "touch {{ runner_dir }}/planted"}
+        - {user: fastdeploy, what: chmod the script, cmd: "chmod 0777 {{ runner_script }}"}
+        - {user: deploy, what: append to the script, cmd: "echo x >> {{ runner_script }}"}
+        - {user: deploy, what: rename the script directory, cmd: "mv {{ runner_dir }} {{ libexec_root }}/moved"}
+        - {user: fastdeploy, what: plant a script at the old path, cmd: "printf '#!/bin/sh\\nid\\n' > {{ legacy_script }}"}
+      loop_control:
+        label: "{{ item.user }}: {{ item.what }}"
+      register: tamper_attempts
+      changed_when: false
+      failed_when: tamper_attempts.rc == 0
+
+    - name: Stat the script after the attempts
+      ansible.builtin.stat:
+        path: "{{ runner_script }}"
+        checksum_algorithm: sha256
+      register: runner_after
+
+    - name: Render the expected script for comparison
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/templates/demo_backup.py.j2"
+        dest: /var/tmp/demo-backup-expected.py
+        mode: "0600"
+      vars:
+        demo_backup_marker: /var/tmp/demo-backup-ran
+      changed_when: false
+
+    - name: Checksum the expected script
+      ansible.builtin.stat:
+        path: /var/tmp/demo-backup-expected.py
+        checksum_algorithm: sha256
+      register: runner_expected
+
+    - name: The script is unchanged
+      ansible.builtin.assert:
+        that:
+          - runner_after.stat.checksum == runner_expected.stat.checksum
+          - runner_after.stat.mode == '0750'
+
+    - name: Remove an old marker
+      ansible.builtin.file:
+        path: "{{ marker }}"
+        state: absent
+      changed_when: false
+
+    - name: Write a runner config file
+      ansible.builtin.copy:
+        dest: /var/tmp/demo-backup-config.json
+        content: '{"action": "backup"}'
+        owner: fastdeploy
+        mode: "0644"
+      changed_when: false
+
+    # What FastDeploy does: sudo -u deploy <script> --config <file>; the runner
+    # then re-runs itself as root through the second rule.
+    - name: Run the registered runner the way FastDeploy does
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - fastdeploy
+          - --
+          - sudo
+          - -n
+          - -u
+          - deploy
+          - "{{ runner_script }}"
+          - --config
+          - /var/tmp/demo-backup-config.json
+      register: runner_run
+      changed_when: false
+
+    - name: Read the marker
+      ansible.builtin.slurp:
+        src: "{{ marker }}"
+      register: marker_content
+
+    - name: The runner reached root through the sudo chain
+      ansible.builtin.assert:
+        that:
+          - "'backup done' in runner_run.stdout"
+          - "(marker_content.content | b64decode) is match('^uid=0 sudo_user=deploy args=--config /var/tmp/demo-backup-config.json')"
+
+    - name: Try the old FastDeploy-writable path through sudo
+      ansible.builtin.command:
+        argv: [runuser, -u, fastdeploy, --, sudo, -n, -u, deploy, "{{ legacy_script }}", --config, /var/tmp/demo-backup-config.json]
+      register: legacy_run
+      changed_when: false
+      failed_when: legacy_run.rc == 0

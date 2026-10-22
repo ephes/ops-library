@@ -1,0 +1,36 @@
+---
+- name: Read native platform and effective account without broad facts
+  ansible.builtin.command:
+    argv:
+      - /opt/homebrew/bin/python3
+      - -c
+      - >-
+        import json, os, platform, pwd;
+        account = pwd.getpwuid(os.getuid());
+        print(json.dumps({'system': platform.system(), 'user': account.pw_name}))
+  become: false
+  register: macos_python_ca_native
+  changed_when: false
+  check_mode: false
+
+- name: Store narrow native account context
+  ansible.builtin.set_fact:
+    macos_python_ca_context: "{{ macos_python_ca_native.stdout | from_json }}"
+
+- name: Validate macOS environment remediation scope
+  ansible.builtin.assert:
+    that:
+      - macos_python_ca_context.system == 'Darwin'
+      - macos_python_ca_environments | length > 0
+
+- name: Patch explicitly owned Python environments
+  ansible.builtin.script:
+    cmd: "remediate_ca.py {{ item.path | quote }}{{ (' --lockfile ' + (item.lockfile | quote)) if item.lockfile is defined else '' }}{{ ' --check' if ansible_check_mode else '' }}"
+    executable: /opt/homebrew/bin/python3
+    chdir: /
+  become: "{{ item.owner != macos_python_ca_context.user }}"
+  become_user: "{{ item.owner }}"
+  register: macos_python_ca_result
+  changed_when: "'CHANGED' in macos_python_ca_result.stdout_lines"
+  check_mode: false
+  loop: "{{ macos_python_ca_environments }}"

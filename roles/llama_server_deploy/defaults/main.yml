@@ -1,0 +1,81 @@
+---
+# llama_server_deploy: one pinned llama.cpp `llama-server` on macOS under
+# launchd, started through a wrapper that checks the model file's SHA-256
+# before it starts. Built for Delve's ad detector (the podcast repo's
+# apps/delve-backend/scripts/detector-server.sh and the spec's "Detector
+# Service"), whose wrapper fixes the flags: -c 16384 -np 1 -ngl 99 -b 512
+# -ub 512 --flash-attn auto --seed 42 --cache-ram 0, --alias, --api-key-file,
+# --no-ui, --no-slots, no --slot-save-path and no --verbose (prompt logging).
+
+# false: unload the job and remove its plist and API key file (the model,
+# the wrapper and the Homebrew package stay).
+llama_server_enabled: true
+
+# Account the server runs as (a LaunchDaemon with UserName); it owns the API
+# key file, which the wrapper requires to be mode 0600.
+llama_server_service_user: "CHANGEME"
+llama_server_service_group: "staff"
+llama_server_service_home: "/Users/{{ llama_server_service_user }}"
+
+# Homebrew provides llama-server. The role installs the formula when it is
+# missing and never upgrades it: the installed build must equal
+# llama_server_build, which the deploy checks, the wrapper checks again at
+# every start (DELVE_DETECTOR_BUILD), and Delve compares with /props build_info.
+llama_server_brew_bin: ""
+llama_server_brew_user: ""
+llama_server_brew_formula: "llama.cpp"
+llama_server_bin: "/opt/homebrew/bin/llama-server"
+# "b<build>-<commit>" as llama-server's /props build_info reports it.
+llama_server_build: "b11669-620d2225c"
+
+# The start wrapper, copied from the control node (required). It must pin the
+# same GGUF SHA-256 as llama_server_gguf_sha256; the role checks that before
+# it installs anything, so a mismatch cannot turn into a launchd restart loop.
+llama_server_wrapper_src: ""
+llama_server_install_dir: "/opt/llama-server"
+llama_server_wrapper_path: "{{ llama_server_install_dir }}/detector-server.sh"
+
+# The model, downloaded at a pinned repository commit and verified by SHA-256.
+llama_server_model_dir: "{{ llama_server_install_dir }}/models"
+llama_server_gguf_file: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+llama_server_gguf_url: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+llama_server_gguf_sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"  # pragma: allowlist secret
+# The alias the wrapper passes (--alias): the model name plus the first 8 hex
+# digits of the GGUF SHA-256. The deploy's health check requires /v1/models to
+# serve exactly this id.
+llama_server_alias: "qwen3-4b-instruct-2507-q4km-3605803b"
+
+# API key (a secret; pass from SOPS). Clients send it as a bearer token;
+# Delve reads the same value from its own key file.
+llama_server_api_key: "CHANGEME"  # pragma: allowlist secret
+llama_server_config_dir: "/etc/llama-server"
+llama_server_api_key_path: "{{ llama_server_config_dir }}/api-key"
+# What the key must look like. llama-server (b11669, common/arg.cpp
+# --api-key-file) reads the file line by line without trimming and skips empty
+# lines and lines starting with "#", so the key is one token of these
+# characters: never a comment, never split or padded. Delve's side
+# (delve_deploy's delve_detector_api_key_pattern, ops-deploy's
+# DETECTOR_API_KEY_PATTERN) accepts exactly the same values.
+llama_server_api_key_pattern: '^[A-Za-z0-9._~+/=-]{32,}\Z'
+
+# Bind address: "tailnet" picks this host's single Tailscale IPv4 address
+# (100.64.0.0/10) from the gathered facts; otherwise a loopback address or a
+# Tailscale address literal. The wrapper refuses anything else (no wildcard,
+# no LAN address).
+llama_server_bind_host: "tailnet"
+llama_server_port: 8177
+
+llama_server_log_dir: "/var/log/llama-server"
+llama_server_stdout_log: "{{ llama_server_log_dir }}/llama-server.log"
+llama_server_stderr_log: "{{ llama_server_log_dir }}/llama-server.err.log"
+
+llama_server_launchd_label: "de.wersdoerfer.llama-server"
+llama_server_launchd_plist_path: "/Library/LaunchDaemons/{{ llama_server_launchd_label }}.plist"
+llama_server_launchd_path: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# After a (re)start: /v1/models must serve exactly llama_server_alias and
+# /props must report llama_server_build and one slot. Loading the model and
+# hashing it in the wrapper takes a few seconds.
+llama_server_healthcheck_enabled: true
+llama_server_healthcheck_retries: 30
+llama_server_healthcheck_delay: 2

@@ -21,7 +21,7 @@ This role deploys FastDeploy, a web-based platform for managing service deployme
 - Ability to install PostgreSQL (handled automatically via dependency)
 - Node.js 16+ (for frontend build)
 - Python 3.14+ (managed via uv; set `fastdeploy_python_version` if needed)
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 - Required collections:
   - `ansible.posix` (for synchronize module)
   - `community.general` (for PostgreSQL modules)
@@ -166,6 +166,34 @@ Removal, once every consumer uses a re-issued token (step 3 above) under a real 
    they are deleted they stay ordinary users without a usable password, and deleting one
    invalidates every service token issued for that name.
 
+#### Token issuance admins and restore policies
+
+FastDeploy main `8faa9bd` and later fail closed on two settings:
+
+- `SERVICE_TOKEN_ADMIN_USERS`: only these existing users may issue service tokens through the API
+  (`POST /service-token`, which the web UI's deploy button also uses). Unset, every user gets 403.
+  Minting on the host with `commands.py issueservicetoken` is not affected.
+- `RESTORE_POLICIES`: per FastDeploy service, the bucket and the key prefixes an Echoport restore
+  may read from. A restore for a service without a policy, or with another bucket or a key outside
+  the prefixes, is refused with 422 before a deployment starts. Unset, every restore is refused.
+  Scheduled backups are not affected.
+
+```yaml
+fastdeploy_service_token_admin_users: ["{{ fastdeploy_initial_user }}"]
+fastdeploy_restore_policies:
+  echoport-backup: {bucket: backups, prefixes: ["archive/", "nyxmon/"]}
+  weeknotes-home-backup: {bucket: backups, prefixes: ["weeknotes_home/", "weeknotes-home/"]}
+```
+
+Both default to empty and are then not written. When set, each is written as compact JSON (keys
+sorted, list order kept) in single quotes, in `.env` and `.env.shell` alike, so systemd's
+`EnvironmentFile=`, dotenv and `sh` all read the JSON literally. The role refuses, before `.env` is
+written, a user name outside letters, digits, `.`, `_`, `@`, `-`; a policy that is not
+`{bucket, prefixes}`; a bucket that is not a lowercase S3 name; an empty prefix list; and a prefix
+that is absolute, contains `..` or an empty component, or does not end in `/`. None of the accepted
+values can contain a quote. ops-deploy's `FastdeployConfig.service_token_admin_users` and
+`restore_policies` write the same bytes.
+
 ### Rollout behavior
 
 Every successful role run is treated as a rollout of the live FastDeploy service:
@@ -246,7 +274,7 @@ fastdeploy_internal_ip_ranges:  # Customize for your network
   - "YOUR_IPV6_PREFIX::/64"
 ```
 
-**Note:** The role expects a plain-text password in `fastdeploy_basic_auth_password`. It will automatically generate the bcrypt hash using `htpasswd` during deployment. Do NOT provide a pre-hashed password.
+**Note:** The role expects a plain-text password in `fastdeploy_basic_auth_password`. It generates the bcrypt hash with `htpasswd` during deployment and reuses the hash already in the deployed Traefik file while it still matches the password, so a deploy without a password change leaves the file unchanged. Do NOT provide a pre-hashed password.
 
 **Testing:**
 - From LAN (192.168.x): No auth prompt
@@ -323,16 +351,34 @@ FastDeploy Service (runs as: fastdeploy)
             (via the service's own /etc/sudoers.d/<service> rule)
             │
             └── optional second step to root, only for the exact script:
-                deploy ALL=(root) NOPASSWD:NOSETENV: <service>/backup.py *
+                deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/<service>/backup.py *
 ```
+
+### Ownership
+
+| Path | Owner | Why |
+|---|---|---|
+| `fastdeploy_site_path` (code, `.venv`, `.env`, logs) | fastdeploy | the app writes here |
+| `fastdeploy_services_path` (`config.json` per service) | root:root `0755` | FastDeploy only reads it |
+| `fastdeploy_libexec_path` (`/usr/local/libexec/fastdeploy/<service>/`) | root:root `0755` | scripts that sudo runs as `deploy` or root |
+
+The role never hands the services root to fastdeploy: rsync skips it, the
+ownership pass after rsync (or a changed git checkout) prunes it, and every
+deploy makes the services root and everything below it root-owned again (a
+host deployed by an older version had a fastdeploy-owned tree there, with the
+root-run backup scripts in it). The services root still sits inside the
+fastdeploy-owned site, so fastdeploy could rename it; that is why scripts
+named in sudoers live below `fastdeploy_libexec_path` instead (role
+`fastdeploy_runner`) and `config.json` only names their fixed path.
 
 ### Key Components
 
 1. **fastdeploy user**: Runs the FastDeploy web service
 2. **deploy user**: Runs the service scripts; it has no general root rights
 3. **Sudoers rules**: each registered service (for example through
-   `echoport_backup` or the ops-control `register-*-backup.yml` playbooks)
-   installs rules that name its own script. This role installs no sudoers
+   `echoport_backup`, `fastdeploy_runner` or the ops-control
+   `register-*-backup.yml` playbooks) installs rules that name its own
+   root-owned script. This role installs no sudoers
    rule and removes the retired wildcard file `/etc/sudoers.d/fastdeploy`
    (`fastdeploy ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *`), which let
    fastdeploy run any script it wrote into its own services directory.

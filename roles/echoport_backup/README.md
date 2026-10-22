@@ -4,11 +4,26 @@ Registers an Echoport backup service with FastDeploy.
 
 This role sets up a backup runner that can be triggered by Echoport (or directly via FastDeploy) to:
 
-1. Safely backup SQLite databases using `sqlite3 .backup`
+1. Safely backup SQLite databases using `sqlite3 .backup` (every runner that
+   copies a live SQLite database shares `templates/_sqlite_backup.py.j2`: it
+   waits up to 30 s for a writer's lock with `.timeout`, retries a failed
+   backup up to 3 times 5 s apart, removes a partial copy, requires the
+   integrity check to print exactly `ok`, and the failure step names the
+   sqlite3 error)
 2. Archive additional files/directories
 3. Create a compressed tarball with manifest
 4. Upload to MinIO object storage
 5. Output `ECHOPORT_RESULT:{...}` for Echoport to parse
+
+The runners include `_sqlite_backup.py.j2` with a Jinja `{% include %}`, so
+render them from their file in this role's `templates/` directory (as
+`fastdeploy_runner_template` does: Ansible resolves the include next to the
+template). The GoToSocial runner takes its snapshot on the host through the
+`echoport_remote_command_guard` and sends `sqlite3 <db> ".timeout 30000"
+".backup '<tmpdir>/<name>'"`; deploy the guard (2.53.0 or later) on the
+GoToSocial host before the runner. A retry writes a new file
+(`retry<N>-sqlite.db`) in the same private temp dir. The heis and
+villakunterbunt runners keep their own snapshot code.
 
 For media backup services (for example homepage/python-podcast templates in this role), object data is
 stored in a rolling prefix (`<service>/current/objects`) while each run still writes a per-run manifest
@@ -44,16 +59,29 @@ echoport_backup_default_bucket: "backups"
 echoport_backup_minio_alias_users: ["{{ echoport_backup_user }}"]
 echoport_backup_minio_retired_aliases: []
 echoport_backup_minio_prefix_aliases: {}
+echoport_backup_minio_require_prefix_alias: false
 
-# FastDeploy API (for service sync)
-echoport_backup_api_base: "http://localhost:8000"
-echoport_backup_api_token: ""
+# Root-owned runner location and FastDeploy service sync
+echoport_backup_libexec_root: "/usr/local/libexec/fastdeploy"
+echoport_backup_sync_services: true
 ```
 
-When `echoport_backup_sync_services` is true and the token is set, the role calls
-`POST <echoport_backup_api_base>/services/sync`. The call runs with `no_log: true` so the bearer token
-never appears in verbose output; a failed sync does not fail the play and is reported by a separate
-task that prints only the HTTP status and response body.
+### Runner location
+
+The runner runs as root (`echoport_backup_user`) through FastDeploy's sudo
+chain, so the role installs it with
+[`fastdeploy_runner`](../fastdeploy_runner/README.md):
+`<echoport_backup_libexec_root>/<echoport_backup_service_name>/backup.py`
+(root:`deploy` `0750`, every directory above it root-owned), `config.json`
+in `echoport_backup_service_dir` names that absolute path, and
+`/etc/sudoers.d/echoport_backup` allows only that path. A runner left in the
+service directory by an older version is removed after the sync.
+
+With `echoport_backup_sync_services` true (default) the role runs
+FastDeploy's `commands.py syncservices` as the fastdeploy user.
+`echoport_backup_api_base` and `echoport_backup_api_token` are no longer used
+(the role used to call `POST /services/sync`); existing playbooks that set
+them keep working.
 
 ### MinIO alias
 
@@ -93,9 +121,26 @@ echoport_backup_minio_prefix_aliases:
   homelab: backup-homelab
 ```
 
+The runner fails closed on a missing alias. mc reads `<alias>/<bucket>/<key>`
+with an alias it does not know as a local path, so `mc cp` would write the
+archive below the runner's working directory and `mc stat` would then find
+it there, and Echoport would record a backup that never reached MinIO. Before
+it archives anything, and again before every `mc cp` (upload, restore
+download) and `mc stat` (upload check), the runner runs
+`mc --json alias list <alias>` as the runner user and fails the backup or
+restore unless the alias exists with an http(s) URL. The error names the
+alias and the key prefix; the command's output carries the secret key and is
+never printed.
+
+Set `echoport_backup_minio_require_prefix_alias: true` once every target of
+the runner has its own entry: a key without one then fails instead of
+falling back to `echoport_backup_minio_alias`. Leave it `false` while a target
+still uses the shared alias, or to roll a target back to it.
+
 ## Dependencies
 
-None.
+Includes `local.ops_library.fastdeploy_runner` (runner installation and
+registration) and `local.ops_library.minio_backup` (mc installation).
 
 ## Example Playbook
 
@@ -107,7 +152,6 @@ None.
         echoport_backup_minio_url: "{{ minio_url }}"
         echoport_backup_minio_access_key: "{{ minio_access_key }}"
         echoport_backup_minio_secret_key: "{{ minio_secret_key }}"
-        echoport_backup_api_token: "{{ fastdeploy_admin_token }}"
 ```
 
 ## Backup Context Variables
@@ -206,7 +250,9 @@ only the commands these templates send are accepted, so:
 - a new remote command in a template needs a matching guard rule.
   `just test-echoport-remote-command-guard` renders each runner, drives a
   backup and a restore with the network faked, and fails on any command the
-  guard would refuse;
+  guard would refuse. When the commands a runner sends change, it also fails
+  until the Rust port's fixtures, which record them, are regenerated with
+  `just echoport-command-guard-fixtures`;
 - the opt-in python-podcast private media restore (`--include-private-media`)
   is refused by the guard.
 

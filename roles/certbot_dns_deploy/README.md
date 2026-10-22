@@ -77,6 +77,34 @@ next renewal. The role removes them from the managed lineage once its
 `authenticator` is the configured provider, so the old file can go right away.
 Set it to `false` to keep old credentials files.
 
+### Removing a stray certbot config tree
+
+`certbot_dns_stray_config_dirs` (default `[]`) lists leftover certbot config
+trees outside `certbot_dns_config_dir` to delete, for example a copy made by
+hand during a migration that still holds an old account key and credentials
+file, or the `/letsencrypt` an earlier `certbot_dns_restore` extracted into `/`.
+Nothing is found by pattern. Every listed path must be absolute and
+normalized, using only letters, digits, `.`, `_`, `-` and `/`, and must not
+be equal to, inside or above the live config dir or
+certbot's default `/etc/letsencrypt`, `/var/lib/letsencrypt` and
+`/var/log/letsencrypt` (also after resolving symlinks), and must be a real
+directory with a `renewal/` directory. The live trees must also use only
+literal paths: each protected dir is its own real path, the only symlinks in
+them are certbot's lineage links (`live/<name>/{cert,chain,fullchain,privkey}.pem`
+pointing exactly at `../../archive/<name>/<same>N.pem`), and every value with a
+`/` in any protected tree's `renewal/*.conf` is an `https://` URL or a plain
+absolute path (letters, digits, `.`, `_`, `-`, `/`, no `.`/`..` segments)
+inside the protected dirs. Otherwise nothing is removed. The checks run on the host in
+`files/certbot_stray_guard.py`, and an unreadable live tree or renewal
+configuration counts as a failed check. If any check fails, the run stops before
+anything is removed. A path that does not exist is skipped, and check mode only
+reports.
+
+```yaml
+certbot_dns_stray_config_dirs:
+  - /letsencrypt
+```
+
 ### Common configuration
 
 ```yaml
@@ -90,6 +118,7 @@ certbot_dns_renewal_hooks: []              # Commands to run post-renewal
 certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"            # gandi
 certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"
 certbot_dns_remove_unused_credentials: true # delete the other provider's unused file
+certbot_dns_stray_config_dirs: []           # explicit stray certbot trees to delete
 certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh"
 ```
 

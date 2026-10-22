@@ -1,0 +1,106 @@
+---
+- name: Prepare a running MinIO with a user, a policy and a versioned bucket
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Install rsync and unzip
+      ansible.builtin.apt:
+        name: [rsync, unzip]
+        state: present
+        update_cache: true
+
+    - name: Create the minio system user
+      ansible.builtin.user:
+        name: minio
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Create the MinIO data directory
+      ansible.builtin.file:
+        path: "{{ molecule_minio_data_dir }}"
+        state: directory
+        owner: minio
+        group: minio
+        mode: "0750"
+
+    - name: Write the MinIO environment file
+      ansible.builtin.copy:
+        dest: /etc/default/minio
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          MINIO_ROOT_USER={{ molecule_minio_root_user }}
+          MINIO_ROOT_PASSWORD={{ molecule_minio_root_password }}
+          MINIO_VOLUMES={{ molecule_minio_data_dir }}
+          MINIO_OPTS="--address 127.0.0.1:9001 --console-address 127.0.0.1:9002"
+
+    - name: Write the MinIO unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/minio.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=MinIO
+          After=network-online.target
+
+          [Service]
+          User=minio
+          Group=minio
+          EnvironmentFile=/etc/default/minio
+          ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start MinIO
+      ansible.builtin.systemd:
+        name: minio.service
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for the MinIO API
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9001/minio/health/live
+      register: molecule_minio_health
+      retries: 30
+      delay: 2
+      until: molecule_minio_health is succeeded
+
+    - name: Create the fixture user, policy and versioned bucket
+      ansible.builtin.shell: |
+        set -euo pipefail
+        mc mb --ignore-existing fixture/molecule-bucket
+        mc version enable fixture/molecule-bucket
+        echo molecule-object | mc pipe fixture/molecule-bucket/object.txt
+        mc admin user add fixture "{{ molecule_minio_fixture_user }}" "{{ molecule_minio_fixture_secret }}"
+        mc admin policy attach fixture readwrite --user "{{ molecule_minio_fixture_user }}"
+      args:
+        executable: /bin/bash
+      environment:
+        MC_HOST_fixture: "http://{{ molecule_minio_root_user }}:{{ molecule_minio_root_password }}@127.0.0.1:9001"
+      changed_when: true
+
+    - name: Create the backup root with older snapshots and foreign files
+      ansible.builtin.shell: |
+        set -euo pipefail
+        install -d -m 0700 "{{ molecule_backup_root }}"
+        cd "{{ molecule_backup_root }}"
+        for name in molecule-20200101T000000 molecule-20200102T000000; do
+          install -d -m 0700 "$name"
+          tar -czf "$name.tar.gz" "$name"
+          touch -d 2020-01-01 "$name.tar.gz"
+        done
+        tar -czf other-20200101T000000.tar.gz molecule-20200101T000000
+        touch -d 2020-01-01 other-20200101T000000.tar.gz
+        echo keep > molecule-notes.txt
+      args:
+        executable: /bin/bash
+      changed_when: true

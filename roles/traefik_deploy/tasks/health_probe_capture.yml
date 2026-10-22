@@ -1,0 +1,65 @@
+---
+# Read-only baseline capture: runs the public probe program's `capture` mode from a
+# private temporary directory and returns the merged probe configuration. It never
+# touches /var/lib/traefik-update-probes, Traefik, routes or units.
+- name: health_probe_capture | Require an explicit probe specification
+  ansible.builtin.assert:
+    that:
+      - traefik_health_probe_spec is mapping
+      - traefik_health_probe_spec.probes | default([]) | length > 0
+      - traefik_health_probe_spec.entrypoints | default([]) | length > 0
+      - traefik_health_probe_spec.observations is not defined
+      - traefik_health_probe_spec.dynamic is not defined
+      - not ansible_check_mode
+    fail_msg: Supply probes and entrypoint names only; capture computes observations and dynamic hashes.
+
+- name: health_probe_capture | Check the explicitly pinned probe interpreter
+  ansible.builtin.raw: /usr/bin/python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'
+  register: traefik_health_probe_capture_python
+  changed_when: false
+  failed_when: traefik_health_probe_capture_python.rc != 0
+
+- name: health_probe_capture | Create private temporary capture directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: traefik-probe-capture-
+  register: traefik_health_probe_capture_dir
+
+- name: health_probe_capture | Capture the live ingress baseline
+  block:
+    - name: health_probe_capture | Copy probe program
+      ansible.builtin.copy:
+        src: traefik_health_probe.py
+        dest: '{{ traefik_health_probe_capture_dir.path }}/health.py'
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: health_probe_capture | Write private probe specification
+      ansible.builtin.copy:
+        content: '{{ traefik_health_probe_spec | to_nice_json }}'
+        dest: '{{ traefik_health_probe_capture_dir.path }}/spec.json'
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: health_probe_capture | Run read-only capture
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - '{{ traefik_health_probe_capture_dir.path }}/health.py'
+          - capture
+          - '{{ traefik_health_probe_capture_dir.path }}/spec.json'
+      register: traefik_health_probe_capture_run
+      changed_when: false
+
+    - name: health_probe_capture | Return the merged probe configuration
+      ansible.builtin.set_fact:
+        traefik_health_probe_captured: >-
+          {{ traefik_health_probe_spec | combine(traefik_health_probe_capture_run.stdout | from_json) }}
+  always:
+    - name: health_probe_capture | Remove only this invocation's capture files
+      ansible.builtin.file:
+        path: '{{ traefik_health_probe_capture_dir.path }}'
+        state: absent

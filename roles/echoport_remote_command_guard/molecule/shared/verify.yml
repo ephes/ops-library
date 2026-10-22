@@ -1,0 +1,381 @@
+---
+# The same checks for every impl (MOLECULE_GUARD_IMPL): python and shadow
+# decide with the Python guard, rust with the Rust guard
+# (rust/echoport-command-guard/PLAN.md 6.2).
+- name: Verify the guard through a real sshd
+  hosts: all
+  become: true
+  vars:
+    guard_impl: "{{ lookup('env', 'MOLECULE_GUARD_IMPL') or 'python' }}"
+    guard_rust_binary: /usr/local/lib/echoport-command-guard/0.2.0/echoport-command-guard
+    guard_ssh: >-
+      /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+    allowed_commands:
+      - test -d /srv/marina/site/media
+      - readlink -f /srv/marina/site/media
+      - systemctl show --property=LoadState --value cron.service
+      - chown -R nobody:nogroup /srv/marina/site/media
+    refused_commands:
+      - id
+      - test -d /srv/outside
+      - test -e /srv/marina/site; id
+      - "sh -c id"
+      - chown root:root /srv/marina/site/media
+      - systemctl stop ssh.service
+      - sudo -u postgres psql -d postgres -c 'SELECT 1'
+  tasks:
+    - name: Note the probe start for the journal checks
+      ansible.builtin.command:
+        argv: [date, +%s]
+      register: guard_verify_start
+      changed_when: false
+
+    - name: Stat the installed guard and policy
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/sbin/echoport-remote-command-guard
+        - /etc/echoport/remote-command-guard.json
+      register: guard_files
+
+    - name: Assert ownership and modes
+      ansible.builtin.assert:
+        that:
+          - guard_files.results[0].stat.pw_name == 'root'
+          - guard_files.results[0].stat.mode == '0755'
+          - guard_files.results[1].stat.pw_name == 'root'
+          - guard_files.results[1].stat.mode == '0644'
+
+    - name: Stat the Rust guard and its pins
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ guard_rust_binary }}"
+        - /usr/local/lib/echoport-command-guard/.pins/echoport_remote_command_guard
+      register: guard_rust_files
+      when: guard_impl != 'python'
+
+    - name: Read the Rust guard's current pin
+      ansible.builtin.slurp:
+        src: /usr/local/lib/echoport-command-guard/.pins/echoport_remote_command_guard
+      register: guard_rust_pin
+      when: guard_impl != 'python'
+
+    - name: Read the forced command
+      ansible.builtin.slurp:
+        src: /root/.ssh/authorized_keys
+      register: guard_authorized_keys
+
+    - name: Assert the forced command of the impl and the Rust install
+      ansible.builtin.assert:
+        that:
+          - >-
+            ('command="' ~ guard_command[guard_impl] ~ '"') in (guard_authorized_keys.content | b64decode)
+          - >-
+            guard_impl == 'python' or (
+              guard_rust_files.results[0].stat.pw_name == 'root'
+              and guard_rust_files.results[0].stat.mode == '0755'
+              and (guard_rust_pin.content | b64decode) == '0.2.0\n')
+          - guard_impl != 'python' or not (guard_rust_files.results | default([{}]))[0].stat is defined
+      vars:
+        guard_python: /usr/bin/python3 -I /usr/local/sbin/echoport-remote-command-guard /etc/echoport/remote-command-guard.json
+        guard_command:
+          python: "{{ guard_python }}"
+          shadow: "{{ guard_rust_binary }} --shadow /etc/echoport/remote-command-guard.json {{ guard_python }}"
+          rust: "{{ guard_rust_binary }} /etc/echoport/remote-command-guard.json"
+
+    - name: Run allowed commands over SSH
+      ansible.builtin.shell:
+        cmd: "{{ guard_ssh }} root@127.0.0.1 {{ item | quote }}"
+      loop: "{{ allowed_commands }}"
+      register: guard_allowed
+      changed_when: false
+
+    - name: Run refused commands over SSH
+      ansible.builtin.shell:
+        cmd: "{{ guard_ssh }} root@127.0.0.1 {{ item | quote }}"
+      loop: "{{ refused_commands }}"
+      register: guard_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Open an interactive session
+      ansible.builtin.shell:
+        cmd: "{{ guard_ssh }} -T root@127.0.0.1 < /dev/null"
+      register: guard_interactive
+      changed_when: false
+      failed_when: false
+
+    - name: Assert the allowlist decisions
+      ansible.builtin.assert:
+        that:
+          - guard_allowed.results | map(attribute='rc') | unique == [0]
+          - guard_allowed.results[1].stdout | trim == '/srv/marina/site/media'
+          - guard_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+          - guard_refused.results | map(attribute='stderr') | select('search', 'command not allowed') | list | length
+            == refused_commands | length
+          - guard_interactive.rc != 0
+          - "'interactive sessions are not allowed' in guard_interactive.stderr"
+
+    - name: Write a transfer fixture
+      ansible.builtin.copy:
+        dest: /root/transfer.bin
+        content: "fixture\n"
+        mode: "0600"
+    - name: Upload and download with classic scp inside the root
+      ansible.builtin.shell:
+        cmd: >-
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          /root/transfer.bin root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp &&
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp /root/transfer.back &&
+          cmp /root/transfer.bin /root/transfer.back
+      changed_when: false
+    - name: Try SFTP-mode scp and an upload outside the root
+      ansible.builtin.shell:
+        cmd: "{{ item }}"
+      loop:
+        - >-
+          /usr/bin/scp -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp /root/sftp.back
+        - >-
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          /root/transfer.bin root@127.0.0.1:/srv/outside/x.tmp
+      register: guard_scp_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Assert SFTP and the upload outside the root are refused
+      ansible.builtin.assert:
+        that:
+          - guard_scp_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+
+    # The runners' exact client options: download -a --safe-links, upload
+    # -a --no-D with and without --delete.
+    - name: Sync a directory down and back up with rsync inside the root
+      ansible.builtin.shell:
+        cmd: >-
+          mkdir -p /root/rsync-down &&
+          /usr/bin/rsync -a --safe-links -e "{{ guard_ssh }}"
+          root@127.0.0.1:/srv/marina/site/media/ /root/rsync-down/ &&
+          touch /root/rsync-down/new-file &&
+          /usr/bin/rsync -a --no-D -e "{{ guard_ssh }}"
+          /root/rsync-down/ root@127.0.0.1:/srv/marina/site/media/ &&
+          /usr/bin/rsync -a --no-D --delete -e "{{ guard_ssh }}"
+          /root/rsync-down/ root@127.0.0.1:/srv/marina/site/media/
+      changed_when: false
+    - name: Try rsync outside the root and with options the runners do not use
+      ansible.builtin.shell:
+        cmd: "{{ item }}"
+      loop:
+        - /usr/bin/rsync -a --no-D --delete -e "{{ guard_ssh }}" /root/rsync-down/ root@127.0.0.1:/srv/outside/
+        - /usr/bin/rsync -a --delete -e "{{ guard_ssh }}" /root/rsync-down/ root@127.0.0.1:/srv/marina/site/media/
+        - /usr/bin/rsync -aL --safe-links -e "{{ guard_ssh }}" root@127.0.0.1:/srv/marina/site/media/ /root/rsync-down/
+        - /usr/bin/rsync -aK --no-D -e "{{ guard_ssh }}" /root/rsync-down/ root@127.0.0.1:/srv/marina/site/media/
+      register: guard_rsync_refused
+      changed_when: false
+      failed_when: false
+    # The link stays inside the root, so only the plain-file check refuses it.
+    - name: Make a would-be upload target a symlink
+      ansible.builtin.file:
+        src: /srv/marina/site/media/link-target
+        dest: /srv/marina/site/linked.tmp
+        state: link
+        follow: false
+        force: true
+    - name: Try scp -O onto the symlink
+      ansible.builtin.shell:
+        cmd: >-
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          /root/transfer.bin root@127.0.0.1:/srv/marina/site/linked.tmp
+      register: guard_scp_symlink
+      changed_when: false
+      failed_when: false
+    - name: Stat transfer results
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /root/sftp.back
+        - /srv/outside/x.tmp
+        - /srv/outside/new-file
+        - /srv/marina/site/media/new-file
+        - /srv/marina/site/media/link-target
+        - /srv/marina/site/db.sqlite3.tmp
+      register: guard_transfer_results
+    - name: Assert transfer decisions
+      ansible.builtin.assert:
+        that:
+          - guard_scp_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+          - guard_rsync_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+          - guard_scp_symlink.rc != 0
+          - not guard_transfer_results.results[4].stat.exists
+          - not guard_transfer_results.results[0].stat.exists
+          - not guard_transfer_results.results[1].stat.exists
+          - not guard_transfer_results.results[2].stat.exists
+          - guard_transfer_results.results[3].stat.exists
+          # Uploads run as the root's owner, never as root.
+          - guard_transfer_results.results[3].stat.pw_name == 'nobody'
+          - guard_transfer_results.results[5].stat.pw_name == 'nobody'
+    # The guard's own mutations (H1): made on file descriptors, never through
+    # a symlink, also not one check() allows because it resolves inside the
+    # root; chown -R leaves a link out of the root and its target alone;
+    # chmod, mv and rm run as the root's owner (nobody), so the chmod of a
+    # root-owned file in the root fails.
+    - name: Change, move and remove inside the root, never through a symlink
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          run() { {{ guard_ssh }} root@127.0.0.1 "$1"; }
+          site=/srv/marina/site
+          echo outside > /srv/outside/target
+          chmod 0644 /srv/outside/target
+          echo db > $site/mut.db
+          chmod 0644 $site/mut.db
+          chown nobody:nogroup $site/mut.db
+          run "chmod 0600 $site/mut.db"
+          test "$(stat -c %a $site/mut.db)" = 600
+          run "chown nobody:nogroup $site/mut.db"
+          test "$(stat -c %U:%G $site/mut.db)" = nobody:nogroup
+          echo wal > $site/mut.db-wal
+          run "rm -f $site/mut.db-wal $site/mut.db-shm"
+          test ! -e $site/mut.db-wal
+          echo new > $site/mut.db.tmp
+          run "mv $site/mut.db.tmp $site/mut.db"
+          test "$(cat $site/mut.db)" = new
+          ln -sfn $site/mut.db $site/alias
+          if run "chmod 0600 $site/alias" 2> /root/mut.err; then exit 1; fi
+          grep -q 'command not allowed' /root/mut.err
+          ln -sfn $site $site/media/loop
+          if run "chown nobody:nogroup $site/media/loop/mut.db" 2> /dev/null; then exit 1; fi
+          rm $site/media/loop
+          ln -sfn /srv/outside/target $site/media/out
+          run "chown -R nobody:nogroup $site/media"
+          test "$(stat -c %U:%G /srv/outside/target)" = root:root
+          test "$(stat -c %a /srv/outside/target)" = 644
+          test "$(stat -L -c %U $site/media)" = nobody
+          echo root > $site/root-owned
+          chmod 0644 $site/root-owned
+          if run "chmod 0600 $site/root-owned" 2> /dev/null; then exit 1; fi
+          test "$(stat -c %a:%U $site/root-owned)" = 644:root
+          rm -f $site/media/out $site/alias $site/mut.db $site/root-owned
+      changed_when: false
+
+    - name: Write a policy the guard must reject
+      ansible.builtin.copy:
+        dest: /root/broken-policy.json
+        content: '{"path_roots": [{"path": "/", "owner": "root:root"}]}'
+        mode: "0600"
+
+    - name: Check the broken policy
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -I, /usr/local/sbin/echoport-remote-command-guard, --check-policy, /root/broken-policy.json]
+      register: guard_broken_policy
+      changed_when: false
+      failed_when: guard_broken_policy.rc != 1
+
+    - name: Check the broken policy with the Rust guard
+      ansible.builtin.command:
+        argv: ["{{ guard_rust_binary }}", --check-policy, /root/broken-policy.json]
+      register: guard_rust_broken_policy
+      changed_when: false
+      failed_when: >-
+        guard_rust_broken_policy.rc != 1
+        or 'echoport-remote-command-guard: invalid policy:' not in guard_rust_broken_policy.stderr
+      when: guard_impl != 'python'
+
+    # A root-only restore temp dir: mktemp -d and rm -rf -- through the guard.
+    - name: Create and remove a temp dir through the guard
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          run() { {{ guard_ssh }} root@127.0.0.1 "$1"; }
+          tmp=$(run 'mktemp -d /var/tmp/molecule-restore.XXXXXXXX')
+          test -d "$tmp"
+          run "rm -rf -- $tmp"
+          test ! -e "$tmp"
+      changed_when: false
+
+    # GoToSocial-style online snapshot: a temp dir handed to the service user,
+    # sqlite3 as that user, the snapshot read back through the guard's own open.
+    - name: Take and fetch a SQLite snapshot
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          run() { {{ guard_ssh }} root@127.0.0.1 "$1"; }
+          tmp=$(run 'mktemp -d /var/tmp/molecule-gts.XXXXXX')
+          run "chown nobody:nogroup $tmp"
+          run "runuser -u nobody -- sqlite3 /srv/gts/sqlite.db \".backup '$tmp/sqlite.db'\""
+          run "runuser -u nobody -- sqlite3 /srv/gts/sqlite.db '.timeout 30000' \".backup '$tmp/retry2-sqlite.db'\""
+          test "$(run "runuser -u nobody -- sqlite3 $tmp/retry2-sqlite.db 'PRAGMA integrity_check;'")" = ok
+          test "$(run "runuser -u nobody -- sqlite3 $tmp/sqlite.db 'PRAGMA integrity_check;'")" = ok
+          run "cat $tmp/sqlite.db" > /root/snapshot.db
+          test "$(sqlite3 /root/snapshot.db 'SELECT id FROM accounts;')" = a1
+          echo outside > /srv/outside/read-target
+          ln -s /srv/outside/read-target "$tmp/link.db"
+          if run "cat $tmp/link.db" > /root/link.out 2> /root/link.err; then exit 1; fi
+          grep -q 'command not allowed' /root/link.err
+          test ! -s /root/link.out
+          run "rm -rf -- $tmp"
+          test ! -e "$tmp"
+      changed_when: false
+    # Django Chat-style restore upload: a root-only temp dir, the dump written
+    # by the guard into a file it creates exclusively (mode 0600).
+    - name: Upload a dump on stdin into a root-only temp dir
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          run() { {{ guard_ssh }} root@127.0.0.1 "$1"; }
+          tmp=$(run 'mktemp -d /var/tmp/molecule-restore.XXXXXXXX')
+          run "umask 077 && cat > $tmp/x.dump" < /root/transfer.bin
+          test "$(stat -c %a "$tmp/x.dump")" = 600
+          test "$(run "sha256sum $tmp/x.dump" | cut -d' ' -f1)" = "$(sha256sum /root/transfer.bin | cut -d' ' -f1)"
+          if run "umask 077 && cat > $tmp/x.dump" < /root/transfer.bin 2> /dev/null; then exit 1; fi
+          if run "umask 077 && cat > /srv/outside/x.dump" < /root/transfer.bin 2> /dev/null; then exit 1; fi
+          test ! -e /srv/outside/x.dump
+          run "rm -rf -- $tmp"
+      changed_when: false
+
+    # Every guard line has exactly one shadow line with the same _PID (the
+    # Rust guard logs, then execs the Python guard in the same process).
+    - name: Pair the guard and shadow journal lines by _PID
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          journalctl --sync 2>/dev/null || true
+          journalctl -o json --since "@{{ guard_verify_start.stdout }}" \
+            -t echoport-remote-command-guard -t echoport-remote-command-guard-shadow \
+          | python3 -I -c '
+          import collections, json, sys
+          pids = collections.defaultdict(lambda: collections.Counter())
+          verdicts = {}
+          for raw in sys.stdin:
+              record = json.loads(raw)
+              ident = record["SYSLOG_IDENTIFIER"]
+              pids[record["_PID"]][ident] += 1
+              if ident.endswith("-shadow"):
+                  verdicts[record["_PID"]] = json.loads(record["MESSAGE"])["verdict"]
+          bad = {pid: dict(c) for pid, c in pids.items() if c != collections.Counter(
+              {"echoport-remote-command-guard": 1, "echoport-remote-command-guard-shadow": 1})}
+          if not pids or bad:
+              sys.exit(f"unpaired journal lines: {bad} of {len(pids)} PIDs")
+          print(len(pids), sorted(collections.Counter(verdicts.values()).items()))
+          '
+      register: guard_shadow_pairs
+      changed_when: false
+      when: guard_impl == 'shadow'
+
+    - name: Show the shadow pairs
+      ansible.builtin.debug:
+        var: guard_shadow_pairs.stdout
+      when: guard_impl == 'shadow'

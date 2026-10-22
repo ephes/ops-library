@@ -51,6 +51,23 @@ minio_backup_metadata_temp_dir: /tmp/minio-backup-metadata
 minio_backup_include_tls_certs: "{{ minio_tls_enable }}"
 minio_backup_include_traefik: true
 
+# Backup scope. true (default): cold backup, MinIO is stopped while every
+# data directory is copied. false: metadata-only backup (IAM export, bucket
+# metadata export incl. policies/versioning/lifecycle/replication config, env
+# file, systemd unit, Traefik/TLS config); MinIO keeps running and no object
+# data is copied. Object data is then protected elsewhere (for example bucket
+# replication). The IAM export contains secret keys: keep minio_backup_root
+# root-only and on encrypted storage.
+minio_backup_include_data: true
+
+# Free space required under minio_backup_root for a metadata-only backup.
+minio_backup_metadata_min_free_bytes: 104857600
+
+# Retention: keep this many of the newest "<prefix>-<timestamp>" backups
+# (directory and archive) under minio_backup_root and delete older ones with
+# the same prefix after a successful run. 0 keeps everything.
+minio_backup_keep_count: 0
+
 # Service handling
 minio_backup_stop_timeout: 30
 

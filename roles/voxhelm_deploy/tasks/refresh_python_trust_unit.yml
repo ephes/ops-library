@@ -1,0 +1,46 @@
+---
+- name: refresh_python_trust_unit | Validate trust before the final idle check
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/refresh_python_trust.py
+      --unit {{ voxhelm_trust_refresh_unit | to_json | quote }} --check
+    executable: /opt/homebrew/bin/python3
+    chdir: /
+  changed_when: false
+  check_mode: false
+
+- name: refresh_python_trust_unit | Require aggregate idle state immediately before refresh
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/refresh_python_trust.py
+      --idle-database {{ voxhelm_trust_idle_database | quote }}
+    executable: /opt/homebrew/bin/python3
+    chdir: /
+  delegate_to: "{{ voxhelm_trust_idle_host }}"
+  changed_when: false
+  check_mode: false
+
+- name: refresh_python_trust_unit | Refresh verified existing Python child
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/refresh_python_trust.py
+      --unit {{ voxhelm_trust_refresh_unit | to_json | quote }}
+      {{ '--check' if ansible_check_mode else '--local-trust-only' }}
+    executable: /opt/homebrew/bin/python3
+    chdir: /
+  register: voxhelm_trust_refresh_result
+  changed_when: not ansible_check_mode
+  check_mode: false
+
+- name: refresh_python_trust_unit | Require healthy server after each unit refresh
+  ansible.builtin.uri:
+    url: "{{ voxhelm_healthcheck_url }}"
+    status_code: 200
+    return_content: true
+  delegate_to: "{{ voxhelm_trust_idle_host }}"
+  register: voxhelm_trust_refresh_health
+  until: (voxhelm_trust_refresh_health.json.status | default('')) == 'ok'
+  retries: "{{ voxhelm_healthcheck_retries }}"
+  delay: "{{ voxhelm_healthcheck_delay }}"
+  changed_when: false
+  check_mode: false

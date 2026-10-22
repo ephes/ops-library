@@ -1,0 +1,100 @@
+---
+# Shadow units (rust/software-live/PLAN.md 8.1), next to the untouched
+# production units. They touch only their own unit files, their endpoint
+# configuration and <data_dir>/shadow, so a failure here cannot leave or put a
+# Rust process in the production units.
+#
+# On: software-live-shadow-collector.service/.timer run the Rust collect with
+# --report-usage into <data_dir>/shadow (own caches) on their own schedule;
+# software-live-shadow-endpoint.service serves the production state through
+# the Rust endpoint on 127.0.0.1:<shadow_port> only. main.yml enables and
+# starts them after the handlers ran.
+# Off: the units are stopped and removed with their configuration and
+# <data_dir>/shadow.
+
+- name: shadow | Set the shadow paths
+  ansible.builtin.set_fact:
+    _software_live_shadow_dir: '{{ software_live_data_dir }}/shadow'
+    _software_live_shadow_config: '{{ software_live_config_dir }}/shadow-endpoint.json'
+
+- name: shadow | Install the shadow units
+  when: software_live_rust_shadow | bool
+  block:
+    - name: shadow | Create the shadow state directory
+      ansible.builtin.file:
+        path: '{{ _software_live_shadow_dir }}'
+        state: directory
+        owner: '{{ software_live_rust_owner }}'
+        group: '{{ software_live_group }}'
+        mode: '0750'
+
+    - name: shadow | Configure the shadow endpoint
+      ansible.builtin.copy:
+        content: "{{ _software_live_shadow_endpoint_config | to_nice_json }}\n"
+        dest: '{{ _software_live_shadow_config }}'
+        owner: '{{ software_live_rust_owner }}'
+        group: '{{ software_live_group }}'
+        mode: '0640'
+      vars:
+        _software_live_shadow_endpoint_config:
+          bind: 127.0.0.1
+          port: '{{ software_live_shadow_port | int }}'
+          path: /.well-known/software-live
+          state: '{{ software_live_data_dir }}/state.json'
+          auth_user: '{{ software_live_auth_user }}'
+          htpasswd: '{{ software_live_config_dir }}/htpasswd'
+      notify: Restart software live shadow endpoint
+
+    - name: shadow | Install the shadow units
+      ansible.builtin.template:
+        src: '{{ item.src }}'
+        dest: '{{ software_live_systemd_dir }}/{{ item.dest }}'
+        owner: '{{ software_live_rust_owner }}'
+        group: '{{ software_live_rust_group }}'
+        mode: '0644'
+      loop:
+        - {src: shadow-collector.service.j2, dest: software-live-shadow-collector.service}
+        - {src: shadow-collector.timer.j2, dest: software-live-shadow-collector.timer}
+        - {src: shadow-endpoint.service.j2, dest: software-live-shadow-endpoint.service}
+      loop_control:
+        label: '{{ item.dest }}'
+      notify:
+        - Reload software live systemd
+        - Restart software live shadow endpoint
+        - Restart software live shadow timer
+
+- name: shadow | Remove the shadow units
+  when: not software_live_rust_shadow | bool
+  block:
+    - name: shadow | Inspect the shadow units
+      ansible.builtin.stat:
+        path: '{{ software_live_systemd_dir }}/{{ item }}'
+        follow: false
+        get_checksum: false
+      loop:
+        - software-live-shadow-collector.timer
+        - software-live-shadow-collector.service
+        - software-live-shadow-endpoint.service
+      register: _software_live_shadow_units_stat
+
+    - name: shadow | Stop and disable the shadow units
+      ansible.builtin.systemd_service:
+        name: '{{ item.item }}'
+        state: stopped
+        enabled: false
+      loop: '{{ _software_live_shadow_units_stat.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+      when: item.stat.exists
+
+    - name: shadow | Remove the shadow units, their configuration and state
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: absent
+      loop:
+        - '{{ software_live_systemd_dir }}/software-live-shadow-collector.timer'
+        - '{{ software_live_systemd_dir }}/software-live-shadow-collector.service'
+        - '{{ software_live_systemd_dir }}/software-live-shadow-endpoint.service'
+        - '{{ _software_live_shadow_config }}'
+        - '{{ _software_live_shadow_dir }}'
+      notify: Reload software live systemd

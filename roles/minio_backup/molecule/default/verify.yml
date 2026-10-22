@@ -1,0 +1,128 @@
+---
+- name: Verify the metadata-only backup, retention and IAM restore
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yml
+  environment:
+    MC_HOST_fixture: "http://{{ molecule_minio_root_user }}:{{ molecule_minio_root_password }}@127.0.0.1:9001"
+  tasks:
+    - name: Find the new snapshot archive
+      ansible.builtin.find:
+        paths: "{{ molecule_backup_root }}"
+        patterns: ["molecule-2*.tar.gz"]
+      register: molecule_archives
+
+    - name: Select the newest archive
+      ansible.builtin.set_fact:
+        molecule_archive: "{{ (molecule_archives.files | sort(attribute='path'))[-1] }}"
+
+    - name: Retention kept the two newest snapshot archives
+      ansible.builtin.assert:
+        that:
+          - molecule_archives.files | length == 2
+          - "'molecule-20200102T000000.tar.gz' in (molecule_archives.files | map(attribute='path') | map('basename') | list)"
+
+    - name: Stat retention candidates
+      ansible.builtin.stat:
+        path: "{{ molecule_backup_root }}/{{ item }}"
+      loop:
+        - molecule-20200101T000000
+        - molecule-20200101T000000.tar.gz
+        - molecule-20200102T000000
+        - other-20200101T000000.tar.gz
+        - molecule-notes.txt
+      register: molecule_retention
+
+    - name: Assert retention result
+      ansible.builtin.assert:
+        that:
+          - not molecule_retention.results[0].stat.exists
+          - not molecule_retention.results[1].stat.exists
+          - molecule_retention.results[2].stat.exists
+          - molecule_retention.results[3].stat.exists
+          - molecule_retention.results[4].stat.exists
+
+    - name: Archive is root-owned 0600
+      ansible.builtin.assert:
+        that:
+          - molecule_archive.mode == '0600'
+          - molecule_archive.pw_name == 'root'
+
+    - name: List the archive
+      ansible.builtin.command: tar -tzf "{{ molecule_archive.path }}"
+      register: molecule_archive_list
+      changed_when: false
+
+    - name: Archive holds metadata and config, no object data
+      vars:
+        _names: "{{ molecule_archive_list.stdout_lines | map('regex_replace', '^[^/]+/', '') | list }}"
+      ansible.builtin.assert:
+        that:
+          - "'metadata.yml' in _names"
+          - "'manifest.sha256' in _names"
+          - "'metadata/iam-metadata.zip' in _names"
+          - "'metadata/bucket-metadata.zip' in _names"
+          - "'config/minio.env' in _names"
+          - "'systemd/minio.service' in _names"
+          - _names | select('match', '^data(/|$)') | list | length == 0
+
+    - name: Read metadata.yml from the archive
+      ansible.builtin.command: >-
+        tar -xzOf "{{ molecule_archive.path }}" "{{ molecule_archive.path | basename | regex_replace('\.tar\.gz$', '') }}/metadata.yml"
+      register: molecule_metadata_yml
+      changed_when: false
+
+    - name: Metadata records the metadata scope without data directories
+      vars:
+        _metadata: "{{ molecule_metadata_yml.stdout | from_yaml }}"
+      ansible.builtin.assert:
+        that:
+          - _metadata.scope == 'metadata'
+          - _metadata.data_dirs | length == 0
+          - _metadata.metadata_exports.iam | bool
+          - _metadata.metadata_exports.bucket | bool
+
+    - name: Read the MinIO main PID after backup and restore
+      ansible.builtin.command: systemctl show -p MainPID --value minio.service
+      register: molecule_minio_pid_after
+      changed_when: false
+
+    - name: Read the PID recorded before the backup
+      ansible.builtin.slurp:
+        src: /root/minio-pid-before
+      register: molecule_minio_pid_before
+
+    - name: MinIO was neither stopped nor restarted
+      ansible.builtin.assert:
+        that:
+          - molecule_minio_pid_after.stdout | trim == (molecule_minio_pid_before.content | b64decode | trim)
+
+    - name: The removed user is back
+      ansible.builtin.command: mc admin user info fixture "{{ molecule_minio_fixture_user }}" --json
+      register: molecule_user_info
+      changed_when: false
+
+    - name: User is enabled with its policy
+      vars:
+        _info: "{{ molecule_user_info.stdout | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - _info.userStatus == 'enabled'
+          - "'readwrite' in (_info.policyName | default(''))"
+
+    - name: Object data is untouched
+      ansible.builtin.command: mc cat fixture/molecule-bucket/object.txt
+      register: molecule_object
+      changed_when: false
+
+    - name: Bucket versioning survived
+      ansible.builtin.command: mc version info fixture/molecule-bucket --json
+      register: molecule_versioning
+      changed_when: false
+
+    - name: Assert object and versioning
+      ansible.builtin.assert:
+        that:
+          - molecule_object.stdout == 'molecule-object'
+          - (molecule_versioning.stdout | from_json).versioning.status == 'Enabled'

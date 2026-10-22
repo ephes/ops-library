@@ -7,11 +7,13 @@ Deployed by Ansible from ops-control.
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -27,6 +29,8 @@ MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 # mc aliases of per-target MinIO accounts, by first segment of the object key.
 MINIO_PREFIX_ALIASES = {{ echoport_backup_minio_prefix_aliases | to_json }}
+# Refuse keys whose first segment has no entry instead of using MINIO_ALIAS.
+MINIO_REQUIRE_PREFIX_ALIAS = {{ 'True' if echoport_backup_minio_require_prefix_alias | bool else 'False' }}
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
 TEMP_DIR = "{{ echoport_backup_temp_dir }}"
 
@@ -187,52 +191,7 @@ def calculate_sha256(filepath: Path) -> str:
     return sha256_hash.hexdigest()
 
 
-def backup_sqlite(db_path: str, backup_path: Path) -> bool:
-    """
-    Perform safe SQLite backup using .backup command.
-    This ensures a consistent backup even if the database is being written to.
-    """
-    print(f"Backing up SQLite database: {db_path}", file=sys.stderr)
-
-    # Validate the database file exists (prevents sqlite3 from creating empty DB)
-    if not os.path.isfile(db_path):
-        print(f"Database file not found: {db_path}", file=sys.stderr)
-        return False
-
-    try:
-        result = subprocess.run(
-            ["sqlite3", db_path, f".backup '{backup_path}'"],
-            capture_output=True,
-            text=True,
-            shell=False
-        )
-
-        if result.returncode != 0:
-            print(f"sqlite3 backup failed: {result.stderr}", file=sys.stderr)
-            return False
-
-        # Verify the backup
-        if not backup_path.exists():
-            print("Backup file not created", file=sys.stderr)
-            return False
-
-        # Run integrity check on backup
-        integrity_result = subprocess.run(
-            ["sqlite3", str(backup_path), "PRAGMA integrity_check;"],
-            capture_output=True,
-            text=True
-        )
-
-        if "ok" not in integrity_result.stdout.lower():
-            print(f"Backup integrity check failed: {integrity_result.stdout}", file=sys.stderr)
-            return False
-
-        print(f"SQLite backup successful: {backup_path}", file=sys.stderr)
-        return True
-
-    except Exception as e:
-        print(f"SQLite backup error: {e}", file=sys.stderr)
-        return False
+{% include '_sqlite_backup.py.j2' %}
 
 
 def _make_symlink_ignore_func(base_path: str):
@@ -321,14 +280,82 @@ def create_tarball(source_dir: Path, tarball_path: Path) -> bool:
         return False
 
 
+MC_ALIAS_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+
+
+class MinioAliasError(Exception):
+    """The mc alias for an object key is unusable; nothing was sent to mc cp/stat."""
+
+
 def minio_alias_for(key: str) -> str:
     """Return the mc alias whose account may access this object key."""
     return MINIO_PREFIX_ALIASES.get(key.split("/", 1)[0], MINIO_ALIAS)
 
 
+def mc_alias_configured(alias: str) -> bool:
+    """Whether the running user's mc configuration has this alias.
+
+    `mc alias list <alias>` prints the stored secret key, so its output is
+    parsed here and never printed.
+    """
+    try:
+        result = subprocess.run(
+            [MC_PATH, "--json", "alias", "list", alias],
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return False
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(entry, dict)
+            and entry.get("status") == "success"
+            and entry.get("alias") == alias
+            and str(entry.get("URL", "")).startswith(("http://", "https://"))
+        ):
+            return True
+    return False
+
+
+def minio_object(bucket: str, key: str) -> str:
+    """Return `<alias>/<bucket>/<key>` once the alias is proven to exist.
+
+    mc treats `<alias>/...` with an unknown alias as a local path: `mc cp`
+    would write the archive below the working directory and `mc stat` would
+    find it there, so a backup that never reached MinIO would look fine.
+    Raises MinioAliasError instead.
+    """
+    prefix = key.split("/", 1)[0]
+    if MINIO_REQUIRE_PREFIX_ALIAS and prefix not in MINIO_PREFIX_ALIASES:
+        raise MinioAliasError(
+            f"No mc alias configured for key prefix '{prefix}' "
+            "(echoport_backup_minio_prefix_aliases has no entry and the shared alias is not allowed)"
+        )
+    alias = minio_alias_for(key)
+    source = "its prefix alias" if prefix in MINIO_PREFIX_ALIASES else "the shared fallback alias"
+    if not MC_ALIAS_NAME.match(alias):
+        raise MinioAliasError(f"Invalid mc alias name '{alias}' for key prefix '{prefix}'")
+    if not mc_alias_configured(alias):
+        raise MinioAliasError(
+            f"mc alias '{alias}' ({source} for key prefix '{prefix}') is not configured "
+            "for this user; refusing to run mc against a local path"
+        )
+    return f"{alias}/{bucket}/{key}"
+
+
 def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> bool:
     """Upload tarball to MinIO using mc."""
-    dest = f"{minio_alias_for(key)}/{bucket}/{key}"
+    try:
+        dest = minio_object(bucket, key)
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        return False
     print(f"Uploading to MinIO: {dest}", file=sys.stderr)
 
     try:
@@ -352,7 +379,11 @@ def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> bool:
 
 def download_from_minio(bucket: str, key: str, dest_path: Path) -> bool:
     """Download tarball from MinIO using mc."""
-    src = f"{minio_alias_for(key)}/{bucket}/{key}"
+    try:
+        src = minio_object(bucket, key)
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        return False
     print(f"Downloading from MinIO: {src}", file=sys.stderr)
 
     try:
@@ -752,6 +783,16 @@ def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
         finish_deployment("failure", error_msg)
         return 1
 
+    # Fail before stopping anything if the object cannot come from MinIO.
+    try:
+        minio_object(bucket, storage_key)
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        update_step("init", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", "MinIO alias missing")
+        return 1
+
     update_step("init", "success", f"Configuration loaded for {target_name}")
 
     # Create temporary work directory
@@ -973,6 +1014,16 @@ def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
             finish_deployment("failure", "Path validation failed")
             return 1
 
+    # Fail before archiving anything if the object cannot reach MinIO.
+    try:
+        minio_object(bucket, f"{key_prefix}.tar.gz")
+    except MinioAliasError as e:
+        print(f"MinIO alias error: {e}", file=sys.stderr)
+        update_step("init", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", "MinIO alias missing")
+        return 1
+
     update_step("init", "success", f"Configuration loaded for {target_name}")
 
     # Create temporary backup directory
@@ -994,14 +1045,15 @@ def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
         # Backup SQLite database if specified
         if db_path:
             db_backup_path = backup_dir / Path(db_path).name
-            if backup_sqlite(db_path, db_backup_path):
+            db_error = backup_sqlite(db_path, db_backup_path)
+            if db_error is None:
                 manifest["database"] = {
                     "source": db_path,
                     "filename": db_backup_path.name,
                     "size": db_backup_path.stat().st_size,
                 }
             else:
-                update_step("backup", "failure", f"Failed to backup database: {db_path}")
+                update_step("backup", "failure", f"Failed to backup database: {db_path} ({db_error})")
                 emit_echoport_result(False, error=f"Database backup failed: {db_path}")
                 finish_deployment("failure", "Database backup failed")
                 return 1
@@ -1049,8 +1101,15 @@ def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
         update_step("verify", "running", "Verifying upload")
 
         # Use mc stat to verify the object exists
+        try:
+            verify_target = minio_object(bucket, storage_key)
+        except MinioAliasError as e:
+            update_step("verify", "failure", str(e))
+            emit_echoport_result(False, error=str(e))
+            finish_deployment("failure", "Verification failed")
+            return 1
         verify_result = subprocess.run(
-            [MC_PATH, "stat", f"{minio_alias_for(storage_key)}/{bucket}/{storage_key}"],
+            [MC_PATH, "stat", verify_target],
             capture_output=True,
             text=True
         )

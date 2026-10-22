@@ -1,0 +1,48 @@
+---
+- name: launchd | Render the llama-server plist
+  ansible.builtin.template:
+    src: llama-server.launchd.plist.j2
+    dest: "{{ llama_server_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: llama_server_plist
+
+- name: launchd | Check the llama-server job
+  ansible.builtin.command: "launchctl print system/{{ llama_server_launchd_label }}"
+  register: llama_server_launchd_status
+  changed_when: false
+  failed_when: false
+
+- name: launchd | Unload the job before loading the changed plist
+  ansible.builtin.command: "launchctl bootout system {{ llama_server_launchd_plist_path }}"
+  changed_when: true
+  failed_when: false
+  when:
+    - llama_server_plist.changed
+    - llama_server_launchd_status.rc == 0
+
+- name: launchd | Load the llama-server job
+  ansible.builtin.command: "launchctl bootstrap system {{ llama_server_launchd_plist_path }}"
+  register: llama_server_launchd_bootstrap
+  changed_when: llama_server_launchd_bootstrap.rc == 0
+  when: llama_server_plist.changed or llama_server_launchd_status.rc != 0
+
+- name: launchd | Enable the llama-server job
+  ansible.builtin.command: "launchctl enable system/{{ llama_server_launchd_label }}"
+  changed_when: true
+  when: llama_server_plist.changed or llama_server_launchd_status.rc != 0
+
+# A new model, wrapper, key or llama.cpp install needs a new process; so does a
+# job that is loaded but not running.
+- name: launchd | Start or restart llama-server
+  ansible.builtin.command: "launchctl kickstart -k system/{{ llama_server_launchd_label }}"
+  changed_when: true
+  when: >-
+    llama_server_plist.changed
+    or llama_server_gguf_download.changed
+    or llama_server_wrapper_install.changed
+    or llama_server_api_key_install.changed
+    or (llama_server_brew_install.changed | default(false))
+    or llama_server_launchd_status.rc != 0
+    or 'state = running' not in (llama_server_launchd_status.stdout | default(''))

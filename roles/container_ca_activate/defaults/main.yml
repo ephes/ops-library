@@ -1,0 +1,9 @@
+---
+# Infrastructure > Containers
+# persist_owners additionally requires explicit owner fragment/argv and service mappings.
+container_ca_activate_projects: []
+# Optional existing local server YAML; require idle room/egress aggregate before activation.
+container_ca_activate_livekit_config: ''
+
+# Explicit reviewed hashes of ALL existing managed artifacts; ordinary runs fail on drift.
+container_ca_activate_owner_reconcile_sha256: {}

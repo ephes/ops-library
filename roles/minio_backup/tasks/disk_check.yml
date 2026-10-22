@@ -13,6 +13,7 @@
   register: minio_backup_du_results
   loop: "{{ minio_data_dirs }}"
   changed_when: false
+  when: minio_backup_include_data | bool
 
 - name: Calculate total data size
   ansible.builtin.set_fact:
@@ -23,6 +24,7 @@
          | map('first')
          | map('int')
          | sum(start=0) }}
+  when: minio_backup_include_data | bool
 
 - name: Gather available disk space on backup root
   ansible.builtin.command:
@@ -36,11 +38,15 @@
     minio_backup_required_bytes: >-
       {{
         (
-          (minio_backup_data_bytes | int) *
-          (minio_backup_disk_overhead_ratio | float)
+          (
+            (minio_backup_data_bytes | int) *
+            (minio_backup_disk_overhead_ratio | float)
+          )
+          | round(0, 'ceil')
+          | int
         )
-        | round(0, 'ceil')
-        | int
+        if (minio_backup_include_data | bool)
+        else (minio_backup_metadata_min_free_bytes | int)
       }}
 
 - name: Validate available disk space
@@ -51,4 +57,5 @@
       Not enough free space under {{ minio_backup_root }}.
       Available={{ minio_backup_available_bytes }} bytes,
       required={{ minio_backup_required_bytes }} bytes
-      (data size {{ minio_backup_data_bytes }} bytes with {{ minio_backup_disk_overhead_ratio }}x overhead).
+      {{ ('(data size ' ~ minio_backup_data_bytes ~ ' bytes with ' ~ minio_backup_disk_overhead_ratio ~ 'x overhead).')
+         if (minio_backup_include_data | bool) else '(metadata-only backup minimum).' }}

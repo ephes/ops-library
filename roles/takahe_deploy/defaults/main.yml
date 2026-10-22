@@ -9,3 +9,16 @@ takahe_nginx_enabled: true
 
 # Enable only after validating writable paths on the target host.
 takahe_systemd_hardening: false
+
+# Keep certifi/pip at python_security_floor's floors: refuse an existing
+# environment below them before changing anything (certifi, and pip while
+# takahe_pip_upgrade is on, excepted: the constrained installs raise them),
+# pass the constraint file to the pip installs (constraints never add
+# packages; a requirement capping certifi below the floor fails before
+# anything is installed) and verify the environment afterwards. The file
+# lives outside the synced source tree.
+takahe_python_security_floor_enabled: true
+takahe_python_security_constraints_path: "{{ takahe_home_path }}/.python-security-constraints.txt"
+takahe_python_security_pip_args: >-
+  {{ ('-c ' ~ (takahe_python_security_constraints_path | quote))
+     if (takahe_python_security_floor_enabled | bool) else '' }}

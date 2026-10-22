@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Refresh stale Debian Java trust after OS CA updates
+  license: MIT
+  min_ansible_version: '2.20'
+  platforms:
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

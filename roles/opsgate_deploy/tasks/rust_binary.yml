@@ -1,0 +1,438 @@
+---
+# Install the pinned Rust release into <root>/<version>/ and validate it by the
+# versioned path before any plist may point at it (opsgate repository
+# rust/PLAN.md 10.1 steps 2 and 3). Runs after service_env.yml, so the checks
+# read the env files the units will read, and before launchd.yml.
+#
+# With a version set this runs whatever the impls are, so a release can be
+# installed ahead of a switch. A failure removes a version installed by this
+# run again and leaves the plists, the running units and the other versions
+# alone. When a unit runs (or is about to run) Rust it stops the play. With
+# both impls python it is a warning and the deploy goes on with Python, so a
+# broken or download-less release, or one that rejects a configuration or
+# database Python accepts, never blocks the rollback.
+
+- name: rust_binary | Derive Rust release paths
+  ansible.builtin.set_fact:
+    opsgate_rust_dir: "{{ opsgate_rust_install_root }}/{{ opsgate_rust_version }}"
+    opsgate_rust_binary: "{{ opsgate_rust_install_root }}/{{ opsgate_rust_version }}/opsgate"
+    opsgate_rust_staging: "{{ opsgate_rust_install_root }}/.staging"
+    opsgate_rust_install_failed: false
+    # The env files the plists name (service_env.yml renders them there).
+    opsgate_api_env_file: "{{ opsgate_api_environment.OPSGATE_ENV_FILE | default(opsgate_config_dir ~ '/opsgate-api.env') }}"
+    opsgate_runner_env_file: "{{ opsgate_runner_environment.OPSGATE_ENV_FILE | default(opsgate_config_dir ~ '/opsgate-runner.env') }}"
+    # root:wheel on the host; only the role's tests run it as another user.
+    opsgate_rust_file_owner: "{{ opsgate_rust_owner | default('root') }}"
+    opsgate_rust_file_group: "{{ opsgate_rust_group | default('wheel') }}"
+
+- name: rust_binary | Install and validate the pinned Rust release
+  when: opsgate_rust_version | length > 0
+  block:
+    - name: rust_binary | Check whether the pinned version is installed
+      ansible.builtin.stat:
+        path: "{{ opsgate_rust_dir }}"
+      register: opsgate_rust_dir_stat
+
+    - name: rust_binary | Ensure the install root exists
+      ansible.builtin.file:
+        path: "{{ opsgate_rust_install_root }}"
+        state: directory
+        owner: "{{ opsgate_rust_file_owner }}"
+        group: "{{ opsgate_rust_file_group }}"
+        mode: "0755"
+
+    - name: rust_binary | Remove leftovers of an interrupted install
+      ansible.builtin.file:
+        path: "{{ opsgate_rust_staging }}"
+        state: absent
+
+    - name: rust_binary | Checksum the local archive
+      ansible.builtin.stat:
+        path: "{{ opsgate_rust_local_archive }}"
+        get_checksum: true
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: opsgate_rust_local_archive_stat
+      when: opsgate_rust_local_archive | length > 0
+
+    - name: rust_binary | Assert the local archive exists and matches a pinned checksum
+      ansible.builtin.assert:
+        that:
+          - opsgate_rust_local_archive_stat.stat.exists
+          - opsgate_rust_local_archive_stat.stat.isreg
+          - >-
+            opsgate_rust_sha256 == '' or
+            opsgate_rust_local_archive_stat.stat.checksum == opsgate_rust_sha256
+        fail_msg: >-
+          opsgate_rust_local_archive {{ opsgate_rust_local_archive }} is missing,
+          not a file, or its sha256
+          ({{ opsgate_rust_local_archive_stat.stat.checksum | default('n/a') }})
+          differs from opsgate_rust_sha256.
+      when: opsgate_rust_local_archive | length > 0
+
+    - name: rust_binary | Determine the expected archive checksum
+      ansible.builtin.set_fact:
+        opsgate_rust_archive_sha256: >-
+          {{
+            opsgate_rust_local_archive_stat.stat.checksum
+            if opsgate_rust_local_archive | length > 0
+            else opsgate_rust_sha256
+          }}
+
+    - name: rust_binary | Read the archive checksum of the installed version
+      ansible.builtin.slurp:
+        path: "{{ opsgate_rust_dir }}/.archive-sha256"
+      register: opsgate_rust_installed_sha256
+      failed_when: false
+      when: opsgate_rust_dir_stat.stat.exists
+
+    # An installed version directory is never modified in place: the same
+    # version must come from the same archive.
+    - name: rust_binary | Refuse a different archive for an installed version
+      ansible.builtin.assert:
+        that:
+          - opsgate_rust_dir_stat.stat.isdir
+          - not opsgate_rust_dir_stat.stat.islnk
+          - opsgate_rust_installed_sha256.content is defined
+          - >-
+            (opsgate_rust_installed_sha256.content | b64decode | trim)
+            == opsgate_rust_archive_sha256
+        fail_msg: >-
+          {{ opsgate_rust_dir }} is installed from an archive with sha256
+          {{ (opsgate_rust_installed_sha256.content | default('') | b64decode | trim) or 'unknown' }},
+          but this run pins {{ opsgate_rust_archive_sha256 }}. An installed version
+          is never replaced in place. Pin the matching archive, or remove the
+          directory by hand when no unit runs it.
+      when: opsgate_rust_dir_stat.stat.exists
+
+    - name: rust_binary | Stage the pinned release
+      when:
+        - not opsgate_rust_dir_stat.stat.exists
+        - not ansible_check_mode
+      block:
+        - name: rust_binary | Create the staging directory
+          ansible.builtin.file:
+            path: "{{ opsgate_rust_staging }}/tree"
+            state: directory
+            owner: "{{ opsgate_rust_file_owner }}"
+            group: "{{ opsgate_rust_file_group }}"
+            mode: "0755"
+
+        - name: rust_binary | Download the release archive
+          ansible.builtin.get_url:
+            url: "{{ opsgate_rust_release_url }}"
+            dest: "{{ opsgate_rust_staging }}/archive.tar.gz"
+            checksum: "sha256:{{ opsgate_rust_sha256 }}"
+            owner: "{{ opsgate_rust_file_owner }}"
+            group: "{{ opsgate_rust_file_group }}"
+            mode: "0600"
+          when: opsgate_rust_local_archive | length == 0
+
+        - name: rust_binary | Copy the local archive
+          ansible.builtin.copy:
+            src: "{{ opsgate_rust_local_archive }}"
+            dest: "{{ opsgate_rust_staging }}/archive.tar.gz"
+            owner: "{{ opsgate_rust_file_owner }}"
+            group: "{{ opsgate_rust_file_group }}"
+            mode: "0600"
+          when: opsgate_rust_local_archive | length > 0
+
+        - name: rust_binary | Checksum the staged archive
+          ansible.builtin.stat:
+            path: "{{ opsgate_rust_staging }}/archive.tar.gz"
+            get_checksum: true
+            checksum_algorithm: sha256
+          register: opsgate_rust_staged_archive
+
+        - name: rust_binary | Assert the staged archive is the pinned one
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_staged_archive.stat.checksum == opsgate_rust_archive_sha256
+            fail_msg: >-
+              The staged archive has sha256 {{ opsgate_rust_staged_archive.stat.checksum }},
+              expected {{ opsgate_rust_archive_sha256 }}.
+
+        # Checked before extraction: exactly the regular files opsgate and
+        # LICENSE at the archive root, each once (the release layout, section
+        # 9). A link, directory or device member could otherwise make the
+        # following tasks act on a path outside the staging directory.
+        - name: rust_binary | List the archive members
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -t
+              - -z
+              - -f
+              - "{{ opsgate_rust_staging }}/archive.tar.gz"
+          changed_when: false
+          register: opsgate_rust_member_names
+
+        - name: rust_binary | List the archive member types
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -t
+              - -v
+              - -z
+              - -f
+              - "{{ opsgate_rust_staging }}/archive.tar.gz"
+          changed_when: false
+          register: opsgate_rust_member_types
+
+        - name: rust_binary | Assert the archive holds only opsgate and its license as regular files
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_members | sort == ['LICENSE', 'opsgate']
+              - opsgate_rust_member_types.stdout_lines | length == opsgate_rust_members | length
+              - opsgate_rust_member_types.stdout_lines | reject('match', '-') | list | length == 0
+            fail_msg: >-
+              The release archive must hold exactly the regular files opsgate and
+              LICENSE at its root, once each; found
+              {{ opsgate_rust_member_types.stdout_lines }}.
+          vars:
+            opsgate_rust_members: "{{ opsgate_rust_member_names.stdout_lines | map('regex_replace', '^[.]/', '') | list }}"
+
+        # tar, not unarchive: unarchive needs GNU tar, macOS has bsdtar. The
+        # members were checked above; ownership and modes are set below.
+        - name: rust_binary | Unpack the release archive
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -x
+              - -z
+              - --no-same-owner
+              - -f
+              - "{{ opsgate_rust_staging }}/archive.tar.gz"
+              - -C
+              - "{{ opsgate_rust_staging }}/tree"
+          changed_when: true
+
+        - name: rust_binary | Check the unpacked files
+          ansible.builtin.stat:
+            path: "{{ opsgate_rust_staging }}/tree/{{ item }}"
+            follow: false
+            get_checksum: false
+          loop:
+            - opsgate
+            - LICENSE
+          register: opsgate_rust_unpacked
+
+        - name: rust_binary | Assert the unpacked files are regular files
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_unpacked.results | map(attribute='stat.isreg', default=false) | select | list | length == 2
+            fail_msg: "{{ opsgate_rust_staging }}/tree does not hold opsgate and LICENSE as regular files."
+
+        - name: rust_binary | Set ownership and modes of the unpacked files
+          ansible.builtin.file:
+            path: "{{ opsgate_rust_staging }}/tree/{{ item.name }}"
+            state: file
+            follow: false
+            owner: "{{ opsgate_rust_file_owner }}"
+            group: "{{ opsgate_rust_file_group }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - name: opsgate
+              mode: "0755"
+            - name: LICENSE
+              mode: "0644"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: rust_binary | Record the archive checksum with the version
+          ansible.builtin.copy:
+            content: "{{ opsgate_rust_archive_sha256 }}\n"
+            dest: "{{ opsgate_rust_staging }}/tree/.archive-sha256"
+            owner: "{{ opsgate_rust_file_owner }}"
+            group: "{{ opsgate_rust_file_group }}"
+            mode: "0644"
+
+        # BSD mv has no --no-target-directory; `creates` keeps it from moving
+        # the tree into an existing directory of that name.
+        - name: rust_binary | Move the staged version into place
+          ansible.builtin.command:
+            argv:
+              - mv
+              - "{{ opsgate_rust_staging }}/tree"
+              - "{{ opsgate_rust_dir }}"
+            creates: "{{ opsgate_rust_dir }}"
+
+        - name: rust_binary | Remove the staging directory
+          ansible.builtin.file:
+            path: "{{ opsgate_rust_staging }}"
+            state: absent
+
+    # By the versioned path, before any plist points at it. Each check runs
+    # as the account of the unit it stands for and gets only the env-file
+    # path (never a value from it) plus HOME and PATH of the plist.
+    - name: rust_binary | Validate the candidate binary
+      when: not ansible_check_mode or opsgate_rust_dir_stat.stat.exists
+      block:
+        - name: rust_binary | Read the version of the candidate binary
+          ansible.builtin.command:
+            argv:
+              - sudo
+              - -u
+              - "{{ control_service_user }}"
+              - -H
+              - env
+              - "HOME={{ control_service_home_dir }}"
+              - "PATH={{ opsgate_launchd_path }}"
+              - "{{ opsgate_rust_binary }}"
+              - --version
+            chdir: /
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: opsgate_rust_version_check
+
+        - name: rust_binary | Assert the candidate reports the pinned version
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_version_check.rc == 0
+              - (opsgate_rust_version_check.stdout_lines + [''])[0].startswith('opsgate ' ~ opsgate_rust_version ~ ' (')
+              - (opsgate_rust_version_check.stdout_lines + [''])[0].endswith(')')
+            fail_msg: >-
+              {{ opsgate_rust_binary }} --version exited
+              {{ opsgate_rust_version_check.rc }} with
+              '{{ opsgate_rust_version_check.stdout | trim }}'
+              {{ opsgate_rust_version_check.stderr | trim }};
+              expected 'opsgate {{ opsgate_rust_version }} (<commit>)'.
+
+        - name: rust_binary | Check the API configuration with the candidate binary
+          ansible.builtin.command:
+            argv:
+              - sudo
+              - -u
+              - "{{ control_service_user }}"
+              - -H
+              - env
+              - "HOME={{ control_service_home_dir }}"
+              - "PATH={{ opsgate_launchd_path }}"
+              - "OPSGATE_ENV_FILE={{ opsgate_api_env_file }}"
+              - "{{ opsgate_rust_binary }}"
+              - check-config
+              - api
+            chdir: /
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: opsgate_rust_api_config_check
+
+        - name: rust_binary | Assert the candidate accepts the API configuration
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_api_config_check.rc == 0
+            fail_msg: >-
+              {{ opsgate_rust_binary }} check-config api exited
+              {{ opsgate_rust_api_config_check.rc }}:
+              {{ opsgate_rust_api_config_check.stderr | trim }}
+
+        - name: rust_binary | Check the runner configuration with the candidate binary
+          ansible.builtin.command:
+            argv:
+              - sudo
+              - -u
+              - "{{ ops_user }}"
+              - -H
+              - env
+              - "HOME={{ ops_home_dir }}"
+              - "PATH={{ opsgate_launchd_path }}"
+              - "OPSGATE_ENV_FILE={{ opsgate_runner_env_file }}"
+              - "{{ opsgate_rust_binary }}"
+              - check-config
+              - runner
+            chdir: /
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: opsgate_rust_runner_config_check
+
+        - name: rust_binary | Assert the candidate accepts the runner configuration
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_runner_config_check.rc == 0
+            fail_msg: >-
+              {{ opsgate_rust_binary }} check-config runner exited
+              {{ opsgate_rust_runner_config_check.rc }}:
+              {{ opsgate_rust_runner_config_check.stderr | trim }}
+
+        # The API creates the database on its first start; before that there
+        # is nothing to check.
+        - name: rust_binary | Check whether the database exists
+          ansible.builtin.stat:
+            path: "{{ opsgate_db_path }}"
+            get_checksum: false
+          register: opsgate_rust_db_stat
+
+        - name: rust_binary | Check the database read-only with the candidate binary
+          ansible.builtin.command:
+            argv:
+              - sudo
+              - -u
+              - "{{ control_service_user }}"
+              - -H
+              - env
+              - "HOME={{ control_service_home_dir }}"
+              - "PATH={{ opsgate_launchd_path }}"
+              - "{{ opsgate_rust_binary }}"
+              - check-db
+              - --db
+              - "{{ opsgate_db_path }}"
+            chdir: /
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: opsgate_rust_db_check
+          when: opsgate_rust_db_stat.stat.exists
+
+        - name: rust_binary | Assert the candidate accepts the database
+          ansible.builtin.assert:
+            that:
+              - opsgate_rust_db_check.rc == 0
+            fail_msg: >-
+              {{ opsgate_rust_binary }} check-db --db {{ opsgate_db_path }} exited
+              {{ opsgate_rust_db_check.rc }}:
+              {{ opsgate_rust_db_check.stderr | trim }}
+              {{ opsgate_rust_db_check.stdout | trim }}
+          when: opsgate_rust_db_stat.stat.exists
+
+  rescue:
+    - name: rust_binary | Remove the rejected fresh install
+      ansible.builtin.file:
+        path: "{{ opsgate_rust_dir }}"
+        state: absent
+      when: not (opsgate_rust_dir_stat.stat.exists | default(true))
+
+    - name: rust_binary | Remove the staging directory after a failure
+      ansible.builtin.file:
+        path: "{{ opsgate_rust_staging }}"
+        state: absent
+
+    - name: rust_binary | Stop on a rejected Rust release
+      ansible.builtin.fail:
+        msg: >-
+          opsgate {{ opsgate_rust_version }} failed installation or validation at
+          '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}).
+          Nothing was switched: the plists, the running units and the other
+          installed versions are unchanged.
+      when: opsgate_api_impl == 'rust' or opsgate_runner_impl == 'rust'
+
+    - name: rust_binary | Record the rejected Rust release
+      ansible.builtin.set_fact:
+        opsgate_rust_install_failed: true
+
+    # A failed task that is ignored, so the warning stands out in red and as
+    # `ignored=1` in the play recap instead of scrolling past as a debug line.
+    - name: rust_binary | Warn about the rejected Rust release and continue with Python
+      ansible.builtin.fail:
+        msg: >-
+          WARNING: opsgate {{ opsgate_rust_version }} failed installation or
+          validation at '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}). Both
+          opsgate_api_impl and opsgate_runner_impl are python, so the deploy
+          continues with Python; nothing is pruned. Fix or unpin
+          opsgate_rust_version before switching a unit to rust.
+      ignore_errors: true

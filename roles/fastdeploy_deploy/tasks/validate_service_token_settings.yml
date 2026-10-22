@@ -62,3 +62,58 @@
       fastdeploy_legacy_token_users must be a list of user names (letters,
       digits, ".", "_", "@", "-"; at most 255 characters).
     quiet: true
+
+# SERVICE_TOKEN_ADMIN_USERS and RESTORE_POLICIES are written as JSON in single
+# quotes: only plain names, buckets and prefixes (never a quote or line break) may reach them,
+# and FastDeploy refuses to start on a policy it cannot parse.
+- name: validate_service_token_settings | Check the service token admin users
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_service_token_admin_users is not string
+      - fastdeploy_service_token_admin_users is not mapping
+      - fastdeploy_service_token_admin_users is sequence
+      - fastdeploy_service_token_admin_users | reject('string') | list | length == 0
+      - >-
+        fastdeploy_service_token_admin_users | select('string')
+        | reject('match', '^[A-Za-z0-9][A-Za-z0-9._@-]{0,254}\Z') | list | length == 0
+    fail_msg: >-
+      fastdeploy_service_token_admin_users must be a list of user names (letters,
+      digits, ".", "_", "@", "-"; at most 255 characters).
+    quiet: true
+
+- name: validate_service_token_settings | Check the restore policies are a mapping
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_restore_policies is mapping
+    fail_msg: >-
+      fastdeploy_restore_policies must map FastDeploy service names to
+      {bucket: <bucket>, prefixes: [<prefix>/, ...]}.
+    quiet: true
+
+# FastDeploy's RestorePolicy: a lowercase S3 bucket name and a non-empty list
+# of relative prefixes, each ending in "/".
+- name: validate_service_token_settings | Check each restore policy
+  ansible.builtin.assert:
+    that:
+      - item.key is string
+      - item.key is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\Z')
+      - item.value is mapping
+      - item.value.keys() | list | sort == ['bucket', 'prefixes']
+      - item.value.bucket is string
+      - item.value.bucket is match('^[a-z0-9][a-z0-9.-]*[a-z0-9]\Z')
+      - item.value.prefixes is not string
+      - item.value.prefixes is not mapping
+      - item.value.prefixes is sequence
+      - item.value.prefixes | length > 0
+      - item.value.prefixes | reject('string') | list | length == 0
+      - >-
+        item.value.prefixes | select('string')
+        | reject('match', '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*/\Z') | list | length == 0
+    fail_msg: >-
+      fastdeploy_restore_policies["{{ item.key }}"] must be {bucket: <lowercase
+      bucket name>, prefixes: [<prefix>/, ...]} with at least one prefix; a
+      prefix uses letters, digits, "_", "-" and "/" and ends in "/".
+    quiet: true
+  loop: "{{ fastdeploy_restore_policies | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

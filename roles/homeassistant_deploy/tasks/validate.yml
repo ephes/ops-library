@@ -230,3 +230,19 @@
       a valid homeassistant_virtualenv_path, and each item must define either area_id or name.
       If aliases are provided, they must be a list of strings.
   when: homeassistant_area_registry_updates | length > 0
+
+- name: "Validate built-in conversation configuration"
+  ansible.builtin.assert:
+    that:
+      - not (homeassistant_custom_conversation_enabled | bool)
+      - homeassistant_package_spec is match('^homeassistant==[0-9]+\.[0-9]+\.[0-9]+$')
+      - homeassistant_package_spec.split('==')[-1] is version('2026.10.2', '>=')
+      - homeassistant_api_token | length >= 32
+      - homeassistant_llama_cpp_base_url | length > 0
+      - homeassistant_llama_cpp_api_key | length > 0
+      - homeassistant_llama_cpp_model | length > 0
+      - homeassistant_llama_cpp_instructions | trim | length > 0
+    quiet: true
+    fail_msg: "Core llama_cpp requires a pinned Core >=2026.10.2, connection details, instructions and exclusive ownership of the voice bridge."
+  no_log: true
+  when: homeassistant_llama_cpp_enabled | bool

@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Narrow OS and virtual environment trust-store incident remediation
+  license: MIT
+  min_ansible_version: '2.20.3'
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [noble]
+dependencies: []

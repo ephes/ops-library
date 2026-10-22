@@ -1,0 +1,218 @@
+---
+- name: restart_unit | Read unit state before restart
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - "{{ ca_trust_consumers_unit.name }}"
+      - --timestamp=unix
+      - -p
+      - LoadState
+      - -p
+      - ActiveState
+      - -p
+      - MainPID
+      - -p
+      - ExecMainStartTimestamp
+      - -p
+      - NRestarts
+  register: _ca_trust_consumers_before_raw
+  changed_when: false
+  check_mode: false
+
+# A Node.js service also needs a restart while any of its processes lacks the
+# flag (drop-in just written, or a run interrupted before its restart).
+- name: restart_unit | Check running Node.js processes
+  ansible.builtin.include_tasks: node_runtime.yml
+  when: ca_trust_consumers_unit_is_node | default(false) | bool
+
+- name: restart_unit | Decide whether the unit holds pre-update roots
+  vars:
+    _before: >-
+      {{ dict(_ca_trust_consumers_before_raw.stdout_lines | map('split', '=', 1)) }}
+    _started: "{{ (_before.ExecMainStartTimestamp | default('') | regex_replace('^@', '')) or '0' }}"
+  ansible.builtin.set_fact:
+    _ca_trust_consumers_before: "{{ _before }}"
+    _ca_trust_consumers_started: "{{ _started | int }}"
+    _ca_trust_consumers_needs_restart: >-
+      {{ _before.LoadState == 'loaded' and _before.ActiveState == 'active'
+         and ((_started | int) < (_ca_trust_consumers_bundle.stat.mtime | int)
+              or ((ca_trust_consumers_unit_is_node | default(false) | bool)
+                  and 'flag=no' in _ca_trust_consumers_node_runtime.stdout)) }}
+
+- name: restart_unit | Require a loaded unit
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_before.LoadState == 'loaded'
+    fail_msg: "{{ ca_trust_consumers_unit.name }} is not a loaded unit on this host."
+    quiet: true
+
+# Pre-restart record for the run log: what was running and from which binary.
+# A restart changes no file, so rolling back means nothing more than this.
+- name: restart_unit | Record running process
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      pid={{ _ca_trust_consumers_before.MainPID | int }}
+      exe=$(readlink "/proc/$pid/exe")
+      printf '%s pid=%s started=@%s nrestarts=%s exe=%s sha256=%s\n' \
+        {{ ca_trust_consumers_unit.name | quote }} "$pid" {{ _ca_trust_consumers_started | quote }} \
+        {{ _ca_trust_consumers_before.NRestarts | default('') | quote }} "$exe" \
+        "$(sha256sum "/proc/$pid/exe" | cut -d' ' -f1)"
+    executable: /bin/bash
+  register: _ca_trust_consumers_record
+  changed_when: false
+  check_mode: false
+  when: _ca_trust_consumers_before.MainPID | int > 0
+
+# A restart must refresh roots only, not activate something staged since the
+# process started: a replaced executable, a changed unit file or drop-in (other
+# than this role's own), or a listed config path (lstat, so a retargeted
+# release symlink counts).
+- name: restart_unit | Look for changes a restart would activate
+  vars:
+    _own_dropin: "{{ ca_trust_consumers_systemd_dir }}/{{ ca_trust_consumers_unit.name }}.d/{{ ca_trust_consumers_node_dropin_name }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      pid={{ _ca_trust_consumers_before.MainPID | int }}
+      started={{ _ca_trust_consumers_started | int }}
+      case "$(readlink "/proc/$pid/exe")" in *" (deleted)") echo "staged: running executable was replaced" ;; esac
+      unit={{ ca_trust_consumers_unit.name | quote }}
+      [ "$(systemctl show "$unit" -p NeedDaemonReload --value)" = no ] || echo "staged: unit needs daemon-reload"
+      # DropInPaths is blank-separated: a token that is not an existing path
+      # (a name with blanks) is refused rather than skipped.
+      read -r -a dropins <<< "$(systemctl show "$unit" -p DropInPaths --value)"
+      for dropin in "${dropins[@]}"; do
+        [ -e "$dropin" ] || [ -L "$dropin" ] || echo "staged: cannot parse DropInPaths of $unit"
+      done
+      { systemctl show "$unit" -p FragmentPath --value
+        systemctl show "$unit" -p DropInPaths --value | tr ' ' '\n'
+        systemctl show "$unit" -p EnvironmentFiles --value | while IFS= read -r entry; do
+          [ -n "$entry" ] || continue
+          case "$entry" in
+            *" (ignore_errors=yes)" | *" (ignore_errors=no)") compgen -G "${entry% (ignore_errors=*)}" || true ;;
+            *) echo "staged: cannot parse EnvironmentFiles entry of $unit" ;;
+          esac
+        done
+        printf '%s\n' {{ (ca_trust_consumers_unit.guard_paths | default([])) | map('quote') | join(' ') }}
+      } | while IFS= read -r path; do
+        case "$path" in "staged: "*) echo "$path"; continue ;; esac
+        [ -n "$path" ] && [ "$path" != {{ _own_dropin | quote }} ] || continue
+        if [ -e "$path" ] || [ -L "$path" ]; then
+          # The path itself (a retargeted link) and what it resolves to.
+          link=$(stat -c %Y "$path")
+          target=$(stat -L -c %Y "$path" 2>/dev/null || echo 0)
+          if [ "$link" -gt "$started" ] || [ "$target" -gt "$started" ]; then
+            echo "staged: $path changed after the process started"
+          fi
+        fi
+      done
+    executable: /bin/bash
+  register: _ca_trust_consumers_staged
+  changed_when: false
+  check_mode: false
+  when:
+    - _ca_trust_consumers_needs_restart | bool
+    - _ca_trust_consumers_before.MainPID | int > 0
+
+- name: restart_unit | Refuse to activate staged changes
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_staged.stdout | trim | length == 0
+    fail_msg: >-
+      {{ ca_trust_consumers_unit.name }} was not restarted: {{ _ca_trust_consumers_staged.stdout_lines | join('; ') }}.
+      Apply those changes through their owning deploy, or set allow_staged_changes on the entry.
+    quiet: true
+  when:
+    - _ca_trust_consumers_needs_restart | bool
+    - ca_trust_consumers_restart | bool
+    - _ca_trust_consumers_staged is not skipped
+    - not (ca_trust_consumers_unit.allow_staged_changes | default(false) | bool)
+
+- name: restart_unit | Report decision
+  vars:
+    _decision: >-
+      {{ (_ca_trust_consumers_before.ActiveState ~ ', not started by this role')
+         if _ca_trust_consumers_before.ActiveState != 'active'
+         else ('started after the CA bundle changed, no restart needed'
+               if not (_ca_trust_consumers_needs_restart | bool)
+               else ('WOULD RESTART (check mode)' if ansible_check_mode
+                     else ('restarting' if ca_trust_consumers_restart | bool
+                           else 'WOULD RESTART (ca_trust_consumers_restart is false)'))) }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ ca_trust_consumers_unit.name }}: {{ _decision }}
+      | {{ _ca_trust_consumers_record.stdout | default('no main process') }}
+      {{ ('| ' ~ (_ca_trust_consumers_staged.stdout_lines | join('; '))) if (_ca_trust_consumers_staged.stdout | default('') | trim) else '' }}
+
+- name: restart_unit | Restart unit
+  when:
+    - _ca_trust_consumers_needs_restart | bool
+    - ca_trust_consumers_restart | bool
+    - not ansible_check_mode
+  block:
+    - name: restart_unit | Restart in place
+      ansible.builtin.systemd_service:
+        name: "{{ ca_trust_consumers_unit.name }}"
+        state: restarted
+      when: not (ca_trust_consumers_unit.detached | default(false) | bool)
+
+    - name: restart_unit | Restart through a transient unit
+      ansible.builtin.command:
+        argv:
+          - systemd-run
+          - --no-block
+          - --collect
+          - "--unit=ca-trust-restart-{{ ca_trust_consumers_unit.name | regex_replace('\\.service$', '') }}-{{ ansible_facts.date_time.epoch }}"
+          - "--description=ca_trust_consumers restart of {{ ca_trust_consumers_unit.name }}"
+          - /bin/systemctl
+          - restart
+          - "{{ ca_trust_consumers_unit.name }}"
+      changed_when: true
+      when: ca_trust_consumers_unit.detached | default(false) | bool
+
+    - name: restart_unit | Wait for the controller connection
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: "{{ ca_trust_consumers_reconnect_timeout }}"
+      when: ca_trust_consumers_unit.detached | default(false) | bool
+
+    - name: restart_unit | Wait for a new active main process
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ ca_trust_consumers_unit.name }}"
+          - --timestamp=unix
+          - -p
+          - ActiveState
+          - -p
+          - ExecMainStartTimestamp
+          - -p
+          - MainPID
+      register: _ca_trust_consumers_after_raw
+      changed_when: false
+      vars:
+        _after: "{{ dict(_ca_trust_consumers_after_raw.stdout_lines | map('split', '=', 1)) }}"
+      until:
+        - _after.ActiveState == 'active'
+        - ((_after.ExecMainStartTimestamp | default('') | regex_replace('^@', '')) or '0') | int
+          >= _ca_trust_consumers_bundle.stat.mtime | int
+        - ((_after.ExecMainStartTimestamp | default('') | regex_replace('^@', '')) or '0') | int
+          > _ca_trust_consumers_started | int
+      retries: "{{ ca_trust_consumers_health_retries }}"
+      delay: "{{ ca_trust_consumers_health_delay }}"
+
+    - name: restart_unit | Run health command
+      ansible.builtin.shell:
+        cmd: "set -o pipefail; {{ ca_trust_consumers_unit.health_command }}"
+        executable: /bin/bash
+      register: _ca_trust_consumers_health
+      changed_when: false
+      until: _ca_trust_consumers_health.rc == 0
+      retries: "{{ ca_trust_consumers_health_retries }}"
+      delay: "{{ ca_trust_consumers_health_delay }}"
+      when: ca_trust_consumers_unit.health_command | default('') | length > 0
+
+    - name: restart_unit | Report new process
+      ansible.builtin.debug:
+        msg: "{{ ca_trust_consumers_unit.name }} restarted: {{ _ca_trust_consumers_after_raw.stdout_lines | join(' ') }}"

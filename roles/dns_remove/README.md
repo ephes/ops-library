@@ -5,7 +5,7 @@ This role removes Unbound DNS service from a system, optionally restoring system
 ## Requirements
 
 - Ubuntu/Debian system
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 - Root/sudo access
 
 ## Role Variables

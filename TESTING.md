@@ -97,6 +97,22 @@ prior stdin name vocabulary; passphrase-only stdin logging in the encrypted-volu
 and ZFS roles remains explicit follow-up debt. The changed Paperless tasks' existing
 conditional no_log values are pinned by the task-contract regressions.
 
+### Secrets under become
+
+`just test-become-environment-secrets` (`tests/test_become_environment_secrets.py`)
+fails when a role task that becomes an unprivileged user (`become_user` other than
+`root`, inherited through blocks) has a secret-looking name or a secret-named
+variable in its `environment:`, uses an expression as its environment, or puts a
+secret-named variable into command/shell/raw arguments. Under `become_user`, Ansible
+places the task environment inside the command it hands to sudo, and sudo logs that
+command to the journal and `/var/log/auth.log`, `no_log` notwithstanding. Use a 0600
+file owned by the service user (for example a shell-quoted `.shell` companion of the
+service environment, rendered with `task_shell_environment: true` and sourced with
+`set -a`), stdin, or a module parameter. The test's `ALLOWED` table names the few
+reviewed exceptions with a reason; stale entries fail. It also renders the
+companion templates with awkward values and sources them with `/bin/sh` to prove
+the values round-trip exactly.
+
 `just test-task-credentials` runs each changed role's render/static regressions,
 including executed local shell fixtures for literal secret handling. These
 checks require no hosts or databases and also run through `just test`.
@@ -279,6 +295,36 @@ When adding coverage, prefer small role-local fixtures that prove the risky beha
 - idempotent file rendering and ownership
 - validation-only dry runs
 
+## Rust workspace and collection packaging
+
+The Rust binaries under `rust/` (see `rust/README.md`) have their own gate,
+which the GitHub Actions workflow `.github/workflows/rust.yml` also runs:
+
+```bash
+just rust-check   # cargo fmt --check, clippy -D warnings, cargo test, cargo deny, rust/scripts tests
+just rust-test    # cargo test and the rust/scripts tests only
+```
+
+Both need `cargo` (toolchain pinned in `rust/rust-toolchain.toml`);
+`rust-check` also needs `cargo-deny` 0.20.2. Run them in a worktree (they
+write `rust/target/`). They are not part of `just test`, so the Ansible suite
+keeps working without a Rust toolchain.
+
+`just test` does run `just test-collection-build-ignore`: it checks that
+`galaxy.yml` `build_ignore` lists `rust` and `.github` and, with
+`ansible-galaxy` from the project environment, builds the collection into a
+temporary directory and fails if any archive member comes from `rust/` or
+`.github/` (a checkout's `rust/target/` can be hundreds of MB).
+
+`just test` also runs `just test-metrics-httpd-fixtures`: the
+`rust/metrics-httpd/fixtures/` that the Rust port replays must regenerate
+byte for byte from the rendered Python endpoint scripts, the real `htpasswd`
+(apache2-utils; without it only the stdlib families are checked) and
+CPython, also under 3.12 and 3.13 when `uv` has them; every Rust/Python
+difference must name an allowed difference of `rust/metrics-httpd/PLAN.md`
+5.2. After changing an endpoint script, run `just metrics-httpd-fixtures`
+and update the Rust side in the same change.
+
 ## Legacy Shell Helpers
 
 Legacy shell helpers still exist for repo-local syntax and ad-hoc checks:
@@ -355,3 +401,27 @@ proxy addresses, password-bearing queries, UniFi credentials, remote temporary p
 cleanup, default-off unit hardening, and conflict markers in tracked text files.
 These checks do not validate service behavior on a host; run Molecule separately
 before merging or enabling hardening.
+
+### Rustup manager security patch
+
+`just test-rustup-security` exercises guarded check mode, unknown proxies, busy
+owners, artifact integrity and failed-updater restoration. The opt-in
+`just test-rustup-security-native` runs the exact pinned upstream updater in a
+disposable native macOS CARGO_HOME/RUSTUP_HOME or local Linux Docker fixture,
+with SDK/environment/settings sentinels. It never targets an existing manager.
+Provide the official downloaded binary using `RUSTUP_SECURITY_FIXTURE_UPDATER`;
+the fixture checks its pinned digest and platform. The Docker mode supports only
+local `colima` or `desktop-linux` contexts with a Unix endpoint. On macOS invoke
+`python tests/run_rustup_security_native.py --docker` directly and supply the
+Linux updater binary, rather than the macOS updater used by the native recipe.
+Linux uses an existing local
+`python:3.11-slim` image with `--pull never --network none`; no production SDKs.
+
+`tests/run_rustup_security_loader.py` additionally exercises the actual FQCN role
+on genuine macOS with disposable synthetic SDK state: check/apply/repeat, local
+current-owner connection, become disabled, and explicit Ansible-compatible module
+Python. Set `RUSTUP_SECURITY_FIXTURE_CA_FILE` to the patched native PEM and
+`RUSTUP_SECURITY_FIXTURE_MODULE_PYTHON` to the approved module interpreter. It
+uses the real OS-CA-verified pinned download. Native vendor-only fixture receipts
+name macOS Seatbelt write confinement separately from Linux disposable-container
+isolation; a Linux `false` for the macOS-only flag is not a preservation failure.

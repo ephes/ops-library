@@ -1,0 +1,23 @@
+---
+# After restarts every running Node.js process of a listed unit must carry the
+# flag; an inactive unit passes (it gets the drop-in when started).
+- name: verify_node_unit | Check running Node.js processes
+  ansible.builtin.include_tasks: node_runtime.yml
+
+- name: verify_node_unit | Report Node.js processes
+  ansible.builtin.debug:
+    msg: "{{ ca_trust_consumers_unit.name }}: {{ _ca_trust_consumers_node_runtime.stdout_lines | join(', ') }}"
+
+- name: verify_node_unit | Require the flag in every running Node.js process
+  ansible.builtin.assert:
+    that:
+      - "'flag=no' not in _ca_trust_consumers_node_runtime.stdout"
+      - "'no-node-process' not in _ca_trust_consumers_node_runtime.stdout"
+    fail_msg: >-
+      {{ ca_trust_consumers_unit.name }}: {{ _ca_trust_consumers_node_runtime.stdout_lines | join(', ') }}
+    success_msg: >-
+      {{ ca_trust_consumers_unit.name }}: {{ _ca_trust_consumers_node_runtime.stdout_lines | join(', ') }}
+  # Check and report modes leave old processes running on purpose.
+  when:
+    - not ansible_check_mode
+    - ca_trust_consumers_restart | bool

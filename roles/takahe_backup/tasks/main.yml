@@ -42,6 +42,24 @@
     - "{{ takahe_backup_dir }}/traefik"
     - "{{ takahe_backup_dir }}/nginx"
 
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ takahe_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: takahe_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ takahe_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: Check media directory
   ansible.builtin.stat:
     path: "{{ takahe_media_root }}"
@@ -246,6 +264,7 @@
     path: "{{ takahe_backup_dir }}"
     dest: "{{ takahe_backup_archive }}"
     format: "{{ takahe_backup_archive_format }}"
+    mode: "0600"
   when: takahe_backup_create_archive | bool
 
 - name: Ensure local backup directory exists

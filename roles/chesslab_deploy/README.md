@@ -29,3 +29,7 @@ longer the Chesslab application login.
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Chesslab restarts its systemd service. Unchanged syncs do not request a restart.
+
+## Secret handling
+
+`migrate` and `ensure_admin` source `{{ chesslab_env_path }}.shell`, a 0600 companion of the service environment file with the same values shell-quoted; each app user's password is read from stdin. No secret is passed in a task environment or on a command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

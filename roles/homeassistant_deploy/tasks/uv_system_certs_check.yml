@@ -1,0 +1,31 @@
+---
+# Read-only check of the Home Assistant unit for the managed UV_SYSTEM_CERTS
+# drop-in (files/uv_system_certs_check.py). _ha_uv_certs_mode: preflight or
+# verify. The output names keys and paths only; the task stays no_log because
+# it reads the running service's environment.
+- name: uv_system_certs_check | Inspect the Home Assistant unit's trust settings
+  ansible.builtin.command:
+    argv: >-
+      {{ ['/usr/bin/python3', '-I', '-c', lookup('ansible.builtin.file', 'uv_system_certs_check.py'),
+          '--unit', homeassistant_service_name ~ '.service',
+          '--dropin', homeassistant_uv_system_certs_dropin_path,
+          '--dropin-sha256', lookup('ansible.builtin.template', 'uv-system-certs.conf.j2') | hash('sha256'),
+          '--mode', _ha_uv_certs_mode]
+         + (['--allow-missing-unit'] if (_ha_uv_certs_allow_missing | default(false) | bool) else [])
+         + (homeassistant_uv_system_certs_allowed_dropins | map('regex_replace', '^', '--allow-dropin=') | list) }}
+  register: _ha_uv_certs_check
+  changed_when: false
+  check_mode: false
+  no_log: true
+  become: true
+
+- name: uv_system_certs_check | Refuse unaccounted trust configuration
+  ansible.builtin.assert:
+    that:
+      - (_ha_uv_certs_check.stdout | from_json).problems | length == 0
+    fail_msg: >-
+      Home Assistant UV_SYSTEM_CERTS {{ _ha_uv_certs_mode }}:
+      {{ (_ha_uv_certs_check.stdout | from_json).problems | join('; ') }}.
+      Explicit trust configuration is never replaced; resolve it or set
+      homeassistant_uv_system_certs to false.
+    quiet: true

@@ -24,23 +24,13 @@
     - (webapp_deploy_internal_traefik_auth_packages | default([])) | length > 0
     - ansible_facts["os_family"] in (webapp_deploy_internal_traefik_auth_package_os_families | default([]))
 
-- name: traefik_config | Generate basic auth password hash
-  ansible.builtin.command:
-    argv:
-      - htpasswd
-      - -nBi
-      - "{{ webapp_deploy_internal_traefik_basic_auth_user }}"
-  args:
-    stdin: "{{ webapp_deploy_internal_traefik_basic_auth_password }}"
-  register: webapp_deploy_internal_password_hash
-  changed_when: false
-  no_log: true
-  when: webapp_deploy_internal_traefik_basic_auth_enabled | default(false) | bool
-
-- name: traefik_config | Set password hash fact
-  ansible.builtin.set_fact:
-    "{{ webapp_deploy_internal_traefik_password_hash_var }}": "{{ webapp_deploy_internal_password_hash.stdout.split(':', 1)[1] | trim }}"
-  no_log: true
+- name: traefik_config | Resolve basic auth password hash
+  ansible.builtin.include_tasks: traefik_basic_auth_hash.yml
+  vars:
+    webapp_deploy_internal_basic_auth_user: "{{ webapp_deploy_internal_traefik_basic_auth_user }}"
+    webapp_deploy_internal_basic_auth_password: "{{ webapp_deploy_internal_traefik_basic_auth_password }}"
+    webapp_deploy_internal_basic_auth_config_path: "{{ webapp_deploy_internal_traefik_dest }}"
+    webapp_deploy_internal_basic_auth_hash_var: "{{ webapp_deploy_internal_traefik_password_hash_var }}"
   when: webapp_deploy_internal_traefik_basic_auth_enabled | default(false) | bool
 
 - name: traefik_config | Render Traefik dynamic config

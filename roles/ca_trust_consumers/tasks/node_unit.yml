@@ -1,0 +1,131 @@
+---
+- name: node_unit | Read unit state
+  ansible.builtin.command:
+    argv: [systemctl, show, "{{ ca_trust_consumers_unit.name }}", -p, LoadState, -p, EnvironmentFiles]
+  register: _ca_trust_consumers_node_show
+  changed_when: false
+  check_mode: false
+
+- name: node_unit | Require a loaded unit
+  ansible.builtin.assert:
+    that: "'LoadState=loaded' in _ca_trust_consumers_node_show.stdout_lines"
+    fail_msg: "{{ ca_trust_consumers_unit.name }} is not a loaded unit on this host."
+    quiet: true
+
+# File names only; values (which may be secrets) are never read into output.
+# Fail closed rather than parse systemd's environment-file syntax: a wildcard
+# pattern, an unreadable file, or any mention of NODE_OPTIONS in a file (an
+# assignment in any spelling, a continuation, even a comment) is refused.
+- name: node_unit | Look for NODE_OPTIONS in the unit's environment files
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      # One entry per line, "<path> (ignore_errors=yes|no)"; paths may contain
+      # blanks. An entry in any other shape is refused, not guessed at.
+      systemctl show {{ ca_trust_consumers_unit.name | quote }} -p EnvironmentFiles --value \
+        | while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            case "$entry" in
+              *" (ignore_errors=yes)" | *" (ignore_errors=no)") file="${entry% (ignore_errors=*)}" ;;
+              *) echo "$entry (unparsed entry)"; continue ;;
+            esac
+            case "$file" in
+              *[*?[]*) echo "$file (wildcard pattern)" ;;
+              *) if [ -e "$file" ] && [ ! -r "$file" ]; then
+                   echo "$file (unreadable)"
+                 elif [ -f "$file" ] && grep -q -F NODE_OPTIONS "$file"; then
+                   echo "$file"
+                 fi ;;
+            esac
+          done
+    executable: /bin/bash
+  register: _ca_trust_consumers_node_envfiles
+  changed_when: false
+  check_mode: false
+
+- name: node_unit | Refuse to override NODE_OPTIONS from an environment file
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_node_envfiles.stdout | trim | length == 0
+    fail_msg: >-
+      {{ ca_trust_consumers_unit.name }}: environment file(s)
+      {{ _ca_trust_consumers_node_envfiles.stdout_lines | join(', ') }} may set NODE_OPTIONS,
+      which would take precedence over a drop-in (or cannot be checked). Add
+      {{ ca_trust_consumers_node_flag }} there, or remove the mention, instead.
+    quiet: true
+
+# The definition may carry secrets in Environment=; it is never logged.
+- name: node_unit | Read unit definition
+  ansible.builtin.command:
+    argv: [systemctl, cat, "{{ ca_trust_consumers_unit.name }}"]
+  register: _ca_trust_consumers_node_cat
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: node_unit | Write NODE_OPTIONS drop-in
+  vars:
+    _dropin: "{{ ca_trust_consumers_systemd_dir }}/{{ ca_trust_consumers_unit.name }}.d/{{ ca_trust_consumers_node_dropin_name }}"
+    _existing: >-
+      {{ _ca_trust_consumers_node_cat.stdout
+         | local.ops_library.ca_trust_systemd_unit_node_options(_dropin) }}
+    ca_trust_consumers_node_options: >-
+      {{ _existing | local.ops_library.ca_trust_node_options_with_flag(ca_trust_consumers_node_flag) }}
+  block:
+    - name: node_unit | Ensure drop-in directory
+      ansible.builtin.file:
+        path: "{{ _dropin | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: node_unit | Template drop-in
+      ansible.builtin.template:
+        src: node-trust.conf.j2
+        dest: "{{ _dropin }}"
+        owner: root
+        group: root
+        mode: "0644"
+      diff: false
+      register: _ca_trust_consumers_node_dropin
+
+- name: node_unit | Reload systemd after a drop-in change
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: _ca_trust_consumers_node_dropin is changed
+
+# Drop-ins apply in name order, so a later one could still replace the value.
+# Check the effective Environment= value (yes/no only, never the value).
+- name: node_unit | Check the effective NODE_OPTIONS of the unit
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      # UnsetEnvironment= is applied last and would drop the variable again.
+      # Any mention counts: its entries may be quoted "NAME=VALUE" assignments.
+      if systemctl show {{ ca_trust_consumers_unit.name | quote }} -p UnsetEnvironment --value \
+          | grep -F NODE_OPTIONS >/dev/null; then
+        echo effective=unset
+        exit 0
+      fi
+      if systemctl show {{ ca_trust_consumers_unit.name | quote }} -p Environment --value \
+          | xargs -n1 printf '%s\n' 2>/dev/null | sed -n 's/^NODE_OPTIONS=//p' | tail -n1 \
+          | tr ' ' '\n' | grep -xF -- {{ ca_trust_consumers_node_flag | quote }} >/dev/null; then
+        echo effective=yes
+      else
+        echo effective=no
+      fi
+    executable: /bin/bash
+  register: _ca_trust_consumers_node_effective
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: node_unit | Require the flag in the unit's effective environment
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_node_effective.stdout | trim == 'effective=yes'
+    fail_msg: >-
+      {{ ca_trust_consumers_unit.name }}: {{ _ca_trust_consumers_node_effective.stdout | trim }};
+      another drop-in or the unit sets NODE_OPTIONS after {{ ca_trust_consumers_node_dropin_name }}
+      without {{ ca_trust_consumers_node_flag }}, or UnsetEnvironment= removes it. Fix it at that source.
+    quiet: true
+  when: not ansible_check_mode

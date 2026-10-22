@@ -1,0 +1,8 @@
+---
+# rust_release_binary has no default entry point: a consumer includes one of
+# install.yml, pin.yml or prune.yml with tasks_from (README.md).
+- name: rust_release_binary | Refuse an include without tasks_from
+  ansible.builtin.fail:
+    msg: >-
+      rust_release_binary is an internal helper; include it with
+      tasks_from: install, pin or prune (see roles/rust_release_binary/README.md).

@@ -7,25 +7,18 @@
     group: root
     mode: "0755"
 
-- name: Build basic auth hash from password
-  ansible.builtin.command:
-    argv:
-      - htpasswd
-      - -nbB
-      - "{{ jellyfin_basic_auth_user }}"
-      - "{{ jellyfin_basic_auth_password }}"
-  register: jellyfin_basic_auth_htpasswd
-  changed_when: false
-  no_log: true
+- name: Resolve basic auth password hash (reuse the deployed one while it matches)
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_basic_auth_hash
+  vars:
+    webapp_deploy_internal_basic_auth_user: "{{ jellyfin_basic_auth_user }}"
+    webapp_deploy_internal_basic_auth_password: "{{ jellyfin_basic_auth_password }}"
+    webapp_deploy_internal_basic_auth_config_path: "{{ jellyfin_traefik_config_path }}"
+    webapp_deploy_internal_basic_auth_hash_var: jellyfin_basic_auth_password_hash
   when:
     - jellyfin_basic_auth_enabled | bool
     - jellyfin_basic_auth_password_hash | length == 0
-
-- name: Set Jellyfin basic auth hash fact
-  ansible.builtin.set_fact:
-    jellyfin_basic_auth_password_hash: "{{ jellyfin_basic_auth_htpasswd.stdout.split(':', 1)[1] if jellyfin_basic_auth_htpasswd.stdout is defined else jellyfin_basic_auth_password_hash }}"
-  no_log: true
-  when: jellyfin_basic_auth_enabled | bool
 
 - name: Render Traefik configuration for Jellyfin
   ansible.builtin.template:

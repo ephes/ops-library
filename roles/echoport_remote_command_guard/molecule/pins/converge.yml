@@ -1,0 +1,338 @@
+---
+# Pin and prune of the Rust guard (rust/echoport-command-guard/PLAN.md 6.2)
+# against a real sshd with impl shadow and stub releases
+# (make_stub_archives.py): every guarded command still reaches the real
+# Python guard, so a broken pin or prune shows as a failed SSH command.
+# Each deploy.yml include is one simulated playbook run, cut after any step;
+# check.yml asserts the state after it. Versions: X 0.0.1, A 0.1.0, B 0.2.0,
+# C 0.3.0, D 0.4.0, E 0.5.0, F 0.6.0 (refuses everything), 0.9.0 (exits 1),
+# 0.9.1 (not a gzip archive).
+- name: Build the stub releases
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Write the stub archives
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -I
+          - "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/make_stub_archives.py"
+          - "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/stubs"
+      changed_when: true
+
+- name: Pin and prune through simulated playbook runs
+  hosts: all
+  become: true
+  vars:
+    pins_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/stubs"
+    pins_sha256: "{{ lookup('file', pins_archives ~ '/sha256.json') | from_json }}"
+    pins_root: /usr/local/lib/echoport-command-guard
+    pins_python_command: >-
+      /usr/bin/python3 -I /usr/local/sbin/echoport-remote-command-guard /etc/echoport/remote-command-guard.json
+    pins_ssh: >-
+      /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+    pins_other_key: >-
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPinsScenarioManualKeyOnly000000000000000000 manual
+    echoport_remote_command_guard_policy:
+      units: [cron.service]
+  tasks:
+    - name: Read the client public key
+      ansible.builtin.slurp:
+        src: /root/molecule_deploy_key.pub
+      register: pins_key_read
+
+    - name: Remember the client public key
+      ansible.builtin.set_fact:
+        pins_deploy_key: "{{ pins_key_read.content | b64decode | trim }}"
+
+    # --- Repeated failed deployments with different targets ------------------
+
+    - name: A is written and confirmed
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: A
+        deploy_impl: shadow
+        deploy_version: 0.1.0
+        deploy_steps: [role, write, probe, confirm]
+
+    - name: Check A
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after A
+        check_versions: [0.1.0]
+        check_pins: {echoport_remote_command_guard: 0.1.0}
+        check_line: 0.1.0
+
+    - name: B, C and D stop after the role's main tasks
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: "{{ item }}"
+        deploy_impl: shadow
+        deploy_version: "{{ item }}"
+        deploy_steps: [role]
+      loop: [0.2.0, 0.3.0, 0.4.0]
+
+    - name: Check that B, C and D moved no pin and pruned nothing
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after B, C, D
+        check_versions: [0.1.0, 0.2.0, 0.3.0, 0.4.0]
+        check_pins: {echoport_remote_command_guard: 0.1.0}
+        check_line: 0.1.0
+
+    - name: E is written and confirmed
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: E
+        deploy_impl: shadow
+        deploy_version: 0.5.0
+        deploy_steps: [role, write, probe, confirm]
+
+    # keep_versions 3: E, D, C (newest by mtime) and A (previous pin); only B goes.
+    - name: Check E
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after E
+        check_versions: [0.1.0, 0.3.0, 0.4.0, 0.5.0]
+        check_pins: {echoport_remote_command_guard: 0.5.0, echoport_remote_command_guard.previous: 0.1.0}
+        check_line: 0.5.0
+
+    # --- Stale line -----------------------------------------------------------
+
+    - name: F stops after the role, then confirm_live.yml runs with F's fact
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: F stale
+        deploy_impl: shadow
+        deploy_version: 0.6.0
+        deploy_steps: [role, confirm]
+        deploy_expect_fail: true
+
+    - name: Check that the stale line moved no pin and pruned nothing
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after F stale
+        check_versions: [0.1.0, 0.3.0, 0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard: 0.5.0, echoport_remote_command_guard.previous: 0.1.0}
+        check_line: 0.5.0
+
+    # --- Written but not verified -----------------------------------------------
+
+    - name: F is written but its post-probe fails
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: F unverified
+        deploy_impl: shadow
+        deploy_version: 0.6.0
+        deploy_steps: [role, write, probe, confirm]
+        deploy_expect_fail: true
+
+    - name: Check that the unverified line moved no pin and pruned nothing
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after F unverified
+        check_versions: [0.1.0, 0.3.0, 0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard: 0.5.0, echoport_remote_command_guard.previous: 0.1.0}
+        check_line: 0.6.0
+        check_allowed: false
+
+    - name: The next run goes back to E and is confirmed
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: back to E
+        deploy_impl: shadow
+        deploy_version: 0.5.0
+        deploy_steps: [role, write, probe, confirm]
+
+    # Newest three F, E, D plus the previous pin A; C goes. F is not pinned.
+    - name: Check the run back to E
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: back to E
+        check_versions: [0.1.0, 0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard: 0.5.0, echoport_remote_command_guard.previous: 0.1.0}
+        check_line: 0.5.0
+
+    # --- Protect from the live state alone --------------------------------------
+
+    - name: Remove the pin files
+      ansible.builtin.file:
+        path: "{{ pins_root }}/.pins/{{ item }}"
+        state: absent
+      loop: [echoport_remote_command_guard, echoport_remote_command_guard.previous]
+
+    - name: Install X without pinning it
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: X install
+        deploy_impl: shadow
+        deploy_version: 0.0.1
+        deploy_steps: [role]
+
+    - name: Make X the oldest version
+      ansible.builtin.command:
+        argv: [touch, -d, "@1000000000", "{{ pins_root }}/0.0.1"]
+      changed_when: true
+
+    # A manual second line names X. Without pins, keep_versions 3 keeps F, E
+    # and D; X stays only because the live line names it, A goes.
+    - name: A confirmed run with a manual line naming X
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: E with X live
+        deploy_impl: shadow
+        deploy_version: 0.5.0
+        deploy_steps: [role, write, probe, confirm]
+        deploy_extra_lines:
+          - >-
+            restrict,command="{{ pins_root }}/0.0.1/echoport-command-guard --shadow
+            /etc/echoport/remote-command-guard.json {{ pins_python_command }}" {{ pins_other_key }}
+
+    - name: Check that X survived the prune
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: E with X live
+        check_versions: [0.0.1, 0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard: 0.5.0}
+        check_line: 0.5.0
+
+    - name: A confirmed run with a line naming the install root in another form
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: E with an unknown live state
+        deploy_impl: shadow
+        deploy_version: 0.5.0
+        deploy_steps: [role, write, probe, confirm]
+        deploy_extra_lines:
+          - restrict,command="{{ pins_root }}/current/echoport-command-guard /etc/echoport/remote-command-guard.json" {{ pins_other_key }}
+
+    # Without that line the prune would remove X (unpinned, oldest, not live).
+    - name: Check that the unknown live state deleted nothing
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: E with an unknown live state
+        check_versions: [0.0.1, 0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard: 0.5.0}
+        check_line: 0.5.0
+
+    - name: Assert the prune was skipped with the reason
+      ansible.builtin.assert:
+        that:
+          - rust_release_binary_prune.removed == []
+          - rust_release_binary_prune.skipped == ['the consumer marked its live state as unknown']
+
+    # --- Switch to Python verified -------------------------------------------------
+
+    - name: impl python is written and confirmed
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: python
+        deploy_impl: python
+        deploy_version: 0.5.0
+        deploy_steps: [role, write, probe, confirm]
+
+    # E stays as the previous pin (and as the configured version); X is no
+    # longer live and goes.
+    - name: Check the switch to Python
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: python
+        check_versions: [0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard.previous: 0.5.0}
+        check_line: python
+
+# --- Check mode: a real `ansible-playbook --check` of the role and confirm_live
+- name: Run the role and confirm_live.yml in check mode
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run check_mode.yml with --check
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - --check
+          - -i
+          - "{{ lookup('env', 'MOLECULE_INVENTORY_FILE') }}"
+          - "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/check_mode.yml"
+      register: pins_check_mode
+      changed_when: false
+
+    - name: Show the check-mode run
+      ansible.builtin.debug:
+        var: pins_check_mode.stdout_lines[-6:]
+
+- name: Check that check mode changed nothing, then the rollback-independence cases
+  hosts: all
+  become: true
+  vars:
+    pins_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/stubs"
+    pins_sha256: "{{ lookup('file', pins_archives ~ '/sha256.json') | from_json }}"
+    pins_root: /usr/local/lib/echoport-command-guard
+    pins_python_command: >-
+      /usr/bin/python3 -I /usr/local/sbin/echoport-remote-command-guard /etc/echoport/remote-command-guard.json
+    pins_ssh: >-
+      /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+    echoport_remote_command_guard_policy:
+      units: [cron.service]
+  tasks:
+    - name: Read the client public key
+      ansible.builtin.slurp:
+        src: /root/molecule_deploy_key.pub
+      register: pins_key_read
+
+    - name: Remember the client public key
+      ansible.builtin.set_fact:
+        pins_deploy_key: "{{ pins_key_read.content | b64decode | trim }}"
+
+    - name: Check the state after check mode
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after check mode
+        check_versions: [0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard.previous: 0.5.0}
+        check_line: python
+
+    # --- Rollback independence: a broken Rust release never blocks Python ---------
+
+    - name: impl python converges with a Rust binary that exits 1
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: python with a broken binary
+        deploy_impl: python
+        deploy_version: 0.9.0
+        deploy_steps: [role, write, probe, confirm]
+
+    - name: impl python converges with an archive that is not gzip
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: python with a corrupt archive
+        deploy_impl: python
+        deploy_version: 0.9.1
+        deploy_steps: [role, write, probe, confirm]
+
+    - name: Check that Python still decides and nothing broken stayed
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: python after broken releases
+        check_versions: [0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard.previous: 0.5.0}
+        check_line: python
+
+    - name: impl rust stops on the broken binary before the line is written
+      ansible.builtin.include_tasks: deploy.yml
+      vars:
+        deploy_name: rust with a broken binary
+        deploy_impl: rust
+        deploy_version: 0.9.0
+        deploy_steps: [role, write, probe, confirm]
+        deploy_expect_fail: true
+
+    - name: Check that the failed rust run left Python in place
+      ansible.builtin.include_tasks: check.yml
+      vars:
+        check_name: after the failed rust run
+        check_versions: [0.4.0, 0.5.0, 0.6.0]
+        check_pins: {echoport_remote_command_guard.previous: 0.5.0}
+        check_line: python

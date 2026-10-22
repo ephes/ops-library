@@ -1,0 +1,54 @@
+---
+# FastDeploy runner installation (see README.md).
+#
+# Installs one script that FastDeploy starts through sudo into a root-owned
+# directory chain outside FastDeploy's site, points the service's config.json
+# at that fixed path and writes the sudoers rules for it.
+
+# FastDeploy service name (directory name below the services root and the
+# name Echoport targets use), e.g. "delve-backup". Required.
+fastdeploy_runner_service: ""
+fastdeploy_runner_description: "{{ fastdeploy_runner_service }}"
+# Step names FastDeploy shows for the service, in order (strings).
+fastdeploy_runner_steps: []
+
+# Script source: a template path (rendered with the play's variables) or the
+# literal script content. Exactly one is required.
+fastdeploy_runner_template: ""
+fastdeploy_runner_content: ""
+fastdeploy_runner_script_name: "backup.py"
+
+# Root-owned location of the script. Every directory from
+# fastdeploy_runner_libexec_root down is root:root 0755; the script is
+# root:<deploy group>, so the deploy user can read and run it and fastdeploy
+# can neither change it nor rename any directory above it.
+fastdeploy_runner_libexec_root: "/usr/local/libexec/fastdeploy"
+fastdeploy_runner_dir: "{{ fastdeploy_runner_libexec_root }}/{{ fastdeploy_runner_service }}"
+fastdeploy_runner_script: "{{ fastdeploy_runner_dir }}/{{ fastdeploy_runner_script_name }}"
+fastdeploy_runner_script_group: "{{ fastdeploy_runner_deploy_user }}"
+fastdeploy_runner_script_mode: "0750"
+
+# FastDeploy installation. Only config.json stays below the services root;
+# the services root and the service directory are made root-owned too.
+fastdeploy_runner_fastdeploy_root: "/home/fastdeploy/site"
+fastdeploy_runner_services_root: "{{ fastdeploy_runner_fastdeploy_root }}/services"
+fastdeploy_runner_config_dir: "{{ fastdeploy_runner_services_root }}/{{ fastdeploy_runner_service }}"
+fastdeploy_runner_fastdeploy_user: "fastdeploy"
+fastdeploy_runner_deploy_user: "deploy"
+
+# sudoers: fastdeploy may run the script as the deploy user. With
+# fastdeploy_runner_run_as set (normally "root"), deploy may also run it as
+# that user (the runners re-run themselves with `sudo -n <script>`).
+fastdeploy_runner_run_as: ""
+fastdeploy_runner_sudoers_file: "/etc/sudoers.d/{{ fastdeploy_runner_service | replace('-', '_') }}"
+
+# Files the service kept in its config directory before this role (the old
+# FastDeploy-writable script location). Removed after the new config.json is
+# synced, so FastDeploy never points at a missing script.
+fastdeploy_runner_legacy_files:
+  - "{{ fastdeploy_runner_config_dir }}/backup.py"
+
+# Run FastDeploy's `commands.py syncservices` as the fastdeploy user so the
+# stored service points at the new script path.
+fastdeploy_runner_sync: true
+fastdeploy_runner_sync_python: "{{ fastdeploy_runner_fastdeploy_root }}/.venv/bin/python"

@@ -1,0 +1,156 @@
+---
+- name: install | Check Homebrew at /opt/homebrew/bin/brew
+  ansible.builtin.stat:
+    path: /opt/homebrew/bin/brew
+  register: llama_server_brew_opt
+
+- name: install | Check Homebrew at /usr/local/bin/brew
+  ansible.builtin.stat:
+    path: /usr/local/bin/brew
+  register: llama_server_brew_usr
+
+- name: install | Resolve the Homebrew binary
+  ansible.builtin.set_fact:
+    llama_server_brew_bin_resolved: >-
+      {{
+        llama_server_brew_bin if llama_server_brew_bin | length > 0
+        else ('/opt/homebrew/bin/brew' if llama_server_brew_opt.stat.exists
+              else ('/usr/local/bin/brew' if llama_server_brew_usr.stat.exists else ''))
+      }}
+
+- name: install | Validate Homebrew and its owner
+  ansible.builtin.assert:
+    that:
+      - llama_server_brew_bin_resolved | length > 0
+      - llama_server_brew_user | length > 0 or ansible_user_id != 'root'
+    fail_msg: >-
+      Homebrew was not found (set llama_server_brew_bin), or
+      llama_server_brew_user is missing while Ansible runs as root (Homebrew
+      refuses to run as root).
+
+- name: install | Check the llama.cpp Homebrew package
+  ansible.builtin.command:
+    argv:
+      - "{{ llama_server_brew_bin_resolved }}"
+      - list
+      - --versions
+      - "{{ llama_server_brew_formula }}"
+  register: llama_server_brew_list
+  changed_when: false
+  failed_when: false
+  become: "{{ llama_server_brew_user | length > 0 }}"
+  become_user: "{{ llama_server_brew_user | default(omit) }}"
+  become_flags: "-i"
+
+# Installed only when missing. An installed llama.cpp is never upgraded here:
+# a new build is a new detector profile (Delve pins the build), so it is a
+# deliberate change, not a side effect of a deploy.
+- name: install | Install llama.cpp via Homebrew
+  ansible.builtin.command:
+    argv:
+      - "{{ llama_server_brew_bin_resolved }}"
+      - install
+      - "{{ llama_server_brew_formula }}"
+  register: llama_server_brew_install
+  changed_when: llama_server_brew_install.rc == 0
+  become: "{{ llama_server_brew_user | length > 0 }}"
+  become_user: "{{ llama_server_brew_user | default(omit) }}"
+  become_flags: "-i"
+  when: llama_server_brew_list.rc != 0
+
+- name: install | Read the llama-server build
+  ansible.builtin.command:
+    argv:
+      - "{{ llama_server_bin }}"
+      - --version
+  register: llama_server_version
+  changed_when: false
+  failed_when: llama_server_version.rc != 0
+
+# `version: 0.7.0 (build 11669, commit 620d2225c)` -> b11669-620d2225c, the
+# form /props build_info reports and the wrapper compares.
+- name: install | Resolve the installed build
+  ansible.builtin.set_fact:
+    llama_server_installed_build: >-
+      {{ ('b' ~ llama_server_build_parts[0][0] ~ '-' ~ llama_server_build_parts[0][1])
+         if llama_server_build_parts | length > 0 else '' }}
+  vars:
+    llama_server_build_parts: >-
+      {{ (llama_server_version.stdout ~ ' ' ~ llama_server_version.stderr)
+         | regex_findall('[(]build ([0-9]+), commit ([0-9a-f]+)[)]') }}
+
+- name: install | Require the pinned llama.cpp build
+  ansible.builtin.assert:
+    that:
+      - llama_server_installed_build == llama_server_build
+    fail_msg: >-
+      {{ llama_server_bin }} is build "{{ llama_server_installed_build }}", not the
+      pinned {{ llama_server_build }}. Delve refuses another build
+      (detectorMismatch). Install the pinned build, or change the pin here and
+      in Delve's analysis profile (detector.build) together after a new
+      determinism check.
+
+- name: install | Ensure the install, model, config and log directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ llama_server_install_dir }}", group: wheel, mode: "0755" }
+    - { path: "{{ llama_server_model_dir }}", group: wheel, mode: "0755" }
+    - { path: "{{ llama_server_config_dir }}", group: "{{ llama_server_service_group }}", mode: "0750" }
+    - { path: "{{ llama_server_log_dir }}", group: wheel, mode: "0755" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: install | Announce the model download
+  ansible.builtin.debug:
+    msg: >-
+      Ensuring {{ llama_server_gguf_file }} (about 2.5 GB, SHA-256
+      {{ llama_server_gguf_sha256[:8] }}...) in {{ llama_server_model_dir }}.
+      A fresh host downloads it, which can take several minutes.
+
+- name: install | Download and verify the pinned model
+  ansible.builtin.get_url:
+    url: "{{ llama_server_gguf_url }}"
+    dest: "{{ llama_server_model_dir }}/{{ llama_server_gguf_file }}"
+    checksum: "sha256:{{ llama_server_gguf_sha256 }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+    timeout: 120
+  register: llama_server_gguf_download
+
+- name: install | Install the start wrapper
+  ansible.builtin.copy:
+    src: "{{ llama_server_wrapper_src }}"
+    dest: "{{ llama_server_wrapper_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+  register: llama_server_wrapper_install
+
+- name: install | Write the API key file
+  ansible.builtin.copy:
+    content: "{{ llama_server_api_key | string | trim }}\n"
+    dest: "{{ llama_server_api_key_path }}"
+    owner: "{{ llama_server_service_user }}"
+    group: "{{ llama_server_service_group }}"
+    mode: "0600"
+  no_log: true
+  register: llama_server_api_key_install
+
+- name: install | Ensure the log files exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ llama_server_service_user }}"
+    group: "{{ llama_server_service_group }}"
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - "{{ llama_server_stdout_log }}"
+    - "{{ llama_server_stderr_log }}"

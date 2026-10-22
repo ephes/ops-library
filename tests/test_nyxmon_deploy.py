@@ -8,12 +8,15 @@ settings rendered into the worker environment.
 from __future__ import annotations
 
 import base64
+import grp
 import json
 import os
+import pwd
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -179,16 +182,85 @@ class SourceSyncSafetyTests(unittest.TestCase):
         ):
             self.assertLess(ordered_names.index(earlier), ordered_names.index(later))
 
-    def test_exactly_one_recursive_ownership_fix_scoped_to_the_site_tree(self) -> None:
+    def test_ownership_fix_never_walks_the_site_root_recursively(self) -> None:
+        # The live database sits in the site root, and the writers create and
+        # delete its sidecars at any moment. A recursive walk over the root
+        # lists them and fails when one is gone before the chown.
         tasks = yaml.safe_load((ROLE / "tasks" / "source_rsync.yml").read_text())
         recursive = [
             task
             for task in tasks
-            if (task.get("file") or {}).get("recurse") is True
+            if "recurse" in (task.get("file") or {})
         ]
+        listing = next(
+            task
+            for task in tasks
+            if task.get("name") == "source_rsync | List site entries for the ownership fix"
+        )
+        root = next(
+            task
+            for task in tasks
+            if task.get("name") == "source_rsync | Set ownership for the site root"
+        )
 
         self.assertEqual(len(recursive), 1)
-        self.assertEqual(recursive[0]["file"]["path"], "{{ nyxmon_site_path }}")
+        sweep = recursive[0]
+        self.assertEqual(sweep["name"], "source_rsync | Set ownership for synced files")
+        self.assertEqual(sweep["file"]["recurse"], "{{ item.isdir }}")
+        self.assertEqual(sweep["file"]["follow"], "{{ not item.islnk }}")
+        self.assertEqual(sweep["file"]["path"], "{{ item.path }}")
+        self.assertIn("nyxmon_site_entries.files", sweep["loop"])
+        self.assertNotIn("mode", sweep["file"])
+        self.assertEqual(
+            listing["find"],
+            {
+                "paths": "{{ nyxmon_site_path }}",
+                "file_type": "any",
+                "hidden": True,
+                "recurse": False,
+                "excludes": ["db.sqlite3-*"],
+            },
+        )
+        self.assertNotIn("recurse", root["file"])
+        self.assertEqual(root["file"]["state"], "directory")
+        names = [task["name"] for task in tasks]
+        self.assertLess(names.index(listing["name"]), names.index(sweep["name"]))
+        self.assertEqual(names[-1], sweep["name"])
+
+    def test_rsync_deploys_require_the_database_in_the_site_root(self) -> None:
+        validate = next(
+            task
+            for task in yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
+            if task.get("name") == "Validate rsync-specific requirements"
+        )
+        base = {
+            "nyxmon_deploy_method": "rsync",
+            "nyxmon_source_path": "/src/nyxmon",
+            "nyxmon_site_path": "/home/nyxmon/site",
+        }
+
+        self.assertEqual(
+            run_cases(
+                validate,
+                {
+                    "site_root": {**base, "nyxmon_django_path": "/home/nyxmon/site"},
+                    "trailing_slash": {**base, "nyxmon_django_path": "/home/nyxmon/site/"},
+                    "subdirectory": {**base, "nyxmon_django_path": "/home/nyxmon/site/src/django"},
+                    "git_ignores_it": {
+                        **base,
+                        "nyxmon_deploy_method": "git",
+                        "nyxmon_django_path": "/home/nyxmon/site/src/django",
+                    },
+                },
+                "None",
+            ),
+            {
+                "site_root": None,
+                "trailing_slash": None,
+                "subdirectory": "failed",
+                "git_ignores_it": None,
+            },
+        )
 
 
 class NotificationPolicyTests(unittest.TestCase):
@@ -737,6 +809,223 @@ class RustAgentTests(unittest.TestCase):
                     self.assertIn(f"`{name}`", readme)
         self.assertIn("agent-impl.conf", readme)
         self.assertIn("Rollback", readme)
+
+
+def run_play(tasks: list[dict], variables: dict) -> subprocess.CompletedProcess:
+    """Run ``tasks`` as one play on localhost; the caller checks the outcome."""
+    with tempfile.TemporaryDirectory(suffix="-journal-race") as tmp:
+        playbook = Path(tmp) / "play.yml"
+        playbook.write_text(
+            yaml.safe_dump(
+                [
+                    {
+                        "name": "journal race",
+                        "hosts": "localhost",
+                        "gather_facts": False,
+                        "vars": variables,
+                        "tasks": tasks,
+                    }
+                ]
+            )
+        )
+        return subprocess.run(
+            [
+                str(Path(sys.executable).parent / "ansible-playbook"),
+                "-i",
+                "localhost,",
+                "-c",
+                "local",
+                str(playbook),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "ANSIBLE_LOCALHOST_WARNING": "false"},
+        )
+
+
+class SidecarChurn:
+    """Create and delete SQLite sidecars the way a running writer does.
+
+    With journal_mode=delete every write transaction creates
+    ``db.sqlite3-journal`` and deletes it at commit; WAL mode does the same to
+    ``-wal``/``-shm`` with the connections. SQLite gives sidecars the database
+    file's mode, so they are created 0600 here, as next to a restricted
+    database.
+    """
+
+    NAMES = ("db.sqlite3-journal", "db.sqlite3-wal", "db.sqlite3-shm")
+
+    def __init__(self, directory: Path) -> None:
+        self.paths = [directory / name for name in self.NAMES]
+        self.stop = threading.Event()
+        self.cycles = 0
+        self.thread = threading.Thread(target=self.run, daemon=True)
+
+    def run(self) -> None:
+        while not self.stop.is_set():
+            for path in self.paths:
+                os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
+            for path in self.paths:
+                path.unlink()
+            self.cycles += 1
+
+    def __enter__(self) -> "SidecarChurn":
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.stop.set()
+        self.thread.join()
+
+
+class SqliteSidecarRaceTests(unittest.TestCase):
+    """The deploy keeps running writers; their sidecars come and go mid-task.
+
+    At the 2026-10-16 cutover the deploy needed three runs: the privacy pass
+    failed on a db.sqlite3-journal deleted between ``find`` and ``file``, the
+    ownership fix on one deleted while its recursive walk ran. These tests run
+    the role's own tasks on localhost against a directory with that churn.
+    """
+
+    def setUp(self) -> None:
+        self.site = Path(tempfile.mkdtemp(suffix="-journal-race"))
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.site)], check=False)
+        self.variables = {
+            "nyxmon_user": pwd.getpwuid(os.getuid()).pw_name,
+            "nyxmon_group": grp.getgrgid(os.getgid()).gr_name,
+            "nyxmon_site_path": str(self.site),
+            "nyxmon_django_path": str(self.site),
+        }
+        for name in ("db.sqlite3", "db.sqlite3.agent.lock", "manage.py"):
+            (self.site / name).write_text(name)
+            (self.site / name).chmod(0o644)
+        (self.site / "config").mkdir()
+        (self.site / "config" / "settings.py").write_text("")
+        (self.site / ".venv" / "bin").mkdir(parents=True)
+        (self.site / ".venv" / "bin" / "python").write_text("")
+        (self.site / "venv").symlink_to(self.site / ".venv")
+
+    def privacy_tasks(self) -> list[dict]:
+        tasks = task_list("sqlite_privacy.yml")
+        names = [task["name"] for task in tasks]
+        return tasks[names.index("sqlite_privacy | Find database and sidecars") :]
+
+    def ownership_tasks(self) -> list[dict]:
+        tasks = task_list("source_rsync.yml")
+        names = [task["name"] for task in tasks]
+        return tasks[names.index("source_rsync | List site entries for the ownership fix") :]
+
+    def with_after(self, tasks: list[dict], name: str, *extra: dict) -> list[dict]:
+        names = [task["name"] for task in tasks]
+        index = names.index(name) + 1
+        return tasks[:index] + list(extra) + tasks[index:]
+
+    def vanish(self, name: str) -> dict:
+        return {
+            "name": f"writer deletes {name}",
+            "ansible.builtin.file": {"path": str(self.site / name), "state": "absent"},
+        }
+
+    def mode(self, name: str) -> int:
+        return (self.site / name).stat().st_mode & 0o777
+
+    def assertPlay(self, result: subprocess.CompletedProcess, ok: bool) -> None:
+        output = result.stdout[-6000:] + result.stderr[-3000:]
+        if ok:
+            self.assertEqual(result.returncode, 0, output)
+        else:
+            self.assertNotEqual(result.returncode, 0, output)
+
+    def test_privacy_pass_survives_a_journal_deleted_after_the_listing(self) -> None:
+        journal = self.site / "db.sqlite3-journal"
+        journal.write_text("")
+        journal.chmod(0o644)
+        tasks = self.with_after(
+            self.privacy_tasks(),
+            "sqlite_privacy | Require the main database",
+            self.vanish("db.sqlite3-journal"),
+        )
+
+        self.assertPlay(run_play(tasks, self.variables), ok=True)
+        self.assertEqual(self.mode("db.sqlite3"), 0o600)
+        self.assertEqual(self.mode("db.sqlite3.agent.lock"), 0o600)
+
+    def test_the_unguarded_restriction_fails_on_that_journal(self) -> None:
+        # Proves the case above is the cutover failure: without the guard for
+        # transient sidecars the same sequence fails.
+        journal = self.site / "db.sqlite3-journal"
+        journal.write_text("")
+        tasks = self.with_after(
+            self.privacy_tasks(),
+            "sqlite_privacy | Require the main database",
+            self.vanish("db.sqlite3-journal"),
+        )
+        for task in tasks:
+            if task["name"] == "sqlite_privacy | Restrict database and sidecars":
+                task.pop("failed_when")
+
+        self.assertPlay(run_play(tasks, self.variables), ok=False)
+
+    def test_a_vanished_database_still_fails(self) -> None:
+        tasks = self.with_after(
+            self.privacy_tasks(),
+            "sqlite_privacy | Require the main database",
+            self.vanish("db.sqlite3"),
+        )
+
+        self.assertPlay(run_play(tasks, self.variables), ok=False)
+
+    def test_a_sidecar_that_is_not_private_at_the_end_still_fails(self) -> None:
+        # The guard only skips a failed restriction; the verify pass still
+        # refuses every database file present afterwards that others can read.
+        tasks = self.with_after(
+            self.privacy_tasks(),
+            "sqlite_privacy | Restrict database and sidecars",
+            {
+                "name": "a readable sidecar appears",
+                "ansible.builtin.copy": {
+                    "content": "",
+                    "dest": str(self.site / "db.sqlite3-wal"),
+                    "mode": "0644",
+                },
+            },
+        )
+
+        self.assertPlay(run_play(tasks, self.variables), ok=False)
+
+    def test_ownership_fix_and_privacy_pass_under_sidecar_churn(self) -> None:
+        tasks = self.ownership_tasks() + self.privacy_tasks()
+
+        with SidecarChurn(self.site) as churn:
+            for attempt in range(5):
+                with self.subTest(attempt=attempt):
+                    self.assertPlay(run_play(tasks, self.variables), ok=True)
+        self.assertGreater(churn.cycles, 1000)
+        self.assertEqual(self.mode("db.sqlite3"), 0o600)
+        self.assertEqual(self.mode("manage.py"), 0o644)
+        self.assertTrue((self.site / "venv").is_symlink())
+
+    def test_the_old_recursive_walk_fails_under_the_same_churn(self) -> None:
+        # Proves the churn reproduces the cutover failure: one recursive walk
+        # over the site root (the task this role used before) loses the race.
+        old_walk = {
+            "name": "the old ownership fix",
+            "file": {
+                "path": str(self.site),
+                "owner": self.variables["nyxmon_user"],
+                "group": self.variables["nyxmon_group"],
+                "recurse": True,
+            },
+        }
+
+        with SidecarChurn(self.site):
+            results = []
+            for _ in range(20):
+                results.append(run_play([old_walk], self.variables).returncode)
+                if results[-1] != 0:
+                    break
+        self.assertNotEqual(results[-1], 0, f"no failure in {len(results)} runs")
 
 
 if __name__ == "__main__":

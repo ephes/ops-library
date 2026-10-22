@@ -24,3 +24,48 @@ software_live_nyxmon_disable_names: []
 # Optional allowlisted metadata export for an already existing inventory publisher.
 software_live_inventory_export: false
 software_live_inventory_group: software-estate-publisher
+
+# --- Python or Rust (rust/software-live/PLAN.md 7.3) ---------------------------
+# python | rust: the program the production units run. impl rust runs the
+# pinned release binary through drop-ins; impl python removes them first, so
+# the switch back never waits on a Rust task.
+software_live_impl: python
+# The release (e.g. "0.1.0"); required for impl rust or the shadow.
+software_live_rust_version: ""
+# sha256 of the release archive per distribution variant (7.2):
+#   {ubuntu24.04: <64 hex>, debian13: <64 hex>}
+software_live_rust_sha256: {}
+# F2's archive name plus the variant suffix; _software_live_variant comes from
+# /etc/os-release (ubuntu 24.04 -> ubuntu24.04, debian 13 -> debian13).
+software_live_rust_release_url: >-
+  https://github.com/ephes/ops-library/releases/download/software-live-v{{ software_live_rust_version }}/software-live-{{ software_live_rust_version }}-x86_64-unknown-linux-gnu-{{ _software_live_variant }}.tar.gz
+# An archive on the controller instead of the download (development only).
+software_live_rust_local_archive: ""
+# Newest release directories kept on top of every pin and every version the
+# live units run (at least 2).
+software_live_rust_keep_versions: 3
+# Shadow units next to the untouched production units (8.1): the Rust
+# collector writes into <data_dir>/shadow on its own timer, the Rust endpoint
+# serves the production state on loopback only.
+software_live_rust_shadow: false
+software_live_shadow_port: 9119
+software_live_shadow_on_calendar: '*:7/15'
+# Retries of the post-deploy check of the running implementation (about 30 s).
+software_live_verify_retries: 15
+software_live_verify_delay: 2
+# Polls (every software_live_verify_delay seconds) for a collector run still in
+# progress before the initial collection (the unit allows 90 s).
+software_live_collector_wait_retries: 60
+
+# --- test-only knobs -----------------------------------------------------------
+# The localhost playbook tests (tests/test_software_live_impl.py) run
+# unprivileged in a temporary tree; production keeps these defaults.
+software_live_systemd_dir: /etc/systemd/system
+software_live_proc_root: /proc
+software_live_cgroup_root: /sys/fs/cgroup
+software_live_os_release_path: /etc/os-release
+software_live_rust_owner: root
+software_live_rust_group: root
+# User for `software-live --version` after the install (rust_release_binary);
+# empty: the connection user without become.
+software_live_rust_version_check_user: '{{ software_live_user }}'

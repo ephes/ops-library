@@ -1,0 +1,19 @@
+---
+- name: remove | Check the llama-server job
+  ansible.builtin.command: "launchctl print system/{{ llama_server_launchd_label }}"
+  register: llama_server_launchd_status
+  changed_when: false
+  failed_when: false
+
+- name: remove | Unload the llama-server job
+  ansible.builtin.command: "launchctl bootout system/{{ llama_server_launchd_label }}"
+  changed_when: true
+  when: llama_server_launchd_status.rc == 0
+
+- name: remove | Remove the plist and the API key file
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ llama_server_launchd_plist_path }}"
+    - "{{ llama_server_api_key_path }}"

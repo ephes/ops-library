@@ -15,7 +15,7 @@ This role completely removes the Minecraft Java server:
 
 ## Requirements
 
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 - Required collections:
   - `community.general` (for UFW module)
 

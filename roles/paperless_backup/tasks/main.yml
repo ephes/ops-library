@@ -79,6 +79,25 @@
     group: "{{ paperless_backup_group }}"
     mode: "{{ paperless_backup_root_mode }}"
 
+# Archives from runs before the archive tasks restricted them can still be
+# readable by other accounts. Set every archive directly in the backup root to
+# paperless_backup_archive_mode on each run (idempotent: only files with another
+# mode are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ paperless_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: paperless_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "{{ paperless_backup_archive_mode }}"
+  loop: "{{ paperless_backup_archive_modes.files | rejectattr('mode', 'equalto', paperless_backup_archive_mode) | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: "Ensure backup directory exists"
   ansible.builtin.file:
     path: "{{ paperless_backup_dir }}"

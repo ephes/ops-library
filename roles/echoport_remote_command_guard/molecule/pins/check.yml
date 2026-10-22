@@ -1,0 +1,61 @@
+---
+# The state after a simulated run: the version directories, the pins, the
+# version the deploy key's line names and an allowed guarded command through
+# sshd. Variables: check_name, check_versions (exact list), check_pins
+# ({file: version}), check_line ('python' or a version), check_allowed
+# (default true).
+- name: "{{ check_name }}: list the installed versions"
+  ansible.builtin.find:
+    paths: "{{ pins_root }}"
+    file_type: directory
+    patterns: ['[0-9]*']
+    use_regex: false
+  register: check_found
+
+- name: "{{ check_name }}: list the pins"
+  ansible.builtin.find:
+    paths: "{{ pins_root }}/.pins"
+    file_type: file
+    hidden: true
+  register: check_pin_files
+
+- name: "{{ check_name }}: read the pins"
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ check_pin_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: check_pin_reads
+
+- name: "{{ check_name }}: read authorized_keys"
+  ansible.builtin.slurp:
+    src: /root/.ssh/authorized_keys
+  register: check_keys
+
+- name: "{{ check_name }}: run an allowed command through the guard"
+  ansible.builtin.shell:
+    cmd: "{{ pins_ssh }} root@127.0.0.1 'systemctl show --property=LoadState --value cron.service'"
+  register: check_allowed_run
+  changed_when: false
+  failed_when: false
+
+- name: "{{ check_name }}: assert the state"
+  ansible.builtin.assert:
+    that:
+      - check_found.files | map(attribute='path') | map('basename') | sort == check_versions | sort
+      - check_pins_found == check_pins
+      - check_line_command in (check_keys.content | b64decode)
+      - (check_allowed_run.rc == 0) == (check_allowed | default(true))
+    fail_msg: >-
+      {{ check_name }}: versions {{ check_found.files | map(attribute='path') | map('basename') | sort }}
+      (expected {{ check_versions | sort }}), pins {{ check_pins_found }} (expected
+      {{ check_pins }}), deploy line {{ (check_keys.content | b64decode).splitlines() | first }}
+      (expected {{ check_line_command }}), allowed command rc {{ check_allowed_run.rc }}
+      {{ check_allowed_run.stderr | default('') }}.
+  vars:
+    check_pins_found: >-
+      {{ dict(check_pin_reads.results | map(attribute='source') | map('basename')
+              | zip(check_pin_reads.results | map(attribute='content') | map('b64decode') | map('trim'))) }}
+    check_line_command: >-
+      {{ ('command="' ~ pins_python_command ~ '"') if check_line == 'python'
+         else ('command="' ~ pins_root ~ '/' ~ check_line ~ '/echoport-command-guard --shadow') }}

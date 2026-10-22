@@ -28,7 +28,7 @@ The RCON password reaches mcrcon through the `MCRCON_PASS` environment variable,
 
 - Minecraft Java server deployed via `minecraft_java_deploy` role
 - RCON enabled and accessible
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 
 ## Role Variables
 

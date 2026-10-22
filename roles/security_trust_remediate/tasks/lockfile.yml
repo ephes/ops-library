@@ -1,0 +1,53 @@
+---
+- name: lockfile | Inspect explicitly allowlisted deployed lock
+  ansible.builtin.stat:
+    path: "{{ trust_lock.path }}"
+    checksum_algorithm: sha256
+  register: security_trust_lock_stat
+
+- name: lockfile | Refuse any deployed lock drift
+  ansible.builtin.assert:
+    that:
+      - security_trust_lock_stat.stat.isreg
+      - security_trust_lock_stat.stat.checksum in [trust_lock.original_sha256, trust_lock.sha256]
+      - lookup('ansible.builtin.file', trust_lock.src, rstrip=false) | hash('sha256') == trust_lock.sha256
+
+- name: lockfile | Read original deployed lock for semantic comparison
+  ansible.builtin.slurp:
+    src: "{{ trust_lock.path }}"
+  register: security_trust_lock_original
+
+- name: lockfile | Prove only the certifi package stanza changes
+  ansible.builtin.assert:
+    that:
+      - (security_trust_lock_original.content | b64decode) | local.ops_library.trust_lock_replacement_safe(lookup('ansible.builtin.file', trust_lock.src, rstrip=false), security_trust_certifi_version, (security_trust_wheels | selectattr('package', 'equalto', 'certifi') | first).sha256)
+
+- name: lockfile | Preserve original lock as root-only rollback evidence
+  ansible.builtin.copy:
+    src: "{{ trust_lock.path }}"
+    dest: "{{ security_trust_backup_dir }}/{{ trust_lock.original_sha256 }}.uv.lock"
+    remote_src: true
+    force: false
+    mode: '0600'
+  when: security_trust_lock_stat.stat.checksum == trust_lock.original_sha256
+
+- name: lockfile | Replace only reviewed certifi lock stanza
+  ansible.builtin.copy:
+    src: "{{ trust_lock.src }}"
+    dest: "{{ trust_lock.path }}"
+    owner: "{{ security_trust_lock_stat.stat.pw_name }}"
+    group: "{{ security_trust_lock_stat.stat.gr_name }}"
+    mode: "{{ security_trust_lock_stat.stat.mode }}"
+
+- name: lockfile | Validate deployed lock consistency without network or dependency resolution writes
+  ansible.builtin.command:
+    argv:
+      - "{{ security_trust_uv_bin }}"
+      - lock
+      - --check
+      - --offline
+      - --directory
+      - "{{ trust_lock.path | dirname }}"
+  become: true
+  become_user: "{{ security_trust_lock_stat.stat.pw_name }}"
+  changed_when: false

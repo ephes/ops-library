@@ -262,27 +262,25 @@ def validate_config_paths() -> None:
         raise ValueError(f"Main database path is not a file: {MAIN_DB_PATH}")
 
 
+{% include '_sqlite_backup.py.j2' %}
+
+
 def sqlite_backup(source_db: str, backup_path: Path) -> None:
-    """Create SQLite online backup and verify integrity."""
+    """Create SQLite online backup and verify integrity (waits for writers, retries)."""
     if not Path(source_db).is_file():
         raise FileNotFoundError(f"SQLite DB not found: {source_db}")
-
-    run_cmd(["sqlite3", source_db, f".backup '{backup_path}'"])
-    if not backup_path.exists():
-        raise RuntimeError(f"Backup file was not created: {backup_path}")
-
-    integrity = run_cmd(["sqlite3", str(backup_path), "PRAGMA integrity_check;"])
-    if "ok" not in integrity.stdout.lower():
-        raise RuntimeError(f"SQLite integrity check failed for backup {backup_path}: {integrity.stdout.strip()}")
+    error = backup_sqlite(source_db, backup_path)
+    if error:
+        raise RuntimeError(f"SQLite backup of {source_db} failed: {error}")
 
 
 def sqlite_integrity_check(db_path: str) -> None:
     """Run PRAGMA integrity_check on an existing SQLite DB."""
     if not Path(db_path).is_file():
         raise FileNotFoundError(f"SQLite DB not found: {db_path}")
-    integrity = run_cmd(["sqlite3", db_path, "PRAGMA integrity_check;"])
-    if "ok" not in integrity.stdout.lower():
-        raise RuntimeError(f"SQLite integrity check failed for {db_path}: {integrity.stdout.strip()}")
+    error = sqlite_integrity_error(db_path)
+    if error:
+        raise RuntimeError(f"SQLite {error} ({db_path})")
 
 
 def rsync_dir(src_dir: Path, dst_dir: Path, delete: bool = True, excludes: list[str] | None = None) -> None:

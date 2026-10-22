@@ -70,6 +70,32 @@ The endpoint returns the exporter payload plus:
 If the metrics file is missing or invalid, the endpoint returns a JSON error
 payload with HTTP `502` or `503`.
 
+## HTTP server implementation (Python or Rust)
+
+`thermal_metrics_endpoint_impl` selects the HTTP server: `python` runs
+`thermal_metrics_endpoint_server_path` (the unit's `ExecStart=`), `rust` runs the
+pinned `metrics-httpd` release through the drop-in
+`/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
+([`metrics_httpd_switch`](../metrics_httpd_switch/README.md),
+`rust/metrics-httpd/PLAN.md` section 7). The endpoint keeps its path, port,
+realm, htpasswd file, JSON file, user, sandbox and IP allow list; the unit file
+and the Python script stay as they are with either value.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `thermal_metrics_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | `python` or `rust`; override per host for a canary. |
+| `metrics_httpd_impl` | (unset: `python`) | Fleet-wide default for every metrics-httpd endpoint. |
+| `metrics_httpd_rust_version` / `metrics_httpd_rust_sha256` | (unset) | Pinned release and the sha256 of its archive. Required for `rust`; with `python` a set version is installed and checked ahead of the switch. |
+
+With `rust` the binary runs `json-file --bind --port --path --json-path
+--htpasswd-file --realm thermal-metrics --server-name thermal-metrics-httpd/0.1`
+from the variables above. Before the drop-in is written the binary's
+`--check-config` must pass as `thermal_metrics_endpoint_user` in the unit's sandbox;
+after the restart the deploy checks that the unit runs the selected
+implementation and that an unauthenticated request gets 401 with the realm,
+then pins the version in `/opt/metrics-httpd/.pins/<service>`. Switching back
+to `python` removes the drop-in and restarts the Python script.
+
 ## Validation
 
 ```bash

@@ -1,0 +1,21 @@
+---
+- name: Validate llama-server inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install llama.cpp, the model and the wrapper
+  ansible.builtin.import_tasks: install.yml
+  when: llama_server_enabled | bool
+
+- name: Run llama-server under launchd
+  ansible.builtin.import_tasks: launchd.yml
+  when: llama_server_enabled | bool
+
+- name: Check the running llama-server
+  ansible.builtin.import_tasks: health.yml
+  when:
+    - llama_server_enabled | bool
+    - llama_server_healthcheck_enabled | bool
+
+- name: Remove the llama-server job
+  ansible.builtin.import_tasks: remove.yml
+  when: not (llama_server_enabled | bool)

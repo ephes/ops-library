@@ -1,0 +1,109 @@
+---
+# Step 6 of rust/software-live/PLAN.md 7.3: after the handlers and the
+# initial collection, prove the production units run the selected program
+# (plugins/filter/software_live_impl.py, software_live_verify), retrying for about
+# 30 s:
+# - endpoint active; impl rust: readlink /proc/<MainPID>/exe is the versioned
+#   binary; impl python: /proc/<MainPID>/cmdline runs software_live.py serve;
+# - collector ExecMainStatus=0, systemd's loaded ExecStart= runs the selected
+#   program, and state.json was rewritten by the initial collection;
+# - with the shadow: the shadow endpoint is active and executes the binary.
+# A failure stops the play: no pin moves and nothing is pruned (rust_pins.yml
+# runs only after this). Skipped in check mode (the handlers did not run).
+
+- name: verify_impl | Verify the running implementation
+  when: not ansible_check_mode
+  vars:
+    _software_live_verify_expect:
+      impl: '{{ software_live_impl }}'
+      binary: '{{ _software_live_rust_binary if _software_live_rust_wanted | bool else "" }}'
+      script: '{{ software_live_install_dir }}/software_live.py'
+      shadow: '{{ software_live_rust_shadow | bool }}'
+  block:
+    # One line per fact, tab-separated:
+    #   real <resolved path of the binary>
+    #   unit <unit> <ActiveState> <MainPID> <ExecMainStatus>
+    #   prop <unit> <ExecStart=... as systemctl shows it>
+    #   exe  <unit> <readlink /proc/<MainPID>/exe>
+    #   arg  <unit> <one word of /proc/<MainPID>/cmdline>
+    #   done
+    - name: verify_impl | Read the live units
+      ansible.builtin.shell: |
+        set -o pipefail
+        proc={{ software_live_proc_root | quote }}
+        binary={{ _software_live_rust_binary | quote }}
+        if [ -n "$binary" ] && [ -e "$binary" ]; then
+          printf 'real\t%s\n' "$(realpath -- "$binary")"
+        fi
+        for unit in software-live-endpoint.service software-live-collector.service \
+                    {{ 'software-live-shadow-endpoint.service' if software_live_rust_shadow | bool else '' }}; do
+          show=$(systemctl show --property=ActiveState,MainPID,ExecMainStatus,ExecStart -- "$unit") || continue
+          state='' main=0 status=''
+          while IFS= read -r line; do
+            case "$line" in
+              ActiveState=*) state=${line#*=} ;;
+              MainPID=*) main=${line#*=} ;;
+              ExecMainStatus=*) status=${line#*=} ;;
+              ExecStart=*) printf 'prop\t%s\t%s\n' "$unit" "$line" ;;
+            esac
+          done <<< "$show"
+          printf 'unit\t%s\t%s\t%s\t%s\n' "$unit" "$state" "$main" "$status"
+          case "$main" in
+            ''|0|*[!0-9]*) continue ;;
+          esac
+          if exe=$(readlink -- "$proc/$main/exe"); then
+            printf 'exe\t%s\t%s\n' "$unit" "$exe"
+          fi
+          if [ -r "$proc/$main/cmdline" ]; then
+            while IFS= read -r -d '' arg; do
+              printf 'arg\t%s\t%s\n' "$unit" "$arg"
+            done < "$proc/$main/cmdline"
+          fi
+        done
+        printf 'done\n'
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: _software_live_verify_probe
+      retries: '{{ software_live_verify_retries | int }}'
+      delay: '{{ software_live_verify_delay | int }}'
+      until: >-
+        _software_live_verify_probe
+        | local.ops_library.software_live_verify(_software_live_verify_expect)
+        | length == 0
+
+    - name: verify_impl | Assert the units run the selected implementation
+      ansible.builtin.assert:
+        that:
+          - _software_live_verify_problems | length == 0
+        fail_msg: >-
+          The production units do not run the selected implementation (impl
+          {{ software_live_impl }}{{ ', ' ~ _software_live_rust_binary if software_live_impl == 'rust' else '' }}):
+          {{ _software_live_verify_problems | join('; ') }}. No pin moved and
+          nothing was pruned. Deploy with software_live_impl: python to roll back.
+        quiet: true
+      vars:
+        _software_live_verify_problems: >-
+          {{ _software_live_verify_probe
+             | local.ops_library.software_live_verify(_software_live_verify_expect) }}
+
+    - name: verify_impl | Check the state after the initial collection
+      ansible.builtin.stat:
+        path: '{{ software_live_data_dir }}/state.json'
+        get_checksum: false
+      register: _software_live_state_after
+
+    - name: verify_impl | Assert the initial collection rewrote the state
+      ansible.builtin.assert:
+        that:
+          - _software_live_state_after.stat.exists
+          - >-
+            not (_software_live_state_before.stat.exists | default(false))
+            or _software_live_state_after.stat.mtime > _software_live_state_before.stat.mtime
+        fail_msg: >-
+          {{ software_live_data_dir }}/state.json was not rewritten by the initial
+          collection (mtime {{ _software_live_state_after.stat.mtime | default('missing') }},
+          before {{ _software_live_state_before.stat.mtime | default('missing') }}). No pin
+          moved and nothing was pruned.
+        quiet: true

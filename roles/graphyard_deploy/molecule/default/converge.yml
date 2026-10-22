@@ -1,0 +1,468 @@
+---
+# graphyard agent-rs/PLAN.md 8.3 against systemd: the Python agent, a Rust
+# release installed next to it, the switch, a version change with pruning,
+# four refused candidates and the rollback to Python. verify.yml checks the
+# end state.
+- name: Converge with the Python agent
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure apt helpers, git, curl and a C compiler are present
+      ansible.builtin.apt:
+        name:
+          - python3-apt
+          - acl
+          - curl
+          - ca-certificates
+          - git
+          - gcc
+          - libc6-dev
+        state: present
+        update_cache: true
+
+  vars_files:
+    - graphyard_vars.yml
+
+  roles:
+    - role: graphyard_deploy
+
+# The Rust phases use a fake graphyard-agent compiled in the instance: the real
+# release is an x86_64 binary and Molecule may run on arm64. The fake answers
+# --version like the real one. --check-schema fails when it runs as root or
+# with the unit's environment (the role validates as graphyard_user without
+# secrets), when the --db file is not readable, or always for SCHEMA_FAILS.
+# Without --check-schema it needs the unit's EnvironmentFile (INFLUX_URL) and
+# WorkingDirectory, then waits for SIGTERM, so /proc/<pid>/exe of the unit is
+# the versioned binary.
+- name: Build fake Rust agent release archives
+  hosts: all
+  become: true
+  vars:
+    fake_agent_build: /root/fake-agent
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+    fake_agent_builds:
+      # name: [reported version, reported commit, --check-schema fails]
+      a: ["0.1.0", "0000000000000000000000000000000000000000", 0]
+      a2: ["0.1.0", "1111111111111111111111111111111111111111", 0]
+      b: ["0.1.1", "2222222222222222222222222222222222222222", 0]
+      wrong: ["0.1.0", "3333333333333333333333333333333333333333", 0]
+      badschema: ["0.4.0", "4444444444444444444444444444444444444444", 1]
+  tasks:
+    - name: Create build directories
+      ansible.builtin.file:
+        path: "{{ fake_agent_build }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ fake_agent_builds.keys() | list }}"
+
+    - name: Write the fake agent source
+      ansible.builtin.copy:
+        dest: "{{ fake_agent_build }}/fake-agent.c"
+        mode: "0644"
+        content: |
+          #include <limits.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          int main(int argc, char **argv) {
+              const char *db = NULL;
+              int check_schema = 0;
+              for (int i = 1; i < argc; i++) {
+                  if (strcmp(argv[i], "--version") == 0) {
+                      printf("graphyard-agent %s (%s)\n", AGENT_VERSION, AGENT_COMMIT);
+                      return 0;
+                  }
+                  if (strcmp(argv[i], "--check-schema") == 0) {
+                      check_schema = 1;
+                  } else if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+                      db = argv[++i];
+                  } else {
+                      fprintf(stderr, "error: unexpected argument '%s'\n", argv[i]);
+                      return 2;
+                  }
+              }
+              if (db == NULL || db[0] != '/' || access(db, R_OK) != 0) {
+                  fprintf(stderr, "Database file not readable: %s\n", db ? db : "(none)");
+                  return 1;
+              }
+              if (check_schema) {
+                  if (geteuid() == 0) {
+                      fprintf(stderr, "schema check runs as root\n");
+                      return 1;
+                  }
+                  if (getenv("INFLUX_TOKEN") != NULL || getenv("DJANGO_SECRET_KEY") != NULL) {
+                      fprintf(stderr, "schema check sees the unit's secrets\n");
+                      return 1;
+                  }
+                  if (SCHEMA_FAILS) {
+                      fprintf(stderr, "schema check failed: metric_collection_spec lacks next_run_time\n");
+                      return 1;
+                  }
+                  printf("schema OK\n");
+                  return 0;
+              }
+              char cwd[PATH_MAX];
+              if (getenv("INFLUX_URL") == NULL || getcwd(cwd, sizeof cwd) == NULL
+                  || strcmp(cwd, WORKDIR) != 0) {
+                  fprintf(stderr, "agent started without the unit's environment or working directory\n");
+                  return 1;
+              }
+              for (;;) pause();
+          }
+
+    - name: Compile the fake agents
+      ansible.builtin.command:
+        argv:
+          - gcc
+          - -O2
+          - -DAGENT_VERSION="{{ item.value[0] }}"
+          - -DAGENT_COMMIT="{{ item.value[1] }}"
+          - -DSCHEMA_FAILS={{ item.value[2] }}
+          - -DWORKDIR="/opt/apps/graphyard/site/src/django"
+          - -o
+          - "{{ fake_agent_build }}/{{ item.key }}/graphyard-agent"
+          - "{{ fake_agent_build }}/fake-agent.c"
+        creates: "{{ fake_agent_build }}/{{ item.key }}/graphyard-agent"
+      loop: "{{ fake_agent_builds | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Add a license file
+      ansible.builtin.copy:
+        dest: "{{ fake_agent_build }}/{{ item }}/LICENSE"
+        content: "fake\n"
+        mode: "0644"
+      loop: "{{ fake_agent_builds.keys() | list }}"
+
+    - name: Pack the archives in the release layout
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --owner=0
+          - --group=0
+          - -czf
+          - "{{ fake_agent_build }}/{{ item }}.tar.gz"
+          - -C
+          - "{{ fake_agent_build }}/{{ item }}"
+          - graphyard-agent
+          - LICENSE
+        creates: "{{ fake_agent_build }}/{{ item }}.tar.gz"
+      loop: "{{ fake_agent_builds.keys() | list }}"
+
+    - name: Create a hostile build whose agent is a symlink to /etc/shadow
+      ansible.builtin.file:
+        path: "{{ fake_agent_build }}/link/{{ item.name }}"
+        src: "{{ item.src | default(omit) }}"
+        state: "{{ item.state }}"
+        force: true
+        mode: "{{ item.mode | default(omit) }}"
+      loop:
+        - {name: "", state: directory, mode: "0755"}
+        - {name: graphyard-agent, state: link, src: /etc/shadow}
+        - {name: LICENSE, state: touch, mode: "0644"}
+      loop_control:
+        label: "{{ item.name or 'link/' }}"
+
+    - name: Pack the hostile archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --owner=0
+          - --group=0
+          - -czf
+          - "{{ fake_agent_build }}/link.tar.gz"
+          - -C
+          - "{{ fake_agent_build }}/link"
+          - graphyard-agent
+          - LICENSE
+        creates: "{{ fake_agent_build }}/link.tar.gz"
+
+    - name: Fetch the archives to the controller
+      ansible.builtin.fetch:
+        src: "{{ fake_agent_build }}/{{ item }}.tar.gz"
+        dest: "{{ fake_agent_archives }}/{{ item }}.tar.gz"
+        flat: true
+      loop: "{{ fake_agent_builds.keys() | list + ['link'] }}"
+
+# Plan 11.1 (S12): the binary is installed and validated, the unit keeps
+# running the Python agent and nothing restarts.
+- name: Install 0.1.0 next to the running Python agent
+  hosts: all
+  become: true
+  vars_files:
+    - graphyard_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  pre_tasks:
+    - name: Read the agent PID before the install
+      ansible.builtin.command: systemctl show --property=MainPID --value graphyard-agent
+      changed_when: false
+      register: install_pid_before
+  roles:
+    - role: graphyard_deploy
+      vars:
+        graphyard_agent_impl: python
+        graphyard_agent_rust_version: "0.1.0"
+        graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/a.tar.gz"
+        graphyard_agent_rust_keep_versions: 1
+  post_tasks:
+    - name: Read the agent PID after the install
+      ansible.builtin.command: systemctl show --property=MainPID --value graphyard-agent
+      changed_when: false
+      register: install_pid_after
+
+    - name: Stat the installed binary
+      ansible.builtin.stat:
+        path: /opt/graphyard-agent/0.1.0/graphyard-agent
+      register: install_binary
+
+    - name: Read the recorded archive checksum
+      ansible.builtin.slurp:
+        path: /opt/graphyard-agent/0.1.0/.archive-sha256
+      register: install_archive_sha256
+
+    - name: Checksum the archive on the controller
+      ansible.builtin.stat:
+        path: "{{ fake_agent_archives }}/a.tar.gz"
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: install_archive
+
+    - name: Stat the drop-in
+      ansible.builtin.stat:
+        path: /etc/systemd/system/graphyard-agent.service.d/agent-impl.conf
+      register: install_dropin
+
+    - name: Assert the binary is installed and nothing switched or restarted
+      ansible.builtin.assert:
+        that:
+          - install_binary.stat.isreg
+          - install_binary.stat.pw_name == 'root'
+          - install_binary.stat.mode == '0755'
+          - install_archive_sha256.content | b64decode | trim == install_archive.stat.checksum
+          - not install_dropin.stat.exists
+          - install_pid_after.stdout == install_pid_before.stdout
+          - install_pid_after.stdout | int > 0
+
+- name: Switch to the Rust agent (fake 0.1.0)
+  hosts: all
+  become: true
+  vars_files:
+    - graphyard_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  pre_tasks:
+    - name: Read the agent PID before the switch
+      ansible.builtin.command: systemctl show --property=MainPID --value graphyard-agent
+      changed_when: false
+      register: switch_pid_before
+  roles:
+    - role: graphyard_deploy
+      vars:
+        graphyard_agent_impl: rust
+        graphyard_agent_rust_version: "0.1.0"
+        graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/a.tar.gz"
+        graphyard_agent_rust_keep_versions: 1
+  post_tasks:
+    - name: Read the drop-in
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/graphyard-agent.service.d/agent-impl.conf
+      register: switch_dropin
+
+    - name: Read the live agent executable
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pid=$(systemctl show --property=MainPID --value graphyard-agent)
+        printf '%s\n' "$pid"
+        readlink "/proc/$pid/exe"
+        stat -c %U "/proc/$pid"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: switch_live
+
+    - name: Assert the unit restarted on the versioned binary as graphyard
+      ansible.builtin.assert:
+        that:
+          - >-
+            'ExecStart=/opt/graphyard-agent/0.1.0/graphyard-agent --db /opt/apps/graphyard/site/src/django/db.sqlite3'
+            in (switch_dropin.content | b64decode)
+          - switch_live.stdout_lines[0] != switch_pid_before.stdout
+          - switch_live.stdout_lines[1] == '/opt/graphyard-agent/0.1.0/graphyard-agent'
+          - switch_live.stdout_lines[2] == 'graphyard'
+
+- name: Redeploy the same Rust version without a restart
+  hosts: all
+  become: true
+  vars_files:
+    - graphyard_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  pre_tasks:
+    - name: Read the agent PID before the redeploy
+      ansible.builtin.command: systemctl show --property=MainPID --value graphyard-agent
+      changed_when: false
+      register: redeploy_pid_before
+  roles:
+    - role: graphyard_deploy
+      vars:
+        graphyard_agent_impl: rust
+        graphyard_agent_rust_version: "0.1.0"
+        graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/a.tar.gz"
+        graphyard_agent_rust_keep_versions: 1
+  post_tasks:
+    - name: Read the agent PID after the redeploy
+      ansible.builtin.command: systemctl show --property=MainPID --value graphyard-agent
+      changed_when: false
+      register: redeploy_pid_after
+
+    - name: Assert the unchanged deploy restarted nothing
+      ansible.builtin.assert:
+        that:
+          - redeploy_pid_after.stdout == redeploy_pid_before.stdout
+
+- name: Switch to another Rust version (fake 0.1.1) and prune
+  hosts: all
+  become: true
+  vars_files:
+    - graphyard_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  pre_tasks:
+    - name: Plant an old version beyond keep_versions
+      ansible.builtin.file:
+        path: /opt/graphyard-agent/0.0.9
+        state: directory
+        mode: "0755"
+        modification_time: "200001010000.00"
+        modification_time_format: "%Y%m%d%H%M.%S"
+
+    - name: Plant a directory that is not a version
+      ansible.builtin.file:
+        path: /opt/graphyard-agent/keep-me
+        state: directory
+        mode: "0755"
+        modification_time: "200001010000.00"
+        modification_time_format: "%Y%m%d%H%M.%S"
+  roles:
+    - role: graphyard_deploy
+      vars:
+        graphyard_agent_impl: rust
+        graphyard_agent_rust_version: "0.1.1"
+        graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/b.tar.gz"
+        graphyard_agent_rust_keep_versions: 1
+  post_tasks:
+    - name: List the install root
+      ansible.builtin.find:
+        paths: /opt/graphyard-agent
+        file_type: directory
+        hidden: true
+      register: rust_installed
+
+    - name: Read the remembered previous version
+      ansible.builtin.slurp:
+        path: /opt/graphyard-agent/.previous-version
+      register: rust_previous
+
+    - name: Read the live agent executable
+      ansible.builtin.shell: |
+        set -euo pipefail
+        readlink "/proc/$(systemctl show --property=MainPID --value graphyard-agent)/exe"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: rust_live
+
+    - name: Assert the new version runs, the previous is kept and the old one pruned
+      ansible.builtin.assert:
+        that:
+          - rust_installed.files | map(attribute='path') | map('basename') | sort == ['0.1.0', '0.1.1', 'keep-me']
+          - rust_previous.content | b64decode | trim == '0.1.0'
+          - rust_live.stdout == '/opt/graphyard-agent/0.1.1/graphyard-agent'
+
+- name: Refuse invalid candidates without switching
+  hosts: all
+  become: true
+  vars_files:
+    - graphyard_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  tasks:
+    - name: Refuse a binary that reports another version
+      ansible.builtin.include_tasks: refused_run.yml
+      vars:
+        refused_vars:
+          graphyard_agent_impl: rust
+          graphyard_agent_rust_version: "0.2.0"
+          graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/wrong.tar.gz"
+        refused_message: "graphyard-agent 0.2.0 failed validation"
+
+    - name: Refuse a binary whose schema check fails
+      ansible.builtin.include_tasks: refused_run.yml
+      vars:
+        refused_vars:
+          graphyard_agent_impl: rust
+          graphyard_agent_rust_version: "0.4.0"
+          graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/badschema.tar.gz"
+        refused_message: "graphyard-agent 0.4.0 failed validation"
+
+    - name: Refuse a different archive for an installed version
+      ansible.builtin.include_tasks: refused_run.yml
+      vars:
+        refused_vars:
+          graphyard_agent_impl: rust
+          graphyard_agent_rust_version: "0.1.0"
+          graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/a2.tar.gz"
+        refused_message: "is installed from an archive with sha256"
+
+    - name: Stat /etc/shadow before the hostile archive
+      ansible.builtin.stat:
+        path: /etc/shadow
+      register: shadow_before
+
+    - name: Refuse an archive whose agent is a symlink
+      ansible.builtin.include_tasks: refused_run.yml
+      vars:
+        refused_vars:
+          graphyard_agent_impl: rust
+          graphyard_agent_rust_version: "0.3.0"
+          graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/link.tar.gz"
+        refused_message: "exactly the regular files"
+
+    - name: Stat /etc/shadow after the hostile archive
+      ansible.builtin.stat:
+        path: /etc/shadow
+      register: shadow_after
+
+    - name: Stat the staging tree of the hostile archive
+      ansible.builtin.stat:
+        path: /opt/graphyard-agent/.staging/tree/graphyard-agent
+        follow: false
+      register: hostile_staged
+
+    - name: Assert the link was refused before extraction and /etc/shadow not touched
+      ansible.builtin.assert:
+        that:
+          - not hostile_staged.stat.exists
+          - shadow_after.stat.mode == shadow_before.stat.mode
+          - shadow_after.stat.uid == shadow_before.stat.uid
+          - shadow_after.stat.gid == shadow_before.stat.gid
+
+- name: Roll back to the Python agent
+  hosts: all
+  become: true
+  vars_files:
+    - graphyard_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  roles:
+    - role: graphyard_deploy
+      vars:
+        graphyard_agent_impl: python
+        graphyard_agent_rust_version: "0.1.1"
+        graphyard_agent_rust_local_archive: "{{ fake_agent_archives }}/b.tar.gz"
+        graphyard_agent_rust_keep_versions: 1

@@ -1,23 +1,16 @@
 ---
+# Management commands source the 0600 shell companion of the service environment and
+# read the admin password from stdin. Under become, Ansible puts task environment
+# values into the command it hands to sudo, and sudo logs that command.
 - name: django | Run database migrations
-  ansible.builtin.command:
-    argv:
-      - "{{ chesslab_venv_bin }}/python"
-      - -m
-      - django
-      - migrate
-      - --noinput
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (chesslab_env_path ~ '.shell') | quote }}
+      set +a
+      exec {{ (chesslab_venv_bin ~ '/python') | quote }} -m django migrate --noinput
   args:
     chdir: "{{ chesslab_site_path }}"
-  environment:
-    DJANGO_SETTINGS_MODULE: "{{ chesslab_django_settings_module }}"
-    CHESSLAB_SECRET_KEY: "{{ chesslab_django_secret_key }}"
-    CHESSLAB_DEBUG: "{{ chesslab_django_debug | lower }}"
-    CHESSLAB_DB_PATH: "{{ chesslab_db_path }}"
-    CHESSLAB_ALLOWED_HOSTS: "{{ chesslab_django_allowed_hosts | join(',') }}"
-    CHESSLAB_CSRF_TRUSTED_ORIGINS: "{{ chesslab_django_csrf_trusted_origins | join(',') }}"
-    CHESSLAB_SECURE_COOKIES: "{{ chesslab_secure_cookies | lower }}"
-    CHESSLAB_TRAINER_LIMIT: "{{ chesslab_limit }}"
   become: true
   become_user: "{{ chesslab_user }}"
   register: chesslab_django_migrate_result
@@ -26,27 +19,24 @@
   when: chesslab_run_migrations | bool
 
 - name: django | Ensure Django app users exist
-  ansible.builtin.command:
-    argv:
-      - "{{ chesslab_venv_bin }}/chesslab"
-      - django
-      - ensure_admin
-      - --username
-      - "{{ item.username }}"
-      - --lichess-username
-      - "{{ item.owner | default(item.lichess_username) }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (chesslab_env_path ~ '.shell') | quote }}
+      set +a
+      # Lossless: stdin is 'x' + value with no added newline (never empty, so the
+      # command never inherits another stdin); both sentinels are stripped.
+      CHESSLAB_ADMIN_PASSWORD=$(cat; printf x)
+      CHESSLAB_ADMIN_PASSWORD=${CHESSLAB_ADMIN_PASSWORD%x}
+      CHESSLAB_ADMIN_PASSWORD=${CHESSLAB_ADMIN_PASSWORD#x}
+      export CHESSLAB_ADMIN_PASSWORD
+      exec {{ (chesslab_venv_bin ~ '/chesslab') | quote }} django ensure_admin \
+        --username {{ item.username | quote }} \
+        --lichess-username {{ (item.owner | default(item.lichess_username)) | quote }}
+    stdin: "x{{ item.password }}"
+    stdin_add_newline: false
   args:
     chdir: "{{ chesslab_site_path }}"
-  environment:
-    DJANGO_SETTINGS_MODULE: "{{ chesslab_django_settings_module }}"
-    CHESSLAB_SECRET_KEY: "{{ chesslab_django_secret_key }}"
-    CHESSLAB_DEBUG: "{{ chesslab_django_debug | lower }}"
-    CHESSLAB_DB_PATH: "{{ chesslab_db_path }}"
-    CHESSLAB_ALLOWED_HOSTS: "{{ chesslab_django_allowed_hosts | join(',') }}"
-    CHESSLAB_CSRF_TRUSTED_ORIGINS: "{{ chesslab_django_csrf_trusted_origins | join(',') }}"
-    CHESSLAB_SECURE_COOKIES: "{{ chesslab_secure_cookies | lower }}"
-    CHESSLAB_TRAINER_LIMIT: "{{ chesslab_limit }}"
-    CHESSLAB_ADMIN_PASSWORD: "{{ item.password }}"
   become: true
   become_user: "{{ chesslab_user }}"
   loop: "{{ chesslab_users }}"

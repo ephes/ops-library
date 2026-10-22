@@ -1,0 +1,14 @@
+---
+- name: refresh_python_trust | Require explicit existing-unit inventory
+  ansible.builtin.assert:
+    that:
+      - voxhelm_trust_refresh_units | length > 0
+      - voxhelm_trust_idle_host | length > 0
+      - voxhelm_trust_idle_database is match('^/')
+
+- name: refresh_python_trust | Refresh explicitly selected existing Python units
+  ansible.builtin.include_tasks: refresh_python_trust_unit.yml
+  loop: "{{ voxhelm_trust_refresh_units }}"
+  loop_control:
+    loop_var: voxhelm_trust_refresh_unit
+    label: "{{ voxhelm_trust_refresh_unit.label }}"

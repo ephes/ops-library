@@ -35,5 +35,5 @@
         that:
           - weeknotes_home_trusted_network_validation is defined
           - weeknotes_home_trusted_network_validation.rc == 0
-          - weeknotes_home_basic_auth_htpasswd.skipped | default(false) | bool
+          - webapp_deploy_internal_basic_auth_generated is skipped
           - weeknotes_home_basic_auth_password_hash == '$2y$04$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'

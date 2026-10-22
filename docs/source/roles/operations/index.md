@@ -25,6 +25,7 @@ Available runbooks:
 - [OS APT Maintenance](https://github.com/ephes/ops-library/blob/main/roles/os_apt_maintenance/README.md)
 - [systemd Unit Masks](https://github.com/ephes/ops-library/blob/main/roles/systemd_unit_masks/README.md)
 - [journald Configuration](https://github.com/ephes/ops-library/blob/main/roles/journald_config/README.md)
+- [CA Trust Consumers](https://github.com/ephes/ops-library/blob/main/roles/ca_trust_consumers/README.md)
 - [Navidrome Backup](https://github.com/ephes/ops-library/blob/main/roles/navidrome_backup/README.md)
 - [Navidrome Restore](https://github.com/ephes/ops-library/blob/main/roles/navidrome_restore/README.md)
 - [Takahe Backup](https://github.com/ephes/ops-library/blob/main/roles/takahe_backup/README.md)
@@ -81,6 +82,7 @@ mail_offsite_replication
 os_apt_maintenance
 systemd_unit_masks
 journald_config
+ca_trust_consumers
 navidrome_backup
 navidrome_restore
 takahe_backup
@@ -100,6 +102,9 @@ zfs_syncoid_replication
 zfs_usb_replication
 macos_time_machine_exclusions
 macos_smb_mount_keeper
+aws_ca_bundle
+security_trust_remediate
+security_trust_recover
 ```
 
 Operations roles provide consistent snapshot, restore, and maintenance tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.

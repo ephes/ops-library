@@ -98,6 +98,7 @@ stops the timer and removes both units rather than leaving them firing.
 | `os_apt_maintenance_endpoint_path` | `/.well-known/os-apt-maintenance` | Endpoint path. |
 | `os_apt_maintenance_endpoint_auth_user` | `CHANGE_ME` | Basic auth username. Required when endpoint is enabled. |
 | `os_apt_maintenance_endpoint_auth_password` | `CHANGE_ME` | Basic auth password. Required when endpoint is enabled. |
+| `os_apt_maintenance_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | Endpoint server: `python` or `rust` (see [HTTP server implementation](#http-server-implementation-python-or-rust)). |
 
 ## Example
 
@@ -228,6 +229,41 @@ before this signal existed serve marker-only behaviour until the next run.
 
 During an active run, `$.summary.currently_running` is `true`. `last_run_ok` remains true while
 the previous successful run is still fresh, so monitoring does not page during normal apt work.
+
+## HTTP server implementation (Python or Rust)
+
+`os_apt_maintenance_endpoint_impl` selects the HTTP server of the endpoint
+(only with `os_apt_maintenance_endpoint_enabled`): `python` runs
+`os_apt_maintenance_endpoint_server_path` (the unit's `ExecStart=`), `rust`
+runs the pinned `metrics-httpd` release through the drop-in
+`/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
+([`metrics_httpd_switch`](../metrics_httpd_switch/README.md),
+`rust/metrics-httpd/PLAN.md` section 7). The endpoint keeps its path, port,
+realm, htpasswd file, state file, user, sandbox and IP allow list; the unit
+file and the Python script stay as they are with either value.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `os_apt_maintenance_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | `python` or `rust`; override per host for a canary. |
+| `metrics_httpd_impl` | (unset: `python`) | Fleet-wide default for every metrics-httpd endpoint. |
+| `metrics_httpd_rust_version` / `metrics_httpd_rust_sha256` | (unset) | Pinned release and the sha256 of its archive. Required for `rust`; with `python` a set version is installed and checked ahead of the switch. |
+
+With `rust` the binary runs `apt-state --bind --port --path --json-path
+<os_apt_maintenance_state_file> --htpasswd-file --freshness-max-age
+<os_apt_maintenance_freshness_max_age_seconds> --state-max-age
+<os_apt_maintenance_endpoint_state_max_age_seconds> --realm os-apt-maintenance
+--server-name os-apt-maintenance-httpd/0.1` from the variables above. Before
+the drop-in is written the binary's `--check-config` must pass as
+`os_apt_maintenance_endpoint_user` in the unit's sandbox; after the restart
+the deploy checks that the unit runs the selected implementation and that an
+unauthenticated request gets 401 with the realm, then pins the version in
+`/opt/metrics-httpd/.pins/<service>`. Switching back to `python` removes the
+drop-in and restarts the Python script.
+
+The switch runs after the state file exists (the unit's `ReadOnlyPaths=` names
+it, so `--check-config` needs it too). The Rust `apt-state` mode serves the
+same `meta`, `summary` and `reboot_required_details` as the Python server
+(PLAN.md 4.5) and reads `/var/run/reboot-required` and `uname` per request.
 
 ## Validation
 

@@ -9,24 +9,29 @@
   no_log: true
   notify: restart weeknotes home
 
+# Management commands source this 0600 shell companion of the service environment.
+# Secrets never go into a task environment: under become, Ansible puts those values
+# into the command it hands to sudo, and sudo logs that command.
+- name: django | Render management shell environment
+  ansible.builtin.template:
+    src: weeknotes-home.env.j2
+    dest: "{{ weeknotes_home_env_path }}.shell"
+    owner: "{{ weeknotes_home_user }}"
+    group: "{{ weeknotes_home_group }}"
+    mode: "0600"
+  vars:
+    task_shell_environment: true
+  no_log: true
+
 - name: django | Run migrations
-  ansible.builtin.command:
-    argv:
-      - "{{ weeknotes_home_venv_bin }}/python"
-      - "{{ weeknotes_home_manage_py }}"
-      - migrate
-      - --noinput
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (weeknotes_home_env_path ~ '.shell') | quote }}
+      set +a
+      exec {{ (weeknotes_home_venv_bin ~ '/python') | quote }} {{ weeknotes_home_manage_py | quote }} migrate --noinput
   args:
     chdir: "{{ weeknotes_home_service_path }}"
-  environment:
-    DJANGO_SETTINGS_MODULE: "{{ weeknotes_home_django_settings_module }}"
-    DJANGO_SECRET_KEY: "{{ weeknotes_home_django_secret_key }}"
-    DJANGO_DEBUG: "{{ weeknotes_home_django_debug | lower }}"
-    DJANGO_ALLOWED_HOSTS: "{{ weeknotes_home_django_allowed_hosts | join(',') }}"
-    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ weeknotes_home_django_csrf_trusted_origins | join(',') }}"
-    DJANGO_STATIC_ROOT: "{{ weeknotes_home_static_root }}"
-    DJANGO_DB_CONN_MAX_AGE: "{{ weeknotes_home_django_db_conn_max_age }}"
-    DATABASE_URL: "{{ weeknotes_home_database_url }}"
   become: true
   become_user: "{{ weeknotes_home_user }}"
   register: weeknotes_home_migrate
@@ -35,23 +40,14 @@
   when: weeknotes_home_run_migrations | bool
 
 - name: django | Collect static files
-  ansible.builtin.command:
-    argv:
-      - "{{ weeknotes_home_venv_bin }}/python"
-      - "{{ weeknotes_home_manage_py }}"
-      - collectstatic
-      - --noinput
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (weeknotes_home_env_path ~ '.shell') | quote }}
+      set +a
+      exec {{ (weeknotes_home_venv_bin ~ '/python') | quote }} {{ weeknotes_home_manage_py | quote }} collectstatic --noinput
   args:
     chdir: "{{ weeknotes_home_service_path }}"
-  environment:
-    DJANGO_SETTINGS_MODULE: "{{ weeknotes_home_django_settings_module }}"
-    DJANGO_SECRET_KEY: "{{ weeknotes_home_django_secret_key }}"
-    DJANGO_DEBUG: "{{ weeknotes_home_django_debug | lower }}"
-    DJANGO_ALLOWED_HOSTS: "{{ weeknotes_home_django_allowed_hosts | join(',') }}"
-    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ weeknotes_home_django_csrf_trusted_origins | join(',') }}"
-    DJANGO_STATIC_ROOT: "{{ weeknotes_home_static_root }}"
-    DJANGO_DB_CONN_MAX_AGE: "{{ weeknotes_home_django_db_conn_max_age }}"
-    DATABASE_URL: "{{ weeknotes_home_database_url }}"
   become: true
   become_user: "{{ weeknotes_home_user }}"
   register: weeknotes_home_collectstatic_result

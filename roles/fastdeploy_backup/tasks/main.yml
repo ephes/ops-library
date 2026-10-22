@@ -59,6 +59,25 @@
     group: "{{ fastdeploy_backup_root_group }}"
     mode: "{{ fastdeploy_backup_root_mode }}"
 
+# Archives from runs before the archive tasks restricted them can still be
+# readable by other accounts. Set every archive directly in the backup root to
+# fastdeploy_backup_archive_mode on each run (idempotent: only files with another
+# mode are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: fastdeploy_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "{{ fastdeploy_backup_archive_mode }}"
+  loop: "{{ fastdeploy_backup_archive_modes.files | rejectattr('mode', 'equalto', fastdeploy_backup_archive_mode) | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: "Ensure backup directory exists"
   ansible.builtin.file:
     path: "{{ fastdeploy_backup_dir }}"
@@ -166,21 +185,32 @@
     fastdeploy_backup_pg_dump_port_flag: "{{ (fastdeploy_backup_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ fastdeploy_backup_postgres_port, '') }}"
 
 - name: "Dump PostgreSQL database"
-  ansible.builtin.shell: |
-    set -euo pipefail
-    {{ fastdeploy_backup_postgres_dump_binary }} \
-      {{ fastdeploy_backup_pg_dump_host_flag }} \
-      {{ fastdeploy_backup_pg_dump_port_flag }} \
-      --username={{ fastdeploy_backup_postgres_user }} \
-      {{ fastdeploy_backup_postgres_dump_options }} \
-      {{ fastdeploy_backup_postgres_database }} > "{{ fastdeploy_backup_dir }}/database/{{ fastdeploy_backup_postgres_database }}.sql"
+  # The password arrives on stdin, never in the task environment: under become,
+  # Ansible puts task environment values into the command it hands to sudo, and sudo
+  # logs that command.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      # Lossless: stdin is 'x' + value with no added newline (never empty, so the
+      # command never inherits another stdin); both sentinels are stripped.
+      PGPASSWORD=$(cat; printf x)
+      PGPASSWORD=${PGPASSWORD%x}
+      PGPASSWORD=${PGPASSWORD#x}
+      if [ -n "$PGPASSWORD" ]; then export PGPASSWORD; else unset PGPASSWORD; fi
+      {{ fastdeploy_backup_postgres_dump_binary }} \
+        {{ fastdeploy_backup_pg_dump_host_flag }} \
+        {{ fastdeploy_backup_pg_dump_port_flag }} \
+        --username={{ fastdeploy_backup_postgres_user }} \
+        {{ fastdeploy_backup_postgres_dump_options }} \
+        {{ fastdeploy_backup_postgres_database }} > "{{ fastdeploy_backup_dir }}/database/{{ fastdeploy_backup_postgres_database }}.sql"
+    stdin: "x{{ fastdeploy_backup_postgres_password | default('') }}"
+    stdin_add_newline: false
   args:
     executable: /bin/bash
   become: true
   become_user: "{{ fastdeploy_backup_postgres_become_user }}"
-  environment:
-    PGPASSWORD: "{{ fastdeploy_backup_postgres_password }}"
-  no_log: "{{ (fastdeploy_backup_postgres_password | default('') | length > 0) and not fastdeploy_backup_debug }}"
+  # Unconditional: stdin carries the password even with fastdeploy_backup_debug.
+  no_log: true
 
 - name: "Build runner exclude args"
   ansible.builtin.set_fact:
@@ -322,36 +352,46 @@
   when: fastdeploy_backup_create_archive
 
 - name: "Create tar.gz archive"
-  ansible.builtin.command:
-    cmd: >
-      tar -C "{{ fastdeploy_backup_root }}"
-      -czf "{{ fastdeploy_backup_archive_path | basename }}"
-      "{{ fastdeploy_backup_dir | basename }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    tar -C {{ fastdeploy_backup_root | quote }} \
+      -czf {{ fastdeploy_backup_archive_path | basename | quote }} \
+      {{ fastdeploy_backup_dir | basename | quote }}
   args:
     chdir: "{{ fastdeploy_backup_root }}"
+    executable: /bin/bash
+  changed_when: true
   when:
     - fastdeploy_backup_create_archive
     - fastdeploy_backup_archive_format == 'tar.gz'
 
 - name: "Create tar.zst archive"
-  ansible.builtin.command:
-    cmd: >
-      tar -C "{{ fastdeploy_backup_root }}"
-      --zstd -cf "{{ fastdeploy_backup_archive_path | basename }}"
-      "{{ fastdeploy_backup_dir | basename }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    tar -C {{ fastdeploy_backup_root | quote }} \
+      --zstd -cf {{ fastdeploy_backup_archive_path | basename | quote }} \
+      {{ fastdeploy_backup_dir | basename | quote }}
   args:
     chdir: "{{ fastdeploy_backup_root }}"
+    executable: /bin/bash
+  changed_when: true
   when:
     - fastdeploy_backup_create_archive
     - fastdeploy_backup_archive_format == 'tar.zst'
 
-- name: "Ensure archive is readable for fetch"
+# tar runs under umask 077 above, so a new archive is owner-only from its first
+# byte (the backup root is group-traversable for the PostgreSQL dump user).
+# This also tightens an archive that replaced an existing file. The fetch reads
+# the archive as the SSH user; see fastdeploy_backup_archive_mode.
+- name: "Restrict archive permissions"
   ansible.builtin.file:
     path: "{{ fastdeploy_backup_archive_path }}"
-    mode: "0644"
+    mode: "{{ fastdeploy_backup_archive_mode }}"
   when:
     - fastdeploy_backup_create_archive
-    - fastdeploy_backup_fetch_local | bool
+    - not ansible_check_mode
 
 - name: "Ensure local archive directory exists"
   ansible.builtin.file:

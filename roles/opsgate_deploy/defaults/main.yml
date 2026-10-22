@@ -37,6 +37,16 @@ opsgate_ops_ssh_config_path: "{{ ops_home_dir }}/.ssh/config"
 opsgate_ops_github_ssh_private_key_path: "{{ ops_home_dir }}/.ssh/id_github_ed25519"
 opsgate_ops_github_ssh_public_key_path: "{{ ops_home_dir }}/.ssh/id_github_ed25519.pub"
 opsgate_ops_github_host_key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+# Optional per-repository GitHub deploy keys, keyed by the name of an entry in
+# opsgate_ops_workspace_repositories. A repo listed here is cloned and fetched
+# through its own SSH host alias (github-<name>) with its own key, so a
+# read-only deploy key per repo replaces the account key.
+#   opsgate_ops_github_deploy_keys:
+#     ops-control:
+#       private_key: "-----BEGIN OPENSSH PRIVATE KEY-----..."
+#       public_key: "ssh-ed25519 AAAA... opsgate-ops-control"
+opsgate_ops_github_deploy_keys: {}
+opsgate_ops_github_deploy_key_path_prefix: "{{ ops_home_dir }}/.ssh/id_github_deploy_"
 
 opsgate_app_dir: "{{ control_service_home_dir }}/opsgate"
 opsgate_runner_app_dir: "{{ ops_home_dir }}/opsgate"
@@ -58,6 +68,40 @@ opsgate_rsync_excludes:
   - ".mypy_cache"
   - ".ruff_cache"
   - "__pycache__"
+  # Rust port workspace (sources and `cargo build` output in rust/target/,
+  # gigabytes); the Python runtime never uses it. Anchored to the top of the
+  # checkout so no nested directory of that name is affected.
+  - "/rust/"
+
+# Implementation per launchd unit (opsgate repository rust/PLAN.md 10.1).
+# Independent switches: python runs the venv command of each unit (unchanged),
+# rust runs the pinned release binary <install_root>/<version>/opsgate.
+opsgate_api_impl: python
+opsgate_runner_impl: python
+# Release to install, e.g. "0.3.0"; required when any impl is rust. With a
+# version set the binary is installed and validated even while both impls are
+# python, so it can be installed ahead of a switch.
+opsgate_rust_version: ""
+# sha256 of the release archive (64 lowercase hex digits); required with a
+# version unless opsgate_rust_local_archive is set.
+opsgate_rust_sha256: ""
+opsgate_rust_release_url: >-
+  https://github.com/ephes/opsgate/releases/download/rs-v{{ opsgate_rust_version }}/opsgate-{{ opsgate_rust_version }}-aarch64-apple-darwin.tar.gz
+# Archive on the controller instead of the download (development); checked
+# against opsgate_rust_sha256 when that is set too.
+opsgate_rust_local_archive: ""
+opsgate_rust_install_root: /usr/local/libexec/opsgate-rs
+# Newest version directories kept after a verified deploy; the pinned, the
+# running and the previous (rollback) versions are always kept on top.
+opsgate_rust_keep_versions: 3
+# Python variant of each plist, rendered on every deploy and never loaded:
+# the emergency rollback without Ansible (README "Implementation: Python or Rust").
+opsgate_launchd_python_plist_dir: "{{ opsgate_config_dir }}/launchd-python"
+# After the plists are applied, each managed and started unit must run the
+# selected implementation (and the API answer its health check) within
+# retries x delay seconds.
+opsgate_launchd_verify_retries: 10
+opsgate_launchd_verify_delay: 3
 
 # API/UI runtime configuration
 opsgate_api_bind_host: "0.0.0.0"

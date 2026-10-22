@@ -104,14 +104,20 @@
         - /etc/sudoers.d/fastdeploy_legacyrunner
         - /etc/sudoers.d/fastdeploy_commented
         - /etc/sudoers.d/fastdeploy_continued
+        - /etc/sudoers.d/fastdeploy_legacysite
         - /etc/sudoers.d/fastdeploy_restore
+        - /home/fastdeploy/site/services
+        - /home/fastdeploy/site/services/service-a/config.txt
       register: fastdeploy_retired_stat
 
     - name: Assert retired entries and blanket sudo rules were not restored
       ansible.builtin.assert:
         that:
-          - fastdeploy_retired_stat.results[:6] | map(attribute='stat.exists') | select | list | length == 0
-          - fastdeploy_retired_stat.results[6].stat.exists
+          - fastdeploy_retired_stat.results[:7] | map(attribute='stat.exists') | select | list | length == 0
+          - fastdeploy_retired_stat.results[7].stat.exists
+          - fastdeploy_retired_stat.results[8].stat.pw_name == 'root'
+          - fastdeploy_retired_stat.results[8].stat.gr_name == 'root'
+          - fastdeploy_retired_stat.results[9].stat.pw_name == 'root'
         fail_msg: "FastDeploy restore brought back a retired entry or an unrestricted sudo rule."
 
     - name: Seed pre-failure FastDeploy state before rescue coverage

@@ -1,0 +1,82 @@
+---
+# Step 7 of rust/software-live/PLAN.md 7.3: pin and prune with
+# rust_release_binary, only after verify_impl.yml proved the production units
+# run the selected program. Executes no release binary, so with impl python
+# (the units already run Python) it cannot block the rollback.
+#
+# - Rollback pin first: when the version last verified live (step 0: the
+#   production pin, else the release the production endpoint ran) differs
+#   from the version now verified live, or impl is python, the `previous` pin
+#   of consumer software-live moves to it; otherwise it stays. Example: v1
+#   live; switch to v2 -> previous v1; back to v1 -> previous v2; to v3 ->
+#   previous v1.
+# - Pins: .pins/software-live names the production version (impl rust) or is
+#   removed (impl python); .pins/software-live-shadow names the shadow units'
+#   version and is removed with the shadow (no rollback pin for the shadow).
+# - Prune: unless the live state of step 0 is unknown, keep the newest
+#   keep_versions, every pin, every previous pin and every version step 0
+#   found live.
+
+- name: rust_pins | Move the production pins
+  ansible.builtin.include_role:
+    name: local.ops_library.rust_release_binary
+    tasks_from: pin
+  vars:
+    rust_release_binary_name: software-live
+    rust_release_binary_install_root: '{{ _software_live_releases_dir }}'
+    rust_release_binary_owner: '{{ software_live_rust_owner }}'
+    rust_release_binary_group: '{{ software_live_rust_group }}'
+    rust_release_binary_consumer: software-live
+    rust_release_binary_state: "{{ 'present' if software_live_impl == 'rust' else 'absent' }}"
+    rust_release_binary_version: "{{ software_live_rust_version if software_live_impl == 'rust' else '' }}"
+    rust_release_binary_previous: >-
+      {{ _software_live_last_live
+         if _software_live_last_live | length > 0
+            and _software_live_last_live != (software_live_rust_version if software_live_impl == 'rust' else '')
+         else '' }}
+
+# The shadow keeps no rollback pin: a shadow version that changes or goes away
+# is unpinned completely first.
+- name: rust_pins | Remove the shadow pins
+  ansible.builtin.include_role:
+    name: local.ops_library.rust_release_binary
+    tasks_from: pin
+  vars:
+    rust_release_binary_name: software-live
+    rust_release_binary_install_root: '{{ _software_live_releases_dir }}'
+    rust_release_binary_owner: '{{ software_live_rust_owner }}'
+    rust_release_binary_group: '{{ software_live_rust_group }}'
+    rust_release_binary_consumer: software-live-shadow
+    rust_release_binary_state: absent
+    rust_release_binary_keep_previous: false
+  when: >-
+    not software_live_rust_shadow | bool
+    or (_software_live_live.shadow_pin | length > 0
+        and _software_live_live.shadow_pin != software_live_rust_version)
+
+- name: rust_pins | Pin the shadow version
+  ansible.builtin.include_role:
+    name: local.ops_library.rust_release_binary
+    tasks_from: pin
+  vars:
+    rust_release_binary_name: software-live
+    rust_release_binary_install_root: '{{ _software_live_releases_dir }}'
+    rust_release_binary_owner: '{{ software_live_rust_owner }}'
+    rust_release_binary_group: '{{ software_live_rust_group }}'
+    rust_release_binary_consumer: software-live-shadow
+    rust_release_binary_state: present
+    rust_release_binary_version: '{{ software_live_rust_version }}'
+  when: software_live_rust_shadow | bool
+
+- name: rust_pins | Prune old software-live releases
+  ansible.builtin.include_role:
+    name: local.ops_library.rust_release_binary
+    tasks_from: prune
+  vars:
+    rust_release_binary_name: software-live
+    rust_release_binary_install_root: '{{ _software_live_releases_dir }}'
+    rust_release_binary_owner: '{{ software_live_rust_owner }}'
+    rust_release_binary_group: '{{ software_live_rust_group }}'
+    rust_release_binary_keep_versions: '{{ software_live_rust_keep_versions | int }}'
+    rust_release_binary_protect: '{{ _software_live_protect }}'
+    rust_release_binary_live_state_unknown: '{{ _software_live_live_unknown | bool }}'

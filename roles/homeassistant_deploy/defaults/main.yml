@@ -14,7 +14,7 @@ homeassistant_bin_path: "{{ homeassistant_site_path }}/bin"
 homeassistant_manage_uv: true
 homeassistant_uv_install_dir: /usr/local/bin
 homeassistant_uv_install_user: root
-homeassistant_uv_version: "0.13.0"  # Keep aligned with uv_install version/checksums.
+homeassistant_uv_version: "0.13.4"  # Keep aligned with uv_install version/checksums.
 homeassistant_uv_update_existing: true
 homeassistant_uv_force_reinstall: false
 homeassistant_uv_path: "{{ homeassistant_uv_install_dir }}/uv"
@@ -23,6 +23,24 @@ homeassistant_virtualenv_path: "{{ homeassistant_site_path }}/.venv"
 homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
 homeassistant_package_spec: "homeassistant"
 homeassistant_extra_package_specs: []
+
+# Keep certifi/pip at python_security_floor's floors: refuse existing
+# environments below them before changing anything, pass a constraint file to
+# every uv pip install this role runs (constraints never add packages; a
+# dependency capping certifi below the floor fails the resolution before
+# anything is installed) and verify the environments afterwards.
+homeassistant_python_security_floor_enabled: true
+homeassistant_python_security_constraints_path: "{{ homeassistant_site_path }}/.python-security-constraints.txt"
+homeassistant_python_security_constraint_argv: >-
+  {{ ['--constraint', homeassistant_python_security_constraints_path]
+     if (homeassistant_python_security_floor_enabled | bool) else [] }}
+homeassistant_python_security_constraint_args: >-
+  {{ homeassistant_python_security_constraint_argv | map('quote') | join(' ') }}
+# The environments the floors are checked in.
+homeassistant_python_security_environments: >-
+  {{ [{'path': homeassistant_virtualenv_path, 'label': 'Home Assistant environment'}]
+     + ([{'path': homeassistant_matter_server_virtualenv_path, 'label': 'Matter server environment'}]
+        if (homeassistant_manage_matter_server | bool) else []) }}
 homeassistant_force_reinstall: false
 homeassistant_virtualenv_version_file: "{{ homeassistant_virtualenv_path }}/.ansible-python-version"
 
@@ -31,6 +49,22 @@ homeassistant_service_name: homeassistant
 homeassistant_service_enabled: true
 homeassistant_service_state: started
 homeassistant_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service"
+
+# Home Assistant installs integration requirements at runtime with its own
+# bundled uv, whose built-in roots can lag behind CA distrust decisions. With
+# this on, a managed drop-in sets UV_SYSTEM_CERTS=1 so that uv uses the
+# operating system's CA store. Refused (before any change) when the unit or
+# the running service already has other trust settings, an EnvironmentFile or
+# other drop-ins, or when the system store still trusts a distrusted root.
+homeassistant_uv_system_certs: true
+homeassistant_uv_system_certs_dropin_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service.d/50-uv-system-certs.conf"
+# Other drop-ins of the unit reviewed as not setting trust (paths); any other
+# drop-in makes the check refuse.
+homeassistant_uv_system_certs_allowed_dropins: []
+# Health check after a maintenance restart (no authentication needed).
+homeassistant_uv_system_certs_health_url: "{{ homeassistant_api_url }}/manifest.json"
+homeassistant_uv_system_certs_health_retries: 60
+homeassistant_uv_system_certs_health_delay: 5
 homeassistant_app_port: 10020
 homeassistant_host: "0.0.0.0"
 
@@ -75,6 +109,15 @@ homeassistant_manage_wyoming_integration: false
 homeassistant_wyoming_host: ""
 homeassistant_wyoming_port: 10300
 
+# Core llama_cpp conversation agent (no custom component or LiteLLM).
+homeassistant_llama_cpp_enabled: false
+homeassistant_llama_cpp_base_url: ""
+homeassistant_llama_cpp_api_key: ""
+homeassistant_llama_cpp_model: ""
+homeassistant_llama_cpp_instructions: ""
+homeassistant_llama_cpp_canary_text: "Reply with the single word OK."
+homeassistant_llama_cpp_helper_path: "{{ homeassistant_bin_path }}/llama_cpp_provision.py"
+
 # Custom Conversation integration (HA config entry + pinned custom component)
 # Bridges Home Assistant Assist to an OpenAI-compatible Chat Completions endpoint
 # (e.g. the OpenClaw gateway) via the michelle-avery/custom-conversation component.
@@ -83,7 +126,7 @@ homeassistant_custom_conversation_enabled: false
 homeassistant_custom_conversation_version: "1.6.1"
 # sha256 of the pinned GitHub release tarball
 # https://github.com/michelle-avery/custom-conversation/archive/refs/tags/<version>.tar.gz
-homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"
+homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"  # pragma: allowlist secret
 homeassistant_custom_conversation_download_url: >-
   https://github.com/michelle-avery/custom-conversation/archive/refs/tags/{{ homeassistant_custom_conversation_version }}.tar.gz
 # LiteLLM provider key the component routes through. "openai" selects the
@@ -168,8 +211,8 @@ homeassistant_enable_udev_rule: true
 homeassistant_udev_rule_path: /etc/udev/rules.d/99-homeassistant-zbt1.rules
 
 # UniFi password discovery
-homeassistant_unifi_password_source: "file"  # file|variable
-homeassistant_unifi_password_file: /home/unifi/.homeassistant_unifi_password
+homeassistant_unifi_password_source: "file"  # pragma: allowlist secret; file|variable
+homeassistant_unifi_password_file: /home/unifi/.homeassistant_unifi_password  # pragma: allowlist secret
 homeassistant_unifi_password_variable: ""
 
 # Traefik integration

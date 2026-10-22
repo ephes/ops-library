@@ -154,3 +154,26 @@ cause, and rerun deployment; the existing index may be incomplete until recovery
 
 - Expand automated tests in `test_roles.py` (integration with paperless_backup/paperless_restore).
 - Add optional key-based authentication for the scanner user.
+
+## Secret handling
+
+The superuser bootstrap sends its Python script, including the password, on stdin to `manage.py shell`; the password is not part of the shell command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.
+
+## Certifi/pip security floor
+
+With `paperless_python_security_floor_enabled` (default `true`) the role uses
+[`python_security_floor`](../python_security_floor/README.md):
+
+- Before changing anything, as the first role dependency (ahead of the
+  uv/Redis/PostgreSQL installs), it verifies the existing environment (certifi/pip at
+  their floors, no distrusted root in their bundles). The installs run only for
+  a new release or `paperless_force_reinstall`, so an environment below the
+  floor is refused; bring it to the floor with the host's supported remediation
+  first.
+- The editable Paperless install, the supporting packages and the fido2 pin
+  all get `--constraint` with `paperless_python_security_constraints_path`.
+  Constraints never add packages; a dependency capping certifi below the floor
+  makes the install fail before anything changes.
+- Afterwards the environment is verified again.
+
+Set `paperless_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.

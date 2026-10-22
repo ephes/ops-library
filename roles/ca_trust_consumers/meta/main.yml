@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  role_name: ca_trust_consumers
+  author: ops-library
+  description: >-
+    After a system CA store fix, make Node.js use the system store and
+    serially restart long-running TLS clients (such as Go services) that still
+    hold the old roots in memory.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - security
+    - tls
+    - nodejs
+    - systemd
+
+dependencies: []

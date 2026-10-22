@@ -6,6 +6,45 @@
 
 - name: Deploy storage metrics endpoint
   when: storage_metrics_endpoint_enabled | bool
+  # Inputs of the HTTP server's implementation switch (select and verify
+  # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The argv, sandbox and
+  # IP allow list mirror templates/storage-metrics-endpoint.service.j2.
+  vars:
+    metrics_httpd_switch_impl: "{{ storage_metrics_endpoint_impl }}"
+    metrics_httpd_switch_service_name: "{{ storage_metrics_endpoint_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ storage_metrics_endpoint_user }}"
+    metrics_httpd_switch_validate_group: "{{ storage_metrics_endpoint_group }}"
+    metrics_httpd_switch_argv:
+      - json-file
+      - --bind
+      - "{{ storage_metrics_endpoint_bind }}"
+      - --port
+      - "{{ storage_metrics_endpoint_port | string }}"
+      - --path
+      - "{{ storage_metrics_endpoint_path }}"
+      - --json-path
+      - "{{ storage_metrics_endpoint_json_path }}"
+      - --htpasswd-file
+      - "{{ storage_metrics_endpoint_htpasswd_path }}"
+      - --realm
+      - storage-metrics
+      - --server-name
+      - storage-metrics-httpd/0.1
+    metrics_httpd_switch_unit_sandbox:
+      - NoNewPrivileges=yes
+      - ProtectSystem=strict
+      - ProtectHome=yes
+      - PrivateTmp=yes
+      - "ReadOnlyPaths={{ storage_metrics_endpoint_data_dir }}"
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart storage-metrics-endpoint
+    metrics_httpd_switch_python_script: "{{ storage_metrics_endpoint_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ storage_metrics_endpoint_bind }}"
+    metrics_httpd_switch_probe_port: "{{ storage_metrics_endpoint_port }}"
+    metrics_httpd_switch_probe_path: "{{ storage_metrics_endpoint_path }}"
+    metrics_httpd_switch_probe_realm: storage-metrics
+    metrics_httpd_switch_ip_address_allow: [localhost, 100.64.0.0/10]
   block:
     - name: Validate required variables
       ansible.builtin.assert:
@@ -138,6 +177,13 @@
         - reload systemd
         - restart storage-metrics-endpoint
 
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below.
+    - name: Select the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+
     - name: Flush handlers to ensure units are registered
       ansible.builtin.meta: flush_handlers
 
@@ -264,3 +310,13 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Apply a pending implementation switch before verifying it
+      ansible.builtin.meta: flush_handlers
+
+    # The unit runs the selected implementation and answers 401 with its
+    # realm; then the metrics-httpd pin moves and old releases are pruned.
+    - name: Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify

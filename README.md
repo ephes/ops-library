@@ -24,6 +24,13 @@ Service roles that need specific Python versions rely on `uv` to install and man
 (for example `wagtail_deploy`, `homeassistant_deploy`, `fastdeploy_deploy`). Prefer `uv` instead of
 system Python builds; set `uv_version` and the role-specific `*_python_version` variables as needed.
 
+## Traefik HSTS policy
+
+Role templates omit the HSTS `preload` directive. The owner decided against
+browser preload registration on 2026-10-19 because it is difficult to undo and
+requires HTTPS for every subdomain. Existing HSTS lifetimes, `includeSubDomains`
+settings, and other security headers remain unchanged.
+
 ## Role Taxonomy
 
 `ops-library` ships three different role surfaces. Keeping those categories separate is part of the
@@ -111,8 +118,12 @@ consumer repos depend on.
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
 | Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
 | Operations | [`macos_smb_mount_keeper`](roles/macos_smb_mount_keeper/README.md) | Remount SMB shares at their exact `/Volumes` path from a user LaunchAgent, never unmounting anything. |
+| Infrastructure | [`java_ca_refresh`](roles/java_ca_refresh/README.md) | Refresh stale Debian Java trust after patched OS CA updates. |
+| Infrastructure | [`macos_java_trust`](roles/macos_java_trust/README.md) | Maintain explicit macOS Java trust copies without editing vendor cacerts. |
+| Infrastructure | [`python_security_floor`](roles/python_security_floor/README.md) | Keep certifi/pip at security floors across application deploys: stale-lock refusal, install constraints and trust-bundle verification. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Operations | [`journald_config`](roles/journald_config/README.md) | Size systemd-journald storage, file-count and age limits through one managed drop-in. |
+| Operations | [`ca_trust_consumers`](roles/ca_trust_consumers/README.md) | After a CA store fix, switch Node.js to the system store and serially restart TLS clients (such as Go services) still holding old roots, behind a CA readiness gate. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
 | Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints, including read-only per-client Time Machine sparsebundle metrics. |
@@ -121,7 +132,7 @@ consumer repos depend on.
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
 | Monitoring | [`dns_metrics_endpoint`](roles/dns_metrics_endpoint/README.md) | Expose per-endpoint authoritative-DNS health (v4/v6, UDP/TCP, `aa` required, SOA serial agreement, open-resolver regression) as authenticated JSON for Nyxmon (`/.well-known/dns`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
-| Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and the full `authorized_keys` file for an arbitrary target account, including `root`. |
+| Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and `authorized_keys` for an arbitrary target account, including `root`: the full file, or only the listed keys (`ssh_authorized_keys_manage_exclusive: false`). |
 | Infrastructure | [`macos_ssh_tunnel`](roles/macos_ssh_tunnel/README.md) | Manage a user LaunchAgent for an SSH local forward with lifecycle and HTTPS checks. |
 | Infrastructure | [`ssh_forwarding_identity`](roles/ssh_forwarding_identity/README.md) | Provision a non-rotating, passphrase-free Ed25519 identity for unattended forwarding. |
 | Infrastructure | [`ssh_restricted_forwarding_account`](roles/ssh_restricted_forwarding_account/README.md) | Provision a dedicated OpenSSH account restricted to local forwarding toward one host and port. |
@@ -146,7 +157,7 @@ consumer repos depend on.
 | Service deployment | [`echoport_deploy`](roles/echoport_deploy/README.md) | Deploy the Echoport Django application and its scheduler/cleanup jobs. |
 | Service deployment | [`logyard_deploy`](roles/logyard_deploy/README.md) | Deploy Logyard core runtime (Loki, shared Grafana datasource wiring, retention, and Nyxmon-facing health endpoint). |
 | Service deployment | [`logyard_ingress_deploy`](roles/logyard_ingress_deploy/README.md) | Expose only the Logyard Loki push path and `/ready` through an internal-only Traefik route for trusted LAN/Tailscale producers. |
-| Service deployment | [`graphyard_deploy`](roles/graphyard_deploy/README.md) | Deploy Graphyard core app/runtime (source sync, uv env, migrate/collectstatic, systemd web+agent, health checks). |
+| Service deployment | [`graphyard_deploy`](roles/graphyard_deploy/README.md) | Deploy Graphyard core app/runtime (source sync, uv env, migrate/collectstatic, systemd web+agent with a Python or pinned Rust agent, health checks). |
 | Service deployment | [`graphyard_ingress_deploy`](roles/graphyard_ingress_deploy/README.md) | Expose Graphyard + Grafana through Traefik with LAN/Tailscale bypass and public basic auth. |
 | Service deployment | [`graphyard_auth_bootstrap_deploy`](roles/graphyard_auth_bootstrap_deploy/README.md) | Idempotently bootstrap Graphyard Django login and Grafana admin credentials from secrets. |
 | Service deployment | [`homeassistant_deploy`](roles/homeassistant_deploy/README.md) | Deploy Home Assistant Core with uv-managed Python env, Traefik, and systemd. |
@@ -196,6 +207,9 @@ consumer repos depend on.
 | Service operations | [`software_live`](roles/software_live/README.md) | Observe live Traefik and pending APT security updates through SSH or authenticated JSON. |
 | Service removal | [`software_live_remove`](roles/software_live_remove/README.md) | Remove software observation components while preserving application state. |
 | Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
+| Service operations | [`security_trust_remediate`](roles/security_trust_remediate/README.md) | Remediate explicit OS/Python trust stores with verified offline wheels, rollback evidence and serial restarts. |
+| Service operations | [`security_trust_recover`](roles/security_trust_recover/README.md) | Recover proven interrupted certifi replacement using immutable evidence and exact cache ownership repair. |
+| Service operations | [`aws_ca_bundle`](roles/aws_ca_bundle/README.md) | Use patched system trust for explicit botocore consumers while preserving custom AWS bundles. |
 | Service removal | [`daybook_voice_memo_attention_remove`](roles/daybook_voice_memo_attention_remove/README.md) | Unload only the attention LaunchAgent while preserving tracking and native history. |
 | Service removal | [`daybook_voice_memo_attention_notifier_remove`](roles/daybook_voice_memo_attention_notifier_remove/README.md) | Revoke only the dedicated notifier key and executable while preserving other authorizations. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
@@ -213,19 +227,21 @@ consumer repos depend on.
 | Service removal | [`mastodon_remove`](roles/mastodon_remove/README.md) | Remove Mastodon services, config, and user with confirmation gates. |
 | Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
+| Service registration | [`fastdeploy_runner`](roles/fastdeploy_runner/README.md) | Install a script FastDeploy runs through sudo in a root-owned directory and register it. |
 | Operations | [`docker_cache_cleanup`](roles/docker_cache_cleanup/README.md) | Daily cleanup of Docker build cache unused for seven days. |
 | Operations | [`time_sync_check`](roles/time_sync_check/README.md) | Read-only check that a host's clock is NTP-synchronized (chrony or systemd-timesyncd, offset threshold, controller comparison); fails or warns. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |
 | Bootstrap | [`docker_install`](roles/docker_install/README.md) | Install Docker Engine + Docker Compose v2 (plugin) from the official Docker apt repository. |
 | Bootstrap | [`dpkg_arch_remove`](roles/dpkg_arch_remove/README.md) | Remove foreign dpkg architectures (defaults to i386) and optionally purge packages. |
-| Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Deploy OpsGate on macOS with split users (`control_service_user` + `ops`), launchd-managed API/runner processes, and tmux runner wiring. |
+| Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Deploy OpsGate on macOS with split users (`control_service_user` + `ops`), launchd-managed API/runner processes (each the Python venv or the pinned Rust release, per unit), and tmux runner wiring. |
 | Bootstrap | [`opsgate_ingress_deploy`](roles/opsgate_ingress_deploy/README.md) | Expose OpsGate over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
 | Bootstrap | [`daybook_sessions_deploy`](roles/daybook_sessions_deploy/README.md) | Run Daybook session shipping, quote classification, and a disabled-by-default draft reconcile schedule on macOS. |
 | Bootstrap | [`daybook_photos_offload_deploy`](roles/daybook_photos_offload_deploy/README.md) | Install Daybook's read-only Photos discovery ledger as a quiesce-first Aqua user LaunchAgent on macOS. |
 | Bootstrap | [`daybook_photos_archive_sync_deploy`](roles/daybook_photos_archive_sync_deploy/README.md) | Install the disabled-first, single-writer Nikon working-folder archive reconciler as an Aqua user LaunchAgent. |
 | Bootstrap | [`daybook_voice_memo_inbox_deploy`](roles/daybook_voice_memo_inbox_deploy/README.md) | Install the disabled-first Apple Voice Memos to Voxhelm and immutable Obsidian inbox importer on macOS. |
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
+| Bootstrap | [`llama_server_deploy`](roles/llama_server_deploy/README.md) | Run one pinned llama.cpp `llama-server` (Delve's ad detector) on macOS under launchd: pinned build and GGUF hash, alias, API key file, loopback or tailnet bind, no slot state or prompt logging. |
 | Bootstrap | [`voxhelm_deploy`](roles/voxhelm_deploy/README.md) | Deploy Voxhelm on macOS with `uv`, Uvicorn, and a launchd-managed synchronous transcription API. |
 | Bootstrap | [`voxhelm_ingress_deploy`](roles/voxhelm_ingress_deploy/README.md) | Expose Voxhelm over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
 | Bootstrap | [`voxhelm_remote_worker_deploy`](roles/voxhelm_remote_worker_deploy/README.md) | Install and run a pinned public-PyPI Voxhelm remote transcription worker on macOS under launchd. |
@@ -252,6 +268,7 @@ just test-role traefik_deploy
 
 # Run focused Molecule coverage for high-risk roles
 just molecule-test fastdeploy_register_service
+just molecule-test fastdeploy_runner
 just molecule-test fastdeploy_restore
 
 # Or run test playbooks directly
@@ -262,6 +279,22 @@ ansible-playbook tests/test_traefik_deploy.yml -i tests/inventory/test.yml
 Use `just validate-strict` when you want `ansible-lint` failures to stop the run, and use `just lint`
 only as a quick summary helper. `just lint-strict` passes against the reviewed baseline in
 `.ansible-lint-ignore`; new findings fail it (see `TESTING.md`).
+
+### Rust binaries
+
+`rust/` holds a Cargo workspace for small Rust binaries that replace
+long-running Python processes of this collection (first: `metrics-httpd`).
+See [rust/README.md](rust/README.md) and
+[rust/PLAN-foundation.md](rust/PLAN-foundation.md). It has its own checks,
+which also run in GitHub Actions (`.github/workflows/rust.yml`):
+
+```bash
+just rust-check   # fmt, clippy, tests, cargo-deny (needs cargo and cargo-deny)
+just rust-test    # tests only
+```
+
+They are not part of `just test`. `rust/` and `.github/` are excluded from the
+collection archive (`galaxy.yml` `build_ignore`).
 
 ### Developer Setup
 
@@ -294,7 +327,7 @@ just stats-roles
 
 ## Requirements
 
-- **ansible-core 2.20+** (Ansible 2.9 no longer supported)
+- **ansible-core 2.20.3+** (Ansible 2.9 no longer supported)
 - **Python 3.14+** (3.8-3.13 no longer supported as of v3.0.0)
 - Collections: `community.general`, `ansible.posix`
 
@@ -309,3 +342,15 @@ Operations coordination: [API deployment](roles/daybook_operations_api_deploy/RE
 [backup](roles/daybook_operations_api_backup/README.md),
 [restore](roles/daybook_operations_api_restore/README.md),
 and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; live acceptance pending.
+
+`macos_ca_remediate`: see [role documentation](roles/macos_ca_remediate/README.md).
+
+`linuxserver_ca_remediate`: see [role documentation](roles/linuxserver_ca_remediate/README.md).
+
+`macos_python_ca_remediate`: see [role documentation](roles/macos_python_ca_remediate/README.md).
+
+`container_ca_remediate`: see [role documentation](roles/container_ca_remediate/README.md).
+
+`chrome_ca_distrust`: see [role documentation](roles/chrome_ca_distrust/README.md).
+
+`container_ca_activate`: see [role documentation](roles/container_ca_activate/README.md).

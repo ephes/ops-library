@@ -43,7 +43,6 @@ http:
         forceSTSHeader: true
         stsSeconds: 31536000
         stsIncludeSubdomains: true
-        stsPreload: true
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ snappymail_traefik_host }}"

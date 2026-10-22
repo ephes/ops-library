@@ -9,6 +9,8 @@
     - '{{ software_live_remove_data_dir }}'
     - '{{ software_live_remove_install_dir }}'
 
+# The production units, their Rust drop-ins and the Rust shadow units
+# (rust/software-live/PLAN.md 7.3 step 8, 8.1).
 - name: Inspect installed software observation units
   ansible.builtin.stat:
     path: '/etc/systemd/system/{{ item }}'
@@ -16,6 +18,9 @@
     - software-live-collector.timer
     - software-live-collector.service
     - software-live-endpoint.service
+    - software-live-shadow-collector.timer
+    - software-live-shadow-collector.service
+    - software-live-shadow-endpoint.service
   register: _software_live_remove_units
 
 - name: Stop and disable installed software observation units
@@ -32,6 +37,16 @@
     state: absent
   loop: '{{ _software_live_remove_units.results }}'
 
+- name: Remove the implementation drop-ins of the software observation units
+  ansible.builtin.file:
+    path: '/etc/systemd/system/{{ item }}'
+    state: absent
+  loop:
+    - software-live-endpoint.service.d
+    - software-live-collector.service.d
+
+# The Python program, nyxmon_checks.py and every Rust release (releases/ with
+# its pins) live in the install directory.
 - name: Remove software observation configuration and programs
   ansible.builtin.file:
     path: '{{ item }}'
@@ -39,6 +54,13 @@
   loop:
     - '{{ software_live_remove_config_dir }}'
     - '{{ software_live_remove_install_dir }}'
+
+# Shadow comparison output only; the production state follows
+# software_live_remove_data.
+- name: Remove the shadow software observation state
+  ansible.builtin.file:
+    path: '{{ software_live_remove_data_dir }}/shadow'
+    state: absent
 
 - name: Remove software observation state when requested
   ansible.builtin.file:

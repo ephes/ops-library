@@ -9,3 +9,6 @@ ssh_authorized_keys_manage_home: >-
     else '/home/' ~ ssh_authorized_keys_manage_user
   }}
 ssh_authorized_keys_manage_entries: []
+# true: render the complete authorized_keys file (keys not listed are removed).
+# false: add or update only the listed entries and leave every other line alone.
+ssh_authorized_keys_manage_exclusive: true

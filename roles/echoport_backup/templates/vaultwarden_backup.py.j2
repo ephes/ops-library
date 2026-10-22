@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tarfile
@@ -226,23 +225,23 @@ def ensure_binaries() -> None:
                 raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
 
 
-def sqlite_backup(source_db: str, backup_path: Path) -> None:
-    backup_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(source_db) as source_conn:
-        with sqlite3.connect(str(backup_path)) as backup_conn:
-            source_conn.backup(backup_conn)
-    if not backup_path.exists():
-        raise RuntimeError(f"SQLite backup was not created: {backup_path}")
+{% include '_sqlite_backup.py.j2' %}
 
-    integrity = run_cmd(["sqlite3", str(backup_path), "PRAGMA integrity_check;"])
-    if "ok" not in integrity.stdout.lower():
-        raise RuntimeError(f"SQLite backup integrity check failed: {integrity.stdout.strip()}")
+
+def sqlite_backup(source_db: str, backup_path: Path) -> None:
+    # Never let sqlite3 create an empty database for a missing source.
+    if not Path(source_db).is_file():
+        raise RuntimeError(f"Source database not found: {source_db}")
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    error = backup_sqlite(source_db, backup_path)
+    if error:
+        raise RuntimeError(f"SQLite backup of {source_db} failed: {error}")
 
 
 def sqlite_integrity_check(path: str) -> None:
-    integrity = run_cmd(["sqlite3", path, "PRAGMA integrity_check;"])
-    if "ok" not in integrity.stdout.lower():
-        raise RuntimeError(f"SQLite integrity check failed for {path}: {integrity.stdout.strip()}")
+    error = sqlite_integrity_error(path)
+    if error:
+        raise RuntimeError(f"SQLite {error} ({path})")
 
 
 def remove_sqlite_wal_shm(db_path: str) -> None:

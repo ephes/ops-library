@@ -56,6 +56,32 @@
     homeassistant_backup_archive: "{{ homeassistant_backup_dir }}.{{ homeassistant_backup_archive_format }}"
   when: homeassistant_backup_create_archive
 
+- name: "Ensure backup root exists"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_root }}"
+    state: directory
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_dir_mode }}"
+
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ homeassistant_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: homeassistant_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ homeassistant_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: "Ensure backup directory exists"
   ansible.builtin.file:
     path: "{{ homeassistant_backup_dir }}"
@@ -87,11 +113,17 @@
   loop: "{{ homeassistant_backup_extra_dirs | default([]) }}"
   when: item.include | default(true) | bool
 
+# Home Assistant keeps writing while this runs: `.timeout` waits for a
+# committing writer instead of failing with "database is locked".
 - name: "Create SQLite backup using .backup"
   ansible.builtin.command:
     cmd: >
-      sqlite3 "{{ homeassistant_backup_sqlite_path }}"
+      sqlite3 "{{ homeassistant_backup_sqlite_path }}" ".timeout 30000"
       ".backup '{{ homeassistant_backup_dir }}/config/{{ homeassistant_backup_sqlite_path | basename }}'"
+  register: _ha_backup_sqlite_result
+  retries: 2
+  delay: 5
+  until: _ha_backup_sqlite_result.rc == 0
   when:
     - homeassistant_backup_use_sqlite_backup | bool
     - _ha_backup_exists[homeassistant_backup_sqlite_path] | default(false)
@@ -197,6 +229,16 @@
     chdir: "{{ homeassistant_backup_root }}"
   when: homeassistant_backup_create_archive and homeassistant_backup_archive_format == 'tar.gz'
   changed_when: true
+
+# tar writes the archive with the default umask; make it owner-only.
+- name: "Restrict archive permissions"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_archive }}"
+    mode: "0600"
+  when:
+    - homeassistant_backup_create_archive
+    - homeassistant_backup_archive_format == 'tar.gz'
+    - not ansible_check_mode
 
 - name: "Ensure local archive directory exists"
   ansible.builtin.file:

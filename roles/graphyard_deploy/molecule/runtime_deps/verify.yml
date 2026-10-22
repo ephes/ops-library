@@ -1,0 +1,50 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Load the role defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../defaults/main.yml"
+
+    - name: Read the dependencies systemd loaded
+      ansible.builtin.command:
+        argv: [graphyard-unit-state, deps, "{{ item }}"]
+      changed_when: false
+      register: runtime_deps_loaded
+      loop:
+        - "{{ graphyard_web_service_name }}"
+        - "{{ graphyard_agent_service_name }}"
+        - graphyard-control-requires
+
+    - name: Assert web and agent want the runtime and order after it, nothing stronger
+      ansible.builtin.assert:
+        that:
+          - runtime in deps.Wants
+          - runtime in deps.After
+          - runtime not in deps.Requires
+          - runtime not in deps.Requisite
+          - runtime not in deps.BindsTo
+          - runtime not in deps.PartOf
+        fail_msg: "{{ item.item }}: {{ deps | to_json }}"
+      vars:
+        runtime: "{{ graphyard_runtime_service_name }}.service"
+        deps: "{{ item.stdout | from_json }}"
+      loop: "{{ runtime_deps_loaded.results[:2] }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Assert the control requires the runtime
+      ansible.builtin.assert:
+        that:
+          - >-
+            (graphyard_runtime_service_name ~ '.service')
+            in (runtime_deps_loaded.results[2].stdout | from_json).Requires
+
+    - name: Run the cases with each agent implementation
+      ansible.builtin.include_tasks: cases.yml
+      loop: [python, rust]
+      loop_control:
+        loop_var: agent_impl

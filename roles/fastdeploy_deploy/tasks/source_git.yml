@@ -46,12 +46,9 @@
   register: git_result
 
 - name: Ensure correct ownership of git repository
-  ansible.builtin.file:
-    path: "{{ fastdeploy_git_dest }}"
-    owner: "{{ fastdeploy_user }}"
-    group: "{{ fastdeploy_group }}"
-    recurse: true
-  become: true
+  ansible.builtin.include_tasks: site_ownership.yml
+  vars:
+    fastdeploy_ownership_root: "{{ fastdeploy_git_dest }}"
   when: git_result.changed
 
 - name: Clean Python bytecode files after git update

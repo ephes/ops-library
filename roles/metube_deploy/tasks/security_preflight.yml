@@ -1,0 +1,18 @@
+---
+# Before any change: an existing environment must already meet the certifi/pip
+# floors (python_security_floor). A deploy never repairs or replaces it here;
+# the message points at the host's supported remediation.
+- name: "security_preflight | Check for an existing MeTube environment"
+  ansible.builtin.stat:
+    path: "{{ metube_venv_path }}/bin/python"
+  register: metube_security_venv_python
+
+- name: "security_preflight | Verify the existing MeTube environment's trust floors"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ metube_venv_path }}/bin/python"
+    python_security_floor_user: "{{ metube_user }}"
+    python_security_floor_label: "MeTube environment"
+  when: metube_security_venv_python.stat.exists

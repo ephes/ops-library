@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Activate prepared per-container trust stores without changing application images
+  license: MIT
+  min_ansible_version: '2.20.3'
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

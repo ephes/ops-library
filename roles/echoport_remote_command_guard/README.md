@@ -19,8 +19,12 @@ and paths named in a per-host policy.
 - writes the policy as JSON to `/etc/echoport/remote-command-guard.json`
   (root, `0644`), validated by the guard itself (`--check-policy`) before it
   replaces the old one;
-- sets the fact `echoport_remote_command_guard_forced_command`
-  (`/usr/bin/python3 -I <guard> <policy>`) for the `authorized_keys` entry.
+- sets the fact `echoport_remote_command_guard_forced_command` for the
+  `authorized_keys` entry: `/usr/bin/python3 -I <guard> <policy>` with the
+  default impl `python` (see [Rust guard](#rust-guard-impl-selector) for
+  `shadow` and `rust`);
+- with `echoport_remote_command_guard_rust_version` set, installs the Rust
+  port of the guard as well (below).
 
 The role does not touch `authorized_keys`. The consumer pins the key, for
 example with `ssh_authorized_keys_manage`:
@@ -36,7 +40,10 @@ command does not exist yet and every run fails.
 
 sshd hands the requested command to the guard in `SSH_ORIGINAL_COMMAND`. It
 is parsed with `shlex` and must match one of these shapes exactly; the guard
-then executes it directly (no shell) with a fixed `PATH`:
+then executes it directly (no shell) with a fixed `PATH`, except `chmod`,
+`chown`, `mv` and `rm -f <db>-wal <db>-shm`, which the guard carries out
+itself on file descriptors (see [Files the guard opens
+itself](#files-the-guard-opens-itself)):
 
 | Shape | Allowed when |
 |---|---|
@@ -59,13 +66,16 @@ then executes it directly (no shell) with a fixed `PATH`:
 | `chown [-R] <owner> <path>` | path inside a root whose `owner` matches |
 | `rm -f <dump>`, `rm -f <db>-wal <db>-shm` | dump file pattern, or inside a root |
 | `mktemp -d <template>`, `rm -rf -- <tmpdir>` | `<template>` in `temp_dirs` or a `sqlite_snapshots` entry's `temp_dir` |
-| `chown <owner> <tmpdir>`, `runuser -u <user> -- sqlite3 <database> ".backup '<tmpdir>/<name>'"`, `runuser -u <user> -- sqlite3 <tmpdir>/<name> 'PRAGMA integrity_check;'`, `cat <tmpdir>/<name>` | a `sqlite_snapshots` entry (the GoToSocial online snapshot): `<tmpdir>` from its `temp_dir`, `<owner>`/`<user>` its owner; `cat` is fed by the guard, which opens the file without following symlinks |
+| `chown <owner> <tmpdir>`, `runuser -u <user> -- sqlite3 <database> [".timeout <ms>"] ".backup '<tmpdir>/<name>'"`, `runuser -u <user> -- sqlite3 <tmpdir>/<name> 'PRAGMA integrity_check;'`, `cat <tmpdir>/<name>` | a `sqlite_snapshots` entry (the GoToSocial online snapshot): `<tmpdir>` from its `temp_dir`, `<owner>`/`<user>` its owner; `cat` is fed by the guard, which opens the file without following symlinks |
 | `curl -fsS -o /dev/null <url>` | `url` in `ready_urls` |
 | `sh -c '<probe>'`, `du -sb -- <p>`, `mktemp -d /tmp/echoport-pp-private-media.XXXXXXXX`, `umask 077 && tar -C <parent> -czf <tmpdir>/private_media.tar.gz -- <name>`, `rm -rf -- <tmpdir>` | the python-podcast private media backup, `<p>` in `private_media_paths` |
 
 "Inside a root" is decided on the resolved path (`os.path.realpath`), so a
-symlink inside a root that points elsewhere is refused. Paths may only
-contain `[A-Za-z0-9._/-]` and no `.`/`..` components.
+symlink inside a root that points elsewhere is refused. A path the guard
+changes (`chmod`, `chown`, `mv`, `rm -f` of side files) must also lie inside
+the root as written (no trailing `/`, no detour through a symlink), and the
+guard then refuses any symlink on it. Paths may only contain
+`[A-Za-z0-9._/-]` and no `.`/`..` components.
 
 Uploads run as an unprivileged user (`runuser -u <user> --`): into a root as
 the root's `owner` (which must not be root), restore dumps as `postgres`. The
@@ -107,6 +117,41 @@ their own paths after the guard's checks: a local user who can write inside a
 root could swap a path for a symlink in between and have root read another
 file into the backup (not new; the runners did the same before the pin).
 
+**Changes as root are made by the guard itself.** `chmod 0600|0700 <path>`,
+`chown [-R] <owner> <path>` (also the snapshot temp dir), both `mv` forms
+and `rm -f <db>-wal <db>-shm` are not run as tools on a pathname, which the
+root's service user could redirect with a symlink after the guard's checks
+(service user → root; fixed in work item `echoport-guard-toctou-hardening`,
+`rust/echoport-command-guard/PLAN.md` 4.5 and R12). The guard opens `/` and
+each directory of the path with `O_NOFOLLOW|O_DIRECTORY`, so a symlink
+anywhere on the path is refused, and works relative to the last directory
+it opened. `chmod`, `mv` and `rm` run as the root's owner (the guard drops to
+that user first), so they can only do what that user could do itself, and
+since the guard opens what it walks for reading, not a `chmod` of a file or
+`mv`/`rm` in a directory that user cannot read; `chown` needs root:
+
+- `chmod`/`chown`: the entry is opened with `O_NOFOLLOW` and must be the
+  inode `lstat` saw, a directory or a regular file with one link (a hard
+  link cannot bring an outside file into the root); then `fchmod`/`fchown`.
+  The snapshot temp dir must still be root's with no group/other access;
+- `chown -R`: the same for every entry, one open directory per level;
+  symlinks inside the tree are neither followed nor changed, fifos, sockets
+  and devices are refused;
+- `mv`: one `renameat`; the target is replaced as a name, never followed
+  into (no move into a target directory, no copy across filesystems);
+  without `<p>.tmp` → `<p>` the rename never replaces an existing target
+  (`renameat2` with `RENAME_NOREPLACE`), also one that appeared after the
+  check;
+- `rm -f`: `unlinkat` on the name; missing files are fine.
+
+Success is exit 0 with no output, as from the tools. A failure is exit 1
+with `command not allowed` on stderr and the reason in the `refused from`
+log line (for example `symbolic link in the path: '/home/marina/site/dir'`
+or `mv failed: '<a>' -> '<b>': No such file or directory`); before, the
+tool printed its own message and the guard logged `allowed from`. The Rust
+guard does the same from 0.2.0 on (0.1.0 still ran the tools and is never
+installed).
+
 Everything else is refused with `command not allowed` (exit 1), including an
 interactive session, the SFTP subsystem (which is why the runners call
 `scp -O`), command chaining and any other user than `postgres` for `sudo`.
@@ -129,6 +174,14 @@ exactly. Restore private media through ops-control instead.
 | `echoport_remote_command_guard_path` | `/usr/local/sbin/echoport-remote-command-guard` | Guard location. |
 | `echoport_remote_command_guard_policy_path` | `/etc/echoport/remote-command-guard.json` | Policy location. |
 | `echoport_remote_command_guard_python` | `/usr/bin/python3` | Interpreter for the forced command. |
+| `echoport_remote_command_guard_impl` | `python` | Which guard decides: `python`, `shadow` or `rust` (below). |
+| `echoport_remote_command_guard_rust_version` | `""` | Rust guard release to install (e.g. `0.1.0`); installed even with impl `python`. Empty: no Rust guard. |
+| `echoport_remote_command_guard_rust_sha256` | `""` | sha256 of the release archive; required unless a local archive is set. |
+| `echoport_remote_command_guard_rust_local_archive` | `""` | Archive on the controller instead of the GitHub release (development, molecule). |
+| `echoport_remote_command_guard_rust_install_root` | `/usr/local/lib/echoport-command-guard` | `<root>/<version>/echoport-command-guard`. |
+| `echoport_remote_command_guard_rust_keep_versions` | `3` | Newest Rust versions `confirm_live.yml` keeps, on top of the pins and the versions `authorized_keys` names. |
+| `echoport_remote_command_guard_authorized_keys_path` | `/root/.ssh/authorized_keys` | `confirm_live.yml`: the file the playbook wrote. |
+| `echoport_remote_command_guard_confirm_public_key` | `""` | `confirm_live.yml`: the pinned key (`<type> <base64> [comment]`) whose line carries the forced command. |
 
 Policy shape:
 
@@ -178,11 +231,94 @@ echoport_remote_command_guard_policy:
               from="100.64.0.10",restrict,command="{{ echoport_remote_command_guard_forced_command }}"
 ```
 
+## Rust guard (impl selector)
+
+The guard is being ported to Rust (`rust/echoport-command-guard/PLAN.md`,
+binary `echoport-command-guard`, released as
+`echoport-command-guard-v<version>` on GitHub). The role switches between
+them with `echoport_remote_command_guard_impl`:
+
+| impl | Forced command | Who decides |
+|---|---|---|
+| `python` (default) | `/usr/bin/python3 -I <guard> <policy>`, byte for byte as before | the Python guard |
+| `shadow` | `<bin> --shadow <policy> /usr/bin/python3 -I <guard> <policy>` | the Python guard; the Rust guard logs its decision first (identifier `echoport-remote-command-guard-shadow`, one JSON record, same `_PID` as the Python line) and then always execs Python |
+| `rust` | `<bin> <policy>` | the Rust guard |
+
+`<bin>` is `<rust_install_root>/<rust_version>/echoport-command-guard`.
+Every part is a plain path, so nothing needs quoting inside `command="…"`.
+
+With `echoport_remote_command_guard_rust_version` set (required for `shadow`
+and `rust`, together with `_rust_sha256` or `_rust_local_archive`) the main
+tasks also
+
+- install the release through the internal helper `rust_release_binary`
+  (verified download, exact archive members, root:root `0755`, and
+  `<bin> --version` as `nobody` must name the version);
+- assert that every component of `<bin>`'s path up to `/` is no symlink,
+  belongs to root and is not group- or world-writable (sshd runs it as
+  root), and that `<bin>`, its version directory and the install root are
+  root:root `0755`;
+- run the Rust `--check-policy` on the rendered policy before the policy is
+  installed (the Python guard still validates it on install, as before).
+
+The Python guard is always installed: it is the rollback target and what
+`shadow` execs.
+
+**Rollback independence.** With impl `python` every Rust step only warns
+(an ignored failed task): a missing, broken or unrunnable Rust release
+never blocks a switch back to Python. With `shadow` or `rust` a Rust failure
+stops the play before the forced command is published, so the old line
+stays.
+
+**No pin and no prune in the main tasks.** When they run, the new
+`authorized_keys` line is not written yet. The consumer includes
+`tasks_from: confirm_live.yml` after it wrote the line and probed through
+it (in the same play, for every impl, the rollback included):
+
+```yaml
+- name: Confirm the guard live, pin and prune
+  ansible.builtin.include_role:
+    name: local.ops_library.echoport_remote_command_guard
+    tasks_from: confirm_live.yml
+  vars:
+    echoport_remote_command_guard_confirm_public_key: "{{ deploy_public_key }}"
+```
+
+`confirm_live.yml`
+
+1. reads `authorized_keys` and requires exactly one line for the pinned key,
+   with exactly the published `command="…"` (fatal for every impl); with
+   `shadow`/`rust`, `<bin> --version` must name the target version;
+2. builds the protect list: every version any line names as
+   `<root>/<version>/echoport-command-guard` (also other keys' and hand-edited
+   lines), plus `rust_version`. A line that mentions the install root in any
+   other form, or an unreadable file, makes the live state unknown and the
+   prune deletes nothing;
+3. moves the pins of the consumer `echoport_remote_command_guard`
+   (`<root>/.pins/`): `shadow`/`rust` pin the target version (the old one
+   becomes the previous pin); `python` removes the current pin and keeps its
+   version as the previous pin, so the last Rust version verified live stays
+   installed for a quick switch back;
+4. prunes: keeps the `rust_keep_versions` newest versions, every pinned
+   version and the protect list.
+
+A play that stops before step 3 moves no pin and prunes nothing. With impl
+`python` steps 3 and 4, and invalid Rust inputs (version, install root,
+`keep_versions`), only warn; the line is still verified. In check mode nothing changes; a line that
+is not written yet is reported instead of failing.
+
+Switch and rollback are the same play with another impl: set
+`echoport_remote_command_guard_impl: rust` (or `shadow`) and run it; to roll
+back, run it with `python`. The ops-control wiring (pins in the inventory,
+the playbook's `confirm_live.yml` include, the pre-probe switch for a broken
+Rust binary, the shadow compare script) is slice S8 of the plan.
+
 ## Testing
 
 ```bash
-just test-echoport-remote-command-guard   # guard rules + every remote runner's real commands
-just molecule-test echoport_remote_command_guard  # real sshd, fish login shell, scp -O, rsync, snapshot, dump upload
+just test-echoport-remote-command-guard   # guard rules + every remote runner's real commands + the impl selector
+just molecule-test echoport_remote_command_guard  # impl python: real sshd, fish login shell, scp -O, rsync, snapshot, dump upload
+just test-echoport-remote-command-guard-molecule  # the scenarios default, shadow, rust and pins
 ```
 
 The unit tests render each remote runner template, drive a backup and a
@@ -190,7 +326,44 @@ restore from that backup with the network faked, and require every command
 the runner would send to pass the guard for its host; rsync calls are mapped
 from the runner's real client options to the server command (unknown options
 fail). They also cover the refusals (rsync `-L`/`-K`/devices, scp onto
-symlinks, devices, FIFOs and hard links, the redirect files). Molecule runs
-the runners' rsync/scp options, a SQLite snapshot fetched through the guard's
-`cat` (a symlink in its place is refused) and a dump upload into a root-only
-temp dir against a real sshd.
+symlinks, devices, FIFOs and hard links, the redirect files) and the race
+regressions of the guard's own mutations
+(`rust/echoport-command-guard/parity/races.json`, which the Rust guard runs
+too: a symlink, renamed directory or hard link put in place between the
+check and the change, or at exact points of the walk). Molecule runs the
+runners' rsync/scp options, a SQLite snapshot fetched through the guard's
+`cat` (a symlink in its place is refused), a dump upload into a root-only
+temp dir and the mutations through symlinks against a real sshd.
+
+The molecule scenarios `default` (impl python), `shadow` and `rust` run the
+same playbooks (`molecule/shared/`) on Ubuntu 24.04 and Debian 13: the role,
+the `authorized_keys` line, the post-probe and `confirm_live.yml`, then the
+verify above. `shadow` and `rust` install the guard built from the checkout
+as its crate version (`rust/echoport-command-guard/Cargo.toml`, `0.2.0`;
+`rust/echoport-command-guard/parity/e2e/build-local-archive.sh`
+builds it in a Debian 12 container for the Docker host's architecture; set
+`ECHOPORT_GUARD_LOCAL_ARCHIVE` to use another archive). The shadow run also
+requires one shadow journal line per guard line with the same `_PID`.
+The `pins` scenario runs simulated playbook runs cut after any step with
+stub releases and impl `shadow`: repeated failed deployments with different
+targets, a stale line, a written but unverified line, protection from the
+live state alone, an unknown live state, the switch to Python, check mode,
+and the rollback-independence cases (a binary that exits 1 and an archive
+that is not gzip converge with impl `python`; `rust` stops).
+`tests/test_echoport_remote_command_guard_role.py` covers the live-state
+filter, the forced command per impl and `confirm_live.yml` against
+localhost.
+
+The guard is being ported to Rust (`rust/echoport-command-guard/PLAN.md`);
+the Python guard stays the reference. Its decisions are frozen as fixtures in
+`rust/echoport-command-guard/fixtures/`, generated from this guard and the
+runners' recorded commands. `just test-echoport-remote-command-guard` fails
+when the guard or a runner template changed without them, so after such a
+change run
+
+```bash
+just echoport-command-guard-fixtures   # needs uv; generates under Python 3.12, checks 3.13
+```
+
+and commit the regenerated fixtures (and, once the port has rules, the Rust
+rule) in the same change.

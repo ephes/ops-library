@@ -6,6 +6,52 @@
 
 - name: Deploy os_apt_maintenance
   when: os_apt_maintenance_enabled | bool
+  # Inputs of the endpoint's implementation switch (select and verify below,
+  # only with os_apt_maintenance_endpoint_enabled; rust/metrics-httpd/PLAN.md
+  # 7.2, argv of 7.3). The argv, sandbox and IP allow list mirror
+  # templates/os-apt-maintenance-endpoint.service.j2 and the values the
+  # template bakes into templates/os_apt_maintenance_httpd.py.j2.
+  vars:
+    metrics_httpd_switch_impl: "{{ os_apt_maintenance_endpoint_impl }}"
+    metrics_httpd_switch_service_name: "{{ os_apt_maintenance_endpoint_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ os_apt_maintenance_endpoint_user }}"
+    metrics_httpd_switch_validate_group: "{{ os_apt_maintenance_endpoint_group }}"
+    metrics_httpd_switch_argv:
+      - apt-state
+      - --bind
+      - "{{ os_apt_maintenance_endpoint_bind }}"
+      - --port
+      - "{{ os_apt_maintenance_endpoint_port | int | string }}"
+      - --path
+      - "{{ os_apt_maintenance_endpoint_path }}"
+      - --json-path
+      - "{{ os_apt_maintenance_state_file }}"
+      - --htpasswd-file
+      - "{{ os_apt_maintenance_endpoint_htpasswd_path }}"
+      - --freshness-max-age
+      - "{{ os_apt_maintenance_freshness_max_age_seconds | int | string }}"
+      - --state-max-age
+      - "{{ os_apt_maintenance_endpoint_state_max_age_seconds | int | string }}"
+      - --realm
+      - os-apt-maintenance
+      - --server-name
+      - os-apt-maintenance-httpd/0.1
+    metrics_httpd_switch_unit_sandbox:
+      - NoNewPrivileges=yes
+      - ProtectSystem=strict
+      - ProtectHome=yes
+      - PrivateTmp=yes
+      - "ReadOnlyPaths={{ os_apt_maintenance_state_file }}"
+      - "ReadOnlyPaths={{ os_apt_maintenance_endpoint_htpasswd_path }}"
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart os-apt-maintenance-endpoint
+    metrics_httpd_switch_python_script: "{{ os_apt_maintenance_endpoint_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ os_apt_maintenance_endpoint_bind }}"
+    metrics_httpd_switch_probe_port: "{{ os_apt_maintenance_endpoint_port }}"
+    metrics_httpd_switch_probe_path: "{{ os_apt_maintenance_endpoint_path }}"
+    metrics_httpd_switch_probe_realm: os-apt-maintenance
+    metrics_httpd_switch_ip_address_allow: "{{ ['localhost'] + os_apt_maintenance_endpoint_ip_allow }}"
   block:
     - name: Validate apt maintenance variables
       ansible.builtin.assert:
@@ -236,6 +282,15 @@
         group: "{{ os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root' }}"
         mode: "{{ '0640' if os_apt_maintenance_endpoint_enabled | bool else '0644' }}"
 
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below. Placed after the state
+    # file exists: the unit's (and --check-config's) ReadOnlyPaths= names it.
+    - name: Select the endpoint's HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+      when: os_apt_maintenance_endpoint_enabled | bool
+
     - name: Ensure apt maintenance timer is enabled and started
       ansible.builtin.systemd:
         name: "{{ os_apt_maintenance_service_name }}.timer"
@@ -277,4 +332,15 @@
         enabled: true
         state: started
         daemon_reload: true
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Apply a pending endpoint implementation switch before verifying it
+      ansible.builtin.meta: flush_handlers
+
+    # The endpoint runs the selected implementation and answers 401 with its
+    # realm; then the metrics-httpd pin moves and old releases are pruned.
+    - name: Verify the endpoint's HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify
       when: os_apt_maintenance_endpoint_enabled | bool

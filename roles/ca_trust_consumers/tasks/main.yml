@@ -1,0 +1,74 @@
+---
+# Make long-running TLS clients use a fixed system CA store: Node.js trust
+# mode (environment file and unit drop-ins) and serial restarts of processes
+# that loaded their roots before the store changed. Nothing is changed or
+# restarted before the CA readiness gate in preflight.yml passes.
+
+- name: Validate ca_trust_consumers settings
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "Debian"
+      - ca_trust_consumers_ca_min_version | string | length > 0
+      - ca_trust_consumers_forbidden_root_sha256 | length > 0
+      - ca_trust_consumers_forbidden_root_sha256 | select('match', '^[0-9A-F]{64}$') | list | length
+        == ca_trust_consumers_forbidden_root_sha256 | length
+      - ca_trust_consumers_node_flag is match('^--[a-z][a-z0-9-]*$')
+      - ca_trust_consumers_node_dropin_name is match('^[A-Za-z0-9_.-]+\.conf$')
+      - ca_trust_consumers_systemd_dir is match('^/')
+      # sudo skips sudoers.d files whose names contain a dot or end in "~".
+      - ca_trust_consumers_sudoers_dropin | basename is match('^[A-Za-z0-9_-]+$')
+      - ca_trust_consumers_sudo_env_file is match('^/')
+      - (ca_trust_consumers_node_units + ca_trust_consumers_restart_units)
+        | map(attribute='name') | select('match', '^[A-Za-z0-9@_.:-]+\.service$') | list | length
+        == (ca_trust_consumers_node_units + ca_trust_consumers_restart_units) | length
+      - (ca_trust_consumers_node_units + ca_trust_consumers_restart_units) | map(attribute='name') | unique | length
+        == (ca_trust_consumers_node_units + ca_trust_consumers_restart_units) | length
+    fail_msg: >-
+      ca_trust_consumers needs a Debian-family host, ca_trust_consumers_ca_min_version,
+      upper-case SHA-256 fingerprints, a --flag, a *.conf drop-in name, and unique
+      *.service unit names listed in only one of node_units / restart_units.
+    quiet: true
+
+- name: Check CA readiness
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Check listed units for pending unit-file changes
+  ansible.builtin.import_tasks: pending_units.yml
+
+- name: Configure Node.js CLI trust
+  ansible.builtin.import_tasks: node_cli.yml
+  when: ca_trust_consumers_node_cli | bool
+
+- name: Configure Node.js service trust
+  ansible.builtin.include_tasks: node_unit.yml
+  loop: "{{ ca_trust_consumers_node_units }}"
+  loop_control:
+    loop_var: ca_trust_consumers_unit
+    label: "{{ ca_trust_consumers_unit.name }}"
+
+# One unit at a time, Node.js services first, each list in order: each restart
+# is checked healthy before the next one starts.
+- name: Restart Node.js services that hold pre-update roots or lack the flag
+  ansible.builtin.include_tasks: restart_unit.yml
+  loop: "{{ ca_trust_consumers_node_units }}"
+  loop_control:
+    loop_var: ca_trust_consumers_unit
+    label: "{{ ca_trust_consumers_unit.name }}"
+  vars:
+    ca_trust_consumers_unit_is_node: true
+
+- name: Restart other consumers that hold pre-update roots
+  ansible.builtin.include_tasks: restart_unit.yml
+  loop: "{{ ca_trust_consumers_restart_units }}"
+  loop_control:
+    loop_var: ca_trust_consumers_unit
+    label: "{{ ca_trust_consumers_unit.name }}"
+  vars:
+    ca_trust_consumers_unit_is_node: false
+
+- name: Verify Node.js service trust at runtime
+  ansible.builtin.include_tasks: verify_node_unit.yml
+  loop: "{{ ca_trust_consumers_node_units }}"
+  loop_control:
+    loop_var: ca_trust_consumers_unit
+    label: "{{ ca_trust_consumers_unit.name }}"

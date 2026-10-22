@@ -128,7 +128,6 @@
   set_fact:
     encrypted_volume_crypttab_line: "{{ encrypted_volume_mapper_name }} {{ encrypted_volume_crypttab_device }} {{ (encrypted_volume_use_keyfile | bool) | ternary(encrypted_volume_keyfile_path, 'none') }} {{ encrypted_volume_crypttab_options }}"
     encrypted_volume_fstab_src: "{{ encrypted_volume_mapper_path }}"
-    encrypted_volume_fstab_line: "{{ encrypted_volume_mapper_path }} {{ encrypted_volume_mount_point }} {{ encrypted_volume_fs_type }} {{ encrypted_volume_mount_opts }} 0 2"
 
 - name: Validate configuration without changes
   when: encrypted_volume_validate_only
@@ -150,7 +149,7 @@
       assert:
         that:
           - encrypted_volume_crypttab_stat.stat.exists
-          - (encrypted_volume_crypttab_file.content | b64decode | regex_search('^' ~ (encrypted_volume_crypttab_line | regex_escape) ~ '$', multiline=True))
+          - (encrypted_volume_crypttab_file.content | b64decode | regex_search('^' ~ (encrypted_volume_crypttab_line | regex_escape) ~ '$', multiline=True)) is not none
         fail_msg: "/etc/crypttab is missing the expected entry: {{ encrypted_volume_crypttab_line }}"
 
     - name: Check /etc/fstab presence
@@ -164,12 +163,39 @@
         src: /etc/fstab
       register: encrypted_volume_fstab_file
 
+    - name: Read filesystem UUID of the open mapper
+      command: lsblk -n -o UUID "{{ encrypted_volume_mapper_path }}"
+      register: encrypted_volume_validate_fs_uuid
+      changed_when: false
+      when: encrypted_volume_expected_mapper_active | bool
+
     - name: Assert fstab entry exists
       assert:
         that:
           - encrypted_volume_fstab_stat.stat.exists
-          - (encrypted_volume_fstab_file.content | b64decode | regex_search('^' ~ (encrypted_volume_fstab_line | regex_escape) ~ '$', multiline=True))
-        fail_msg: "/etc/fstab is missing the expected entry: {{ encrypted_volume_fstab_line }}"
+          - (encrypted_volume_fstab_file.content | b64decode | regex_search(encrypted_volume_fstab_validate_pattern, multiline=True)) is not none
+        fail_msg: >-
+          /etc/fstab is missing the expected entry: {{ encrypted_volume_fstab_validate_sources }}
+          {{ encrypted_volume_mount_point }} {{ encrypted_volume_fs_type }} {{ encrypted_volume_mount_opts }}
+          {{ encrypted_volume_fstab_dump }} {{ encrypted_volume_fstab_passno }}
+      vars:
+        # The configure path writes UUID=<filesystem UUID> when it knows it.
+        # That source is accepted only when it is the UUID of the open
+        # mapper's filesystem; the mapper path is always accepted. The other
+        # fields must match exactly (whitespace may differ).
+        encrypted_volume_validate_uuid: >-
+          {{ (encrypted_volume_validate_fs_uuid.stdout | default('')) | trim
+             if (encrypted_volume_expected_mapper_active | bool) else '' }}
+        encrypted_volume_fstab_validate_sources: >-
+          {{ encrypted_volume_mapper_path
+             ~ ((' or UUID=' ~ encrypted_volume_validate_uuid) if (encrypted_volume_validate_uuid | length > 0) else '') }}
+        encrypted_volume_fstab_validate_pattern: >-
+          {{ '^(' ~ (encrypted_volume_mapper_path | regex_escape)
+             ~ (('|UUID=' ~ (encrypted_volume_validate_uuid | regex_escape)) if (encrypted_volume_validate_uuid | length > 0) else '')
+             ~ ')[ \t]+'
+             ~ ([encrypted_volume_mount_point, encrypted_volume_fs_type, encrypted_volume_mount_opts,
+                 encrypted_volume_fstab_dump | string, encrypted_volume_fstab_passno | string]
+                | map('regex_escape') | join('[ \t]+')) ~ '[ \t]*$' }}
 
     - name: Assert mountpoint directory exists
       stat:
@@ -288,7 +314,6 @@
     - name: Choose fstab source
       set_fact:
         encrypted_volume_fstab_src: "{{ (encrypted_volume_mapper_uuid | default('') | length > 0) | ternary('UUID=' ~ encrypted_volume_mapper_uuid, encrypted_volume_mapper_path) }}"
-        encrypted_volume_fstab_line: "{{ ((encrypted_volume_mapper_uuid | default('') | length > 0) | ternary('UUID=' ~ encrypted_volume_mapper_uuid, encrypted_volume_mapper_path)) }} {{ encrypted_volume_mount_point }} {{ encrypted_volume_fs_type }} {{ encrypted_volume_mount_opts }} 0 2"
 
     - name: Ensure mountpoint exists
       file:
@@ -308,23 +333,27 @@
         regexp: "^{{ encrypted_volume_mapper_name | regex_escape }}\\s"
         line: "{{ encrypted_volume_crypttab_line }}"
 
-    - name: Ensure fstab entry is present
-      lineinfile:
-        path: /etc/fstab
-        create: true
-        owner: root
-        group: root
-        mode: '0644'
-        regexp: "^\\S+\\s+{{ encrypted_volume_mount_point | regex_escape }}\\s"
-        line: "{{ encrypted_volume_fstab_line }}"
-
     - name: Mount encrypted filesystem
       ansible.posix.mount:
         path: "{{ encrypted_volume_mount_point }}"
         src: "{{ encrypted_volume_fstab_src }}"
         fstype: "{{ encrypted_volume_fs_type }}"
         opts: "{{ encrypted_volume_mount_opts }}"
+        # This task is the only writer of the fstab entry (matched by mount
+        # point). An identical entry is left alone and nothing is remounted;
+        # a differing entry (source, options, dump, passno) is rewritten and,
+        # since the path is mounted, remounted so new options take effect.
+        dump: "{{ encrypted_volume_fstab_dump }}"
+        passno: "{{ encrypted_volume_fstab_passno }}"
         state: mounted
+
+    - name: Ensure /etc/fstab ownership and mode
+      file:
+        path: /etc/fstab
+        state: file
+        owner: root
+        group: root
+        mode: '0644'
 
     - name: Verify mount is active
       command: mountpoint -q "{{ encrypted_volume_mount_point }}"

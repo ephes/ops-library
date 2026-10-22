@@ -1,0 +1,39 @@
+---
+# The forced command for the pinned key's authorized_keys line
+# (rust/echoport-command-guard/PLAN.md 6.2):
+#   python: <python> -I <guard> <policy>   (byte for byte as before the port)
+#   shadow: <bin> --shadow <policy> <python> -I <guard> <policy>
+#   rust:   <bin> <policy>
+# with <bin> = <rust_install_root>/<rust_version>/echoport-command-guard.
+- name: forced_command | Refuse a Rust forced command without a checked binary
+  ansible.builtin.assert:
+    that:
+      - >-
+        echoport_remote_command_guard_impl == 'python'
+        or (_echoport_guard_rust_ok | default(false) | bool)
+        or ansible_check_mode
+      - echoport_remote_command_guard_impl == 'python' or _echoport_guard_rust_binary is match('^/[A-Za-z0-9._/-]+$')
+    fail_msg: >-
+      impl {{ echoport_remote_command_guard_impl }} needs an installed and
+      checked Rust guard ({{ _echoport_guard_rust_binary }}); the Rust steps
+      did not complete.
+    quiet: true
+  vars:
+    _echoport_guard_rust_binary: >-
+      {{ echoport_remote_command_guard_rust_install_root }}/{{ echoport_remote_command_guard_rust_version }}/echoport-command-guard
+
+- name: forced_command | Publish the forced command for authorized_keys
+  ansible.builtin.set_fact:
+    echoport_remote_command_guard_forced_command: >-
+      {{
+        _echoport_guard_python_command if echoport_remote_command_guard_impl == 'python'
+        else (_echoport_guard_rust_binary ~ ' --shadow ' ~ echoport_remote_command_guard_policy_path
+              ~ ' ' ~ _echoport_guard_python_command) if echoport_remote_command_guard_impl == 'shadow'
+        else _echoport_guard_rust_binary ~ ' ' ~ echoport_remote_command_guard_policy_path
+      }}
+  vars:
+    _echoport_guard_python_command: >-
+      {{ echoport_remote_command_guard_python }} -I {{ echoport_remote_command_guard_path }}
+      {{ echoport_remote_command_guard_policy_path }}
+    _echoport_guard_rust_binary: >-
+      {{ echoport_remote_command_guard_rust_install_root }}/{{ echoport_remote_command_guard_rust_version }}/echoport-command-guard

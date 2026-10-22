@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Prepare per-container eMudhra CA remediation stores
+  license: MIT
+  min_ansible_version: '2.20'
+dependencies: []

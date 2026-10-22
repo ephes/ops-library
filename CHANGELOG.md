@@ -1,9 +1,6 @@
 # Changelog
 
-<!-- Historical release notes repeat category headings within a release. -->
-<!-- markdownlint-disable MD024 -->
-
-## Unreleased — Consolidated APT source migration (2.48.0)
+## Unreleased — Consolidated APT source migration (2.67.0)
 
 - `postgres_install` and `vector_apt_install`: opt-in
   `*_repo_legacy_deb822_files` migrate exact matching legacy stanzas from
@@ -11,6 +8,1594 @@
   Other repositories remain intact, changed files are backed up, and repeated
   runs are idempotent. `tasks_from: repo_cleanup.yml` supports repository-only
   repairs without package installation or service changes.
+
+## Unreleased — software-live Rust port: shadow comparison (S9)
+
+- `rust/software-live/parity/shadow_compare.py` (PLAN.md 6.3, 8.1): compares
+  a host's production (Python) and shadow (Rust) observation, fetched
+  read-only over one `ssh` or from a saved bundle. Hard checks: same host and
+  policy hash, each summary derived from its observations, each projection
+  exactly the Python program's projection of its own state. Every other
+  difference is ignored (time and separate-cache fields), explained by a
+  change between the two observation times with its evidence (upstream data,
+  Traefik restart, dpkg or Traefik binary change, APT index refresh; an index
+  age crossing its limit explains only `apt.indexes_fresh`), or unexplained.
+  Verdict `match` (exit 0) without any other difference, `mismatch` (exit 1)
+  with an unexplained difference or failed hard check, `inconclusive` (exit
+  3) with explained differences only: an explanation never passes a sample,
+  it is repeated and does not count for the shadow period. Tests in `parity/test_shadow_compare.py`; the `rust`
+  CI job now runs the comparator tests under Python 3.12 (the projection
+  check imports the Python program). README and PLAN.md 6.3 describe it. No
+  role or collection change.
+
+## [2.66.2] - 2026-10-22
+
+### software-live Rust port: manual CLI on Rust hosts (S11)
+
+- `rust/software-live/PLAN.md` (status, 4.2 item 10, 7.5) and `README.md`:
+  the ops-control manual CLI `just software-live --host H` runs the
+  installed release
+  `<software_live_install_dir>/releases/<software_live_rust_version>/software-live
+  collect --config-json` over SSH on hosts with `software_live_impl: rust`
+  (version from the inventory pin) and keeps streaming `software_live.py` on
+  the others. No role or collection change.
+
+### software-live Rust port: inventory pin and runbook (S8)
+
+- `rust/software-live/PLAN.md` (status, 7.5, 8.1) and `README.md`: the
+  ops-control side of slice S8 is done — the inventory pins
+  `software-live-v0.1.0` (both variant checksums), every host stays on
+  `software_live_impl: python` with the shadow off, the deploy playbook
+  requires collection 2.65.0 (which contains the S6 role switch) and checks
+  the shadow endpoint against production when the shadow is on. No role or
+  collection change.
+
+### Rust ports: echoport-command-guard ops-control wiring (S8)
+
+- `rust/echoport-command-guard/PLAN.md` 6.3 ("As built (S8)") and the crate
+  README record the ops-control side of slice S8: impl `python` on both
+  pinned hosts, no Rust pin until S9 (it adds 0.2.0), `confirm_live.yml` right after the
+  post-probe of `authorize-root-ssh.yml`, the `deploy_backup_route_probe_fatal`
+  rollback switch and the strict shadow compare. That playbook now requires
+  collection 2.66.1 or later, the first release with both the S6 impl
+  selector and the H1 guard. No role or crate change.
+
+### graphyard_deploy: web and agent survive a runtime stop/start
+
+- `graphyard_deploy`: `graphyard-web.service` and `graphyard-agent.service`
+  now declare `Wants=` + `After=` on `graphyard-runtime.service` instead of
+  `Requires=`. Before, a stop of the runtime stopped them too, and starting
+  it again did not bring them back. The container CA activation stops and
+  then starts its owner units, and on 2026-10-21 this left Graphyard's web
+  and agent down for four hours. Now a restart, a stop and start or a failed
+  start of the runtime leaves both running. They still pull the runtime in
+  and start after it. The README's "Unit dependencies" section compares
+  `Requires=`/`PartOf=`/`BindsTo=`. The Rust agent drop-in (`agent-impl.conf`)
+  is unchanged and inherits the new dependency. On the next deploy the
+  changed unit files restart web and agent once.
+- New Molecule scenario `graphyard_deploy/runtime_deps`
+  (`just test-graphyard-deploy-runtime-deps-molecule`, Ubuntu 24.04 and
+  Debian 13). It runs the rendered units under systemd with stub programs
+  through restart, stop/start, failed-start and cold-start cases, with the
+  Python and the Rust agent selected. A `Requires=` control unit shows the old
+  behaviour.
+
+### software-live Rust port: release 0.1.0 (S7)
+
+- `rust/software-live/release.json` and version 0.1.0 of `software-live`
+  and `software-live-apt` (slice S7 of `rust/software-live/PLAN.md`, 7.1,
+  7.2, 7.4): the tag `software-live-v0.1.0` publishes
+  `software-live-0.1.0-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz` and
+  `…-debian13.tar.gz` (plus `.sha256`), each with `software-live`,
+  `software-live-apt`, `LICENSE` and `LICENSE.GPL-3.0`.
+- `rust-release.yml` and `rust/scripts/release_checks.py`: a
+  `release.json` may declare `shared` binaries. The new job `shared` builds
+  them once on the `ubuntu-22.04` runner (glibc floor 2.35), checks them and
+  hands them with their sha256 (`release_checks.py checksums`) to every
+  variant job, whose `verify` and `pack` accept only that build
+  (`--shared-bin-dir`, `--shared-sha256`) and run its `--version` again in
+  the variant's image; so both software-live archives carry the same
+  `software-live`. The variant jobs build, lint and test only the helper
+  (packages `g++ libapt-pkg-dev python3-apt`), check its glibc ceiling and
+  `NEEDED` allowlist and run `observe` as an extra smoke command. The build
+  and publish jobs now run after a skipped `shared` job; archives are
+  written and uploaded from the workspace (paths that also hold inside a
+  container job). Crates without `release.json` (metrics-httpd,
+  echoport-command-guard) release as before. Nothing installs the release;
+  no inventory pins it yet (S8).
+- Released: the GitHub release `software-live 0.1.0` (tag
+  `software-live-v0.1.0`, commit `98c68001`) has the archive sha256
+  `89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765`
+  (`ubuntu24.04`) and
+  `9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3`
+  (`debian13`); `software-live` is 3,464,320 bytes (the same file in both,
+  budget 6 MiB), `software-live-apt` 464,144 / 461,984 bytes (budget 2
+  MiB), every binary at most `GLIBC_2.34`. GitHub's `/releases/latest` now
+  answers with this release despite `--latest=false`; pins never use it.
+
+### software-live Rust port: parity harness
+
+- `rust/software-live/parity/` (slice S5 of `rust/software-live/PLAN.md`,
+  section 6.2): `run_parity.py` runs `software_live.py` and the Rust
+  release binaries side by side as root in throwaway `ubuntu:24.04` and
+  `debian:13` containers — `validate` for the policy matrix, the `serve`
+  start-up matrix, every raw endpoint request of `fixtures/serve.json`
+  against both live servers with the real `htpasswd`, `export-inventory`
+  with real root ownership, and `collect` on a real host (fake Traefik and
+  PostgreSQL processes, `systemctl`/`pg_lsclusters` shims, GitHub and
+  endoflife.date over HTTPS on loopback through `/etc/hosts` and a
+  throwaway CA in the system trust store, APT on real lists and the fake
+  repositories), including cache and state cross-reads and the
+  software_estate reader on the Rust projections. CI runs it as the last
+  step of the `software-live-apt` job; locally `just
+  rs-software-live-parity` (Docker). The comparator's tests run in the
+  workspace job.
+- Fix found by it: the Rust endpoint takes at most 99 header lines, as
+  Python's `http.client` does, and refuses every request head over 64 KiB
+  with 431 however the bytes arrive (hyper alone let heads of up to about
+  128 KiB through when they came in one read). PLAN.md 4.2 item 2 lists
+  the head limits exactly. Nothing installs or runs the binary; the
+  `software_live` role is unchanged.
+
+## [2.66.1] - 2026-10-22
+
+### Fixed
+
+- `homeassistant_deploy`: normalize surrounding conversation prompt whitespace
+  the same way as Core's TemplateSelector. YAML block prompts with a final newline
+  no longer trigger repeated subentry updates and agent reloads on every deploy.
+  Reject whitespace-only prompts during validation.
+
+### echoport_remote_command_guard: root-run mutations on file descriptors (H1)
+
+#### Security
+
+- `echoport_remote_command_guard`: the guard no longer runs `chmod
+  0600|0700`, `chown [-R]`, `mv` (both forms) and `rm -f <db>-wal <db>-shm`
+  as root on the pathname it checked. A local user who can write inside a
+  policy root (the root's service user, e.g. `gotosocial` in
+  `/var/lib/gotosocial`) could swap the path, or a directory on it, for a
+  symlink between the check and the tool's system call and have root
+  change the mode or owner of a file outside the root, or rename or remove
+  one there (service user → root). The guard now makes these changes itself:
+  it opens `/` and each directory of the path with `O_NOFOLLOW|O_DIRECTORY`
+  (a symlink anywhere on the path is refused) and changes, renames or
+  removes the entry relative to the directory it opened (`fchmod`/`fchown`
+  on an `O_NOFOLLOW` descriptor of the inode `lstat` saw, one link for a
+  regular file; `renameat`, or `renameat2(RENAME_NOREPLACE)` when the target
+  must not exist; `unlinkat`; `chown -R` one open directory per level,
+  symlinks in the tree neither followed nor changed). `chmod`, `mv` and `rm`
+  run as the root's owner (the guard drops to that user first), so the
+  kernel checks them with that user's own rights; `chown` keeps root.
+  `check()` also
+  requires each changed path to lie inside its root as written. Work item
+  `echoport-guard-toctou-hardening`, slice H1 of
+  `rust/echoport-command-guard/PLAN.md` (4.5, R12).
+- Runner-facing: the commands the runners send are allowed as before and
+  succeed with exit 0 and no output. A failed change is exit 1 with
+  `echoport-remote-command-guard: command not allowed` on stderr (before:
+  the tool's message) and a `refused from` log line with the reason
+  (before: `allowed from`). Stricter than the tools: a symlink on a changed
+  path is refused even when it resolves inside the root, a regular file with
+  more than one link and special files are not changed, `chmod` of a
+  root-owned file and `mv`/`rm` inside a root-owned directory fail (as with
+  any change the root's owner may not make; `mv`/`rm` of an entry in a
+  directory the owner can write follow that directory's permissions, as
+  `rename`/`unlink` do; also `chmod` of a file and `mv`/`rm` in a directory
+  the owner cannot read, which the guard opens for reading), `chown -R` leaves
+  symlinks' own owners alone, and `mv` never moves into an existing target
+  directory or across filesystems. The `echoport_backup` runners' tests pass
+  unchanged.
+- The hosts get the hardened guard with the next role run (`just
+  pin-deploy-backup-key <host>` in ops-control); the ops coordination rolls
+  it out together with the `.timeout` runner change.
+
+#### Rust ports
+
+- `rust/echoport-command-guard` 0.2.0: the same hardening in the Rust guard
+  (`src/mutate.rs`, the `Mutation` decision with an empty `argv` in
+  `--decide`/`--shadow` records), Layer-1 fixtures regenerated from the
+  hardened Python guard (`fixtures/GUARD_SHA256`), the race table
+  `parity/races.json` that both guards run (`parity/races.py`,
+  `tests/mutations.rs`; as root in the Layer-2 containers), mutation
+  scenarios in Layer 3 and the role's molecule verify. 0.2.0 is the first
+  release a host may get (S9); 0.1.0 is never installed. The guard role's
+  molecule scenarios install 0.2.0 built from the checkout. Released by the
+  tag `echoport-command-guard-v0.2.0` (`966d178e`):
+  `echoport-command-guard-0.2.0-x86_64-unknown-linux-gnu.tar.gz`, sha256
+  `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`,
+  stripped binary 705,952 bytes, highest glibc symbol version `GLIBC_2.34`.
+
+## [2.66.0] - 2026-10-22
+
+### Home Assistant built-in voice bridge
+
+- Add opt-in core `llama_cpp` provisioning, explicit no-control options, live
+  canary and `auto:llama_cpp` pipeline selection. Retire Custom Conversation
+  through the HA API before upgrading and rebuild environments containing its
+  component or LiteLLM, preserving the separate Matter environment and Python
+  trust/security floors. Credentials travel only on stdin. Existing deployments
+  retain their legacy behavior unless the built-in bridge is enabled.
+
+### software-live Rust port: endpoint
+
+- `rust/software-live` gets `serve` (slice S4 of
+  `rust/software-live/PLAN.md`): the authenticated JSON endpoint of
+  `software_live.py` on hyper 1 and a current-thread tokio runtime, behind
+  a small `Endpoint` boundary (bind check, Basic auth, server loop). Same
+  contract as Python (GET of the exact path, 404 before auth, 401 with
+  `WWW-Authenticate`, the state re-read per request through
+  `with_freshness`, 503 when missing or invalid, no request logging);
+  documented divergences in PLAN.md 4.2 items 1, 2 and 14 (HTTP/1.1 framing,
+  up to 16 connections at a time with the request head due within 5 s and
+  the password check, on a blocking thread, stopped after 5 s, the endpoint
+  configuration checked at startup).
+- `htpasswd -vi` is reproduced in process (bcrypt through the `bcrypt`
+  crate) with Apache's password, file and comparison rules; new fixture
+  `htpasswd.json` with the real `htpasswd` verdicts of Debian 13 and Ubuntu
+  24.04, recorded by `fixtures/htpasswd.py` in containers. New fixture
+  `serve.json` runs the Python endpoint's startup and request handling.
+  Nothing installs or runs the binary; the `software_live` role is
+  unchanged.
+
+## [2.65.0] - 2026-10-22
+
+### opsgate_deploy: Python or the Rust release per launchd unit
+
+- `opsgate_deploy` gets the implementation switch of the opsgate repository's
+  `rust/PLAN.md` 10.1 (slice S10): `opsgate_api_impl` and
+  `opsgate_runner_impl` (`python`, the default and unchanged behaviour, or
+  `rust`), `opsgate_rust_version`, `opsgate_rust_sha256`,
+  `opsgate_rust_release_url`, `opsgate_rust_local_archive`,
+  `opsgate_rust_install_root` (`/usr/local/libexec/opsgate-rs`),
+  `opsgate_rust_keep_versions`, `opsgate_launchd_python_plist_dir` and
+  `opsgate_launchd_verify_retries`/`_delay`. New `tasks/rust_binary.yml`
+  installs a pinned release whenever a version is set (checksum-verified
+  download or local archive, archive members checked, `root:wheel`, never
+  modified in place) and validates it by its versioned path before any plist
+  points at it: `--version`, `check-config api` as `control_service_user`,
+  `check-config runner` as `ops` (only the env-file path is passed) and a
+  read-only `check-db`. A rejected release stops the play when a unit runs
+  Rust and is a warning with both impls `python`, so it never blocks the
+  rollback. Each plist renders the venv command or `bash -lc "cd <dir> &&
+  exec <root>/<version>/opsgate serve|runner"`; with both impls `python` the
+  plists are byte-identical to before. A changed Python source or venv no
+  longer restarts a unit that runs Rust. Every deploy renders the Python
+  variant of both plists to `/etc/opsgate/launchd-python/` for the
+  emergency rollback without Ansible. New `tasks/verify.yml` checks each
+  managed unit (`launchctl print`, `ps`, the API health endpoint) and
+  `tasks/prune.yml` then prunes old releases, keeping the pinned, the running
+  and each unit's previous version and pruning nothing when the live state
+  is unknown. README section "Implementation: Python or Rust" (switch,
+  rollback, emergency runbook). Tests `tests/test_opsgate_deploy_impl.py`
+  (`just test-opsgate-deploy-impl`, part of `just test`) with plist fixtures
+  in `tests/fixtures/opsgate_deploy/`.
+
+### software_live: switch between Python and the Rust release
+
+- `software_live` gets the implementation switch of
+  `rust/software-live/PLAN.md` 7.3 (slice S6): `software_live_impl: python`
+  (default, unchanged behaviour) or `rust`, with `software_live_rust_version`,
+  the per-variant archive checksums `software_live_rust_sha256`
+  (`ubuntu24.04`, `debian13`, read from `/etc/os-release`),
+  `software_live_rust_keep_versions` and `software_live_rust_shadow`. The
+  release is installed with `rust_release_binary` into
+  `<install_dir>/releases/<version>/` (with `software-live-apt` and
+  `LICENSE.GPL-3.0`) and validated by its versioned path (`validate`, the
+  APT helper) before drop-ins point the endpoint and collector units at it.
+  `impl: python` removes the drop-ins and restarts the units with Python
+  before any Rust task, so a broken release never blocks the rollback. After
+  the initial collection the role verifies the running program; only then
+  does it move the pins (`software-live` and the `previous` rollback pin,
+  which always names the version verified live before) and prune old
+  releases, keeping every version the live state names (drop-ins, shadow
+  units, loaded commands, and every process of the units, including a
+  collector run and its APT child still executing an older release) and
+  pruning nothing when that state cannot be read completely. New shadow
+  units (`software-live-shadow-collector.service`/`.timer` at `*:7/15`,
+  `software-live-shadow-endpoint.service` on `127.0.0.1:9119`) run the
+  release next to the production units. New filter plugin
+  `plugins/filter/software_live_impl.py`; tests `tests/test_software_live_impl.py`
+  (`just test-software-live-impl`, part of `just test`).
+- `software_live_remove` also removes the shadow units and their state and
+  the implementation drop-in directories.
+
+### software-live Rust port: collect
+
+- `rust/software-live` gets `collect` of `software_live.py` (slice S3f of
+  `rust/software-live/PLAN.md`): the policy check, the observation steps in
+  the Python program's order (Traefik upstream and Traefik, OS lifecycle and
+  OS, PostgreSQL lifecycle and PostgreSQL, APT through the helper),
+  `generated_at_epoch` read after the last observation, the atomic state
+  write with the group looked up after the collection (the previous state
+  stays on an unknown group or a failed write), and the manual stdout mode
+  without `--output`. New flag `collect --report-usage`: one stderr line
+  with wall time, CPU time and peak memory of the process and its children,
+  for the shadow units. Fixtures from the Python program: every step's
+  call order and arguments (`fixtures/report.json`) and `collect` end to end
+  in recorded worlds with the call log of every host access
+  (`fixtures/collect.json`). Nothing installs or runs the binary; the
+  `software_live` role is unchanged.
+
+### software-live Rust port: inventory export
+
+- `rust/software-live` gets `export-inventory` of `software_live.py` (slice
+  S3e of `rust/software-live/PLAN.md`): the safe source read (root-owned
+  export directory and state file, `O_NOFOLLOW|O_NONBLOCK`, one link, not
+  group/world-writable, 1 MiB bound), the allowlisted projection and the
+  atomic write of S3a (mode 0640, group set through the descriptor,
+  `fsync`, rename; the previous projection stays on any failure), with the Python
+  program's order of checks and its `inventory export failed: <Class>`
+  line. Fixtures from the Python program (`fixtures/export.json`, including
+  the real export on disk with root ownership emulated), and
+  `fixtures/rust-export.json`, written by the Rust code and read by the
+  `software_estate` reader in `tests/test_software_live_rust_fixtures.py`.
+  Nothing installs or runs the binary; the `software_live` role is
+  unchanged.
+
+### software-live Rust port: APT helper
+
+- New Rust crate `rust/software-live-apt` (slice S3d of
+  `rust/software-live/PLAN.md`): the APT observation of `software_live.py`
+  (`observe_apt`, `security_packages`, holds, index ages) through
+  `rust-apt`, as a separate helper binary licensed GPL-3.0-or-later
+  (`LICENSE.GPL-3.0`); `software-live` runs it as a child process
+  (`src/apt.rs`) and links no libapt-pkg. `rust/deny.toml` allows
+  GPL-3.0-or-later for `rust-apt` and the helper only; the new
+  `rust/scripts/release_checks.py apt-isolation` (CI and the release
+  `prepare` job) fails when any other member can reach `rust-apt`. Nothing
+  installs or runs the helper; the `software_live` role is unchanged.
+- CI: the helper is left out of the default `rust` job and built, linted
+  and tested in the new `software-live-apt` job inside `ubuntu:24.04` and
+  `debian:13`, which also compares it with python-apt (`software_live.py`)
+  on a fake APT world. New recipe `just rs-software-live-apt` runs the same
+  in Docker.
+- The S1 mapping of `apt_pkg.version_compare` to rust-apt's `cmp_versions`
+  read past the end of non-NUL-terminated strings (libapt-pkg's
+  `CmpFragment` expects C strings); the helper compares NUL-terminated
+  copies (PLAN.md 13.4).
+
+### software-live Rust port: OS and PostgreSQL observations
+
+- `rust/software-live` (slice S3c of `rust/software-live/PLAN.md`): the OS
+  observation (Python's os-release parser and fallback, lifecycle
+  evaluation) and the PostgreSQL observation (`pg_lsclusters` parsing, the
+  postmaster's `--version` run through a descriptor pinned to its image,
+  identity checks, lifecycle and drift issues), library only until
+  `collect` is wired. The `System` trait gains `read_head`, and every child
+  process now gets no descriptor of the program beyond its standard streams
+  and a passed one, as `subprocess` (`close_fds`) does (new dependency
+  `close_fds`). Fixtures `lifecycle.json`, `os.json` and `postgresql.json`
+  replay the Python functions' recorded worlds, including the order of
+  every probe. Nothing installs or runs the binary; the `software_live`
+  role is unchanged.
+
+### software-live Rust port: upstream lookups and caches
+
+- `rust/software-live` gets the upstream lookups of `software_live.py` (slice S3a)
+  (latest Traefik release on GitHub, endoflife.date lifecycles) with their
+  daily caches, readable by both implementations in both directions;
+  HTTPS through ureq/rustls with the system trust store only; the atomic
+  JSON write. New fixture `upstream.json` (generated from the Python
+  program) and `rust-caches.json` (written by the Rust code; the Python
+  drift test runs the Python program on it). Not wired into `collect` yet;
+  the role is unchanged.
+
+### software-live Rust port: Traefik observation
+
+- `rust/software-live` gets the Traefik observation of `software_live.py`
+  (slice S3b of `rust/software-live/PLAN.md`): `MainPID`, the
+  `/proc/<pid>/exe` link checks, hashing and version probes of the installed
+  and the running binary, the identity checks and the bounded retry. The
+  running image is executed only through a pinned, inherited descriptor
+  (`/proc/self/fd/<fd>`), never through the `/proc/<pid>/exe` link. Fixtures
+  from the Python program (`fixtures/traefik.json`, with the call order) and
+  a Linux test with real processes. `collect` does not use it yet; nothing
+  installs or runs the binary.
+
+### software-live Rust port: crate skeleton
+
+- New Rust crate `rust/software-live` in the `rust/` workspace (slice S2 of
+  `rust/software-live/PLAN.md`): the command line of `software_live.py`
+  (modes, options, exit codes; `--version`), `validate`, policy validation
+  and the Python-compatible `policy_sha256`, the report types, summary and
+  `with_freshness`, and the `System` trait the observation slices build on.
+  `collect`, `serve` and `export-inventory` stop with exit 1 until their
+  slices. Nothing installs or runs the binary; the `software_live` role is
+  unchanged.
+- `rust/software-live/fixtures/generate.py` writes the Rust fixtures from the
+  Python program; `tests/test_software_live_rust_fixtures.py` (`just
+  test-software-live-rust-fixtures`, part of `just test`) fails when a
+  fixture or `TESTMAP.md` no longer matches it. New recipes `just
+  rs-software-live` and `just rs-software-live-fixtures`.
+
+### Rust ports: echoport-command-guard release 0.1.0 (S7)
+
+- `rust/echoport-command-guard` (slice S7 of
+  `rust/echoport-command-guard/PLAN.md`): the crate version is now `0.1.0`
+  and is released by the tag `echoport-command-guard-v0.1.0` through
+  `rust-release.yml`: the GitHub release `echoport-command-guard 0.1.0`
+  carries `echoport-command-guard-0.1.0-x86_64-unknown-linux-gnu.tar.gz`
+  (binary and `LICENSE`, built on ubuntu-22.04, glibc floor 2.35) and its
+  `.sha256`: archive sha256
+  `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9`,
+  stripped binary 668,632 bytes (0.64 MiB, budget 2 MiB), highest symbol
+  version `GLIBC_2.34`; `rust/echoport-command-guard/README.md` "Release"
+  has these values. The role's `shadow` and `rust` molecule scenarios install the
+  guard built from the checkout under the crate's version; a role test
+  requires the two to match.
+- Lean measurements (PLAN.md 8.3): `parity/e2e/lean.py` measures the Rust and
+  the Python guard in both Layer-3 containers (median of 20 runs: wall time
+  and peak RSS for `--check-policy`, a refusal and an allowed command, plus
+  the stripped binary size) and fails over budget; `just
+  echoport-command-guard-lean` runs it locally, and the `rust` workflow runs
+  it on its x86_64 runner only when started by hand (`workflow_dispatch`).
+- Security review of the whole crate (PLAN.md R2): no acceptance drift; one
+  race the Python guard has as well. The root-run `chmod 0600|0700`, `chown
+  [-R]`, `mv` and `rm -f` of `-wal`/`-shm` are checked on the resolved path
+  and executed as root on the original pathname, so a service user who can
+  write inside a policy root can swap in a symlink and redirect them outside
+  it. Accepted for 0.1.0 only (owner decision 2026-10-21) and documented in
+  the role README and PLAN.md 4.5/R12. The hardening slice H1 (work item
+  `echoport-guard-toctou-hardening`, Python guard first, then Rust) must be
+  merged and released before any Rust guard install (S9); 0.1.0 is installed
+  nowhere and must never be.
+
+### Rust ports: metrics-httpd role switch of four more endpoints (S5b)
+
+- `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy` (DDNS status
+  endpoint) and `openclaw_deploy` (metrics endpoint) use the internal helper
+  `metrics_httpd_switch` (slice S5b of `rust/metrics-httpd/PLAN.md`, argv of
+  section 7.3): new `metrics_endpoint_impl`,
+  `os_apt_maintenance_endpoint_impl`, `dns_ddns_status_endpoint_impl` and
+  `openclaw_metrics_endpoint_impl` (default
+  `{{ metrics_httpd_impl | default('python') }}`). `rust` runs the pinned
+  `metrics-httpd` release in its `script` (`metrics-endpoint`), `apt-state`
+  (`os-apt-maintenance-endpoint`) or `json-file` mode (`ddns-status-endpoint`
+  with the updater's missing-file message and a 10 s request timeout;
+  `openclaw-metrics-endpoint` with the collector's missing-file message)
+  through the drop-in `metrics-httpd-impl.conf`; it needs
+  `metrics_httpd_rust_version` and `metrics_httpd_rust_sha256`. With the
+  default `python` the deploy renders exactly the same units and scripts as
+  before and changes nothing on the host; it now also checks after each
+  deploy that the unit runs the Python script and answers 401 with its
+  realm. `os_apt_maintenance` selects the implementation only with
+  `os_apt_maintenance_endpoint_enabled` and after the state file exists (the
+  unit's `ReadOnlyPaths=` names it); the DDNS switch runs under
+  `--tags ddns`; disabling the OpenClaw metrics endpoint also removes the
+  drop-in.
+- Tests: `tests/test_metrics_httpd_switch.py` (`S5bConsumerStaticTests`,
+  `S5bConsumerRenderTests` with goldens in
+  `tests/fixtures/metrics_httpd_switch/<role>/`, and a switch run under a
+  tagged include; a Python unit with a host-name bind keeps deploying with
+  the probe skipped, the verify behaviour S5c added).
+
+### Rust ports: metrics-httpd switch for logyard and static sites (S5c)
+
+- `logyard_deploy` and `static_site_deploy` (slice S5c of
+  `rust/metrics-httpd/PLAN.md`, section 7.3): new `logyard_health_impl` and
+  `static_site_impl` (default `{{ metrics_httpd_impl | default('python') }}`)
+  select the health endpoint's and the static site's HTTP server through
+  `metrics_httpd_switch`: `rust` runs `metrics-httpd logyard-health` (the
+  unit's `LOGYARD_*` environment) or `metrics-httpd static --bind --port
+  --root` from the drop-in `metrics-httpd-impl.conf`; its `--check-config`
+  runs as the unit's user with the unit's own `[Service]` lines (logyard: its
+  `Environment=` lines exactly as rendered; static: the full hardening incl.
+  `MemoryDenyWriteExecute=` and `RestrictAddressFamilies=`). With the default
+  `python` both roles render exactly the same unit and script as before; the
+  deploy now also checks that the unit runs the Python script and answers
+  (logyard: 200 with a JSON `status`; static: 200 for `/`) and moves the
+  metrics-httpd pin. These roles are the Ansible path and the rollback engine
+  of the pyinfra-deployed `logyard` and `benchmarks_static` services.
+- `static_site_deploy`: `static_site_systemd_unit_name` no longer accepts a
+  dot (it is also the switch's pin name). The service, the Traefik route,
+  the handler flush and the checks now run in one block that carries the
+  switch inputs, in the same order as before.
+- `metrics_httpd_switch`: new `metrics_httpd_switch_probe_timeout` (default
+  `5` s, as before); `logyard_deploy` raises it to three Loki request
+  timeouts plus one `systemctl` timeout per listed unit plus 5 s, since the
+  health endpoint answers only after those calls. verify skips the probe with
+  a message when the bind address is a host name (e.g. `localhost`, which
+  only a Python unit accepts) instead of failing on it.
+- Tests: `tests/test_metrics_httpd_switch_logyard_static.py` (in `just
+  test-metrics-httpd-switch`), goldens in
+  `tests/fixtures/metrics_httpd_switch/{logyard_deploy,static_site_deploy}/`;
+  `tests/test_logyard_deploy.yml` checks the impl default and the drop-in.
+
+## [2.64.5] - 2026-10-21
+
+### Security
+
+- Add a guarded security-only Rustup 1.29.2 manager/proxy patch entrypoint that
+  preserves existing coding toolchains and settings; use patched OS trust and
+  pinned official updater checksums instead of the old embedded downloader.
+
+## [2.64.4] - 2026-10-21
+
+### Fixed
+
+- `container_ca_activate`: allow a bounded 600-second native-owner health
+  convergence budget for both activation and automatic recovery, retaining
+  native health requirements and the legacy non-owner path.
+
+## [2.64.3] - 2026-10-21
+
+### Security
+
+- `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
+
+## Unreleased — Rust ports: metrics-httpd release 0.1.0 (S4)
+
+- `rust/metrics-httpd` (slice S4 of `rust/metrics-httpd/PLAN.md`): the
+  crate version is now `0.1.0` (`metrics-httpd --version` prints
+  `metrics-httpd 0.1.0 (<commit>)`) and is released by the tag
+  `metrics-httpd-v0.1.0` through `rust-release.yml`: the GitHub release
+  `metrics-httpd 0.1.0` carries
+  `metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz` (binary and
+  `LICENSE`, built on ubuntu-22.04, glibc floor 2.35) and its `.sha256`:
+  archive sha256
+  `7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27`,
+  stripped binary 2,249,216 bytes (2.14 MiB, limit 4 MiB), highest symbol
+  version `GLIBC_2.34`. `rust/metrics-httpd/README.md` has a "Release"
+  section with these values. GitHub shows this first release of the
+  repository as "Latest" despite `--latest=false` (no other release to
+  fall back to); `rust/README.md` notes that nothing may resolve a binary
+  through "latest". No role pins the release yet (S5a–S5e); nothing is
+  installed anywhere.
+
+## Unreleased — Rust ports: metrics-httpd parity harness and shadow comparer (S3)
+
+- `rust/metrics-httpd` (slice S3 of `rust/metrics-httpd/PLAN.md`):
+  `parity/run_parity.py` runs the rendered Python endpoint scripts (CPython
+  3.12, as on the hosts) and the Rust binary side by side as processes on
+  loopback and compares their live answers for every gate, json-file,
+  script, apt-state, logyard-health and static fixture case, plus
+  keep-alive, concurrent requests,
+  the slow-client difference D-1 (the single-threaded scripts stall, Rust
+  answers), the SIGTERM exit codes and credential-free logs. New recipe
+  `just rust-parity-metrics-httpd`; the `rust` CI job installs
+  `apache2-utils`, runs the harness and now also runs when an endpoint
+  script under `roles/**/*httpd*` changes. `parity/shadow_compare.py` is the
+  stdlib comparer for the 24 h shadow run (PLAN.md 10.3): probes both
+  shadows of every endpoint, accepts only the allowed differences of
+  PLAN.md 5.2, writes counts and differing keys (no payloads, no
+  credential) to a JSONL report, records the units' memory, and has
+  `preflight` and `summary` commands; tested against fake pairs and, in
+  the harness, against the live pairs. No role behaviour changes; nothing
+  is installed anywhere.
+
+## Unreleased — Rust ports: echoport-command-guard role switch (S6)
+
+- `echoport_remote_command_guard` (slice S6 of
+  `rust/echoport-command-guard/PLAN.md`, section 6.2): new impl selector
+  `echoport_remote_command_guard_impl` (`python`, the default, `shadow` or
+  `rust`). With `python` and no `echoport_remote_command_guard_rust_version`
+  nothing changes: the forced command is byte for byte the old one. A set
+  `rust_version` installs the Rust guard through `rust_release_binary` under
+  `/usr/local/lib/echoport-command-guard/<version>/` (also with impl python,
+  for a quick switch), asserts that root owns every path component and
+  nobody else can write it, and runs the Rust `--check-policy` on the
+  rendered policy before it is installed; the Python guard stays installed
+  and always validates the policy. With impl python every Rust step only
+  warns (a broken release never blocks a rollback); with shadow or rust it
+  stops the play before the forced command is published. `shadow` publishes
+  `<bin> --shadow <policy> <python> -I <guard> <policy>`, `rust` publishes
+  `<bin> <policy>`.
+- New `tasks_from: confirm_live.yml`, for the playbook to include after its
+  post-probe: it verifies that the pinned key's `authorized_keys` line
+  carries exactly the published forced command, protects every Rust version
+  any line names (a mention of the install root in another form, or an
+  unreadable file, skips the prune), then moves the `rust_release_binary`
+  pins (impl python keeps the last Rust version as the previous pin) and
+  prunes. The main tasks never pin or prune. New filters
+  `echoport_guard_live_state` and `echoport_guard_path_chain`
+  (`plugins/filter/echoport_guard.py`); new variables
+  `echoport_remote_command_guard_authorized_keys_path` and
+  `echoport_remote_command_guard_confirm_public_key`.
+- Tests: `tests/test_echoport_remote_command_guard_role.py` (in `just
+  test-echoport-remote-command-guard`); molecule scenarios `default`
+  (python), `shadow` and `rust` on Ubuntu 24.04 and Debian 13 with the guard
+  built from the checkout (`rust/echoport-command-guard/parity/e2e/build-local-archive.sh`),
+  and `pins` (stub releases: repeated failed deployments, stale and
+  unverified lines, live-state protection, the switch to Python, check mode,
+  rollback independence). Nothing is deployed; ops-control wiring is S8.
+
+## Unreleased — Rust ports: metrics-httpd logyard-health mode (S2d)
+
+- `rust/metrics-httpd` (slice S2d of `rust/metrics-httpd/PLAN.md`): the
+  `logyard-health` mode now serves the payload of
+  `logyard_deploy`'s `logyard_health_httpd.py`: Loki readiness and the two
+  `count_over_time` ingest windows (a `hyper-util` http client: no
+  redirects, a timeout per exchange, answers capped at 64 MiB), `systemctl
+  show` per unit of `LOGYARD_HEALTH_UNITS_B64` (parsed once at startup with
+  the script's rejection reasons), the ok/warning/critical status, and no
+  log line per request. Where the script crashes (non-object Loki answers,
+  disconnects, non-UTF-8 output, a NUL in a unit name) Rust reports the
+  error in the payload instead (D-2). `--check-config` now also fails on a
+  units list with rejected entries. `int()`/`float()` of the `LOGYARD_*`
+  numbers no longer accept U+001C–U+001F as white space (Python refuses
+  them). New fixture family `logyard_health.json` from the rendered script
+  with a fake Loki and a test-only fake `systemctl`
+  (`fixtures/fake-bin/systemctl`), replayed by `tests/logyard_health.rs`;
+  `tests/test_metrics_httpd_fixtures.py` checks that every Rust difference
+  names a PLAN.md 5.2 item. Nothing installs the binary; no role behaviour
+  changes.
+
+## Unreleased — Rust ports: metrics-httpd role switch (S5a)
+
+- New internal helper role `metrics_httpd_switch` (slice S5a of
+  `rust/metrics-httpd/PLAN.md`, section 7.2): `tasks_from: select` installs
+  the pinned `metrics-httpd` release through `rust_release_binary` when
+  `metrics_httpd_rust_version` is set, runs its `--check-config` as the
+  unit's user in the unit's sandbox (`systemd-run`), and selects the
+  implementation with the drop-in
+  `/etc/systemd/system/<unit>.service.d/metrics-httpd-impl.conf` (present
+  only for `rust`; removed first for `python`); `tasks_from: verify` checks
+  after the restart that the unit runs the selected implementation
+  (`/proc/<pid>/exe` or the Python script in the command line) and that an
+  unauthenticated request gets the expected answer (401 with the realm),
+  then moves the unit's pin and prunes old releases. A failure stops the
+  play for `rust` and only warns for `python`; no credential is used. New
+  filters `plugins/filter/metrics_httpd.py`.
+- `backup_metrics_endpoint`, `storage_metrics_endpoint`,
+  `thermal_metrics_endpoint`, `tailscale_metrics_endpoint`,
+  `dns_metrics_endpoint`: new `<role>_impl` (default
+  `{{ metrics_httpd_impl | default('python') }}`) with the argv of PLAN.md
+  7.3. With the default `python` the deploy renders exactly the same unit
+  and script as before and changes nothing on the host; it now also checks
+  after each deploy that the unit runs the Python script and answers 401
+  with its realm. `rust` needs `metrics_httpd_rust_version` and
+  `metrics_httpd_rust_sha256` (released by S4).
+- Tests: `tests/test_metrics_httpd_switch.py` (`just
+  test-metrics-httpd-switch`, in `just test`).
+
+## Unreleased — Rust ports: metrics-httpd json-file mode (S2a)
+
+- `rust/metrics-httpd` (slice S2a of `rust/metrics-httpd/PLAN.md`): the
+  `json-file` mode now serves the JSON file like the eight Python scripts it
+  replaces (backup, storage, thermal, tailscale, dns, openclaw, ddns and
+  ops-control's torrent-vpn): the `meta` block (replaced, or merged for
+  dns), `json.dumps(..., sort_keys=True)` bytes, 503 `metrics_file_missing`
+  with the variant's message, 503 `read_error`, 502 `invalid_json`, and
+  answers where Python's handler drops the connection (top-level value not
+  an object, invalid UTF-8, ints over 4300 digits; PLAN.md D-2/D-5). Each
+  5xx answer writes one cause line to stderr (D-9). New fixture family
+  `json_file` in `rust/metrics-httpd/fixtures/generate.py`: the eight
+  scripts served on loopback through 39 file states and five gate cases,
+  replayed by the Rust tests; the torrent-vpn script is read from an
+  ops-control checkout (`METRICS_HTTPD_OPS_CONTROL`, a sibling
+  `ops-control` or `~/projects/ops-control`), otherwise its committed cases
+  are kept and `tests/test_metrics_httpd_fixtures.py` reports a skip. The
+  plan gains the D-4 writer audit (section 5.3): no writer emits `NaN`,
+  `Infinity` or lone surrogates today; backup, thermal, storage and
+  openclaw could in principle. No role behaviour changes; nothing is
+  installed anywhere.
+
+## Unreleased — Rust ports: metrics-httpd apt-state mode (S2c)
+
+- `rust/metrics-httpd` (slice S2c of `rust/metrics-httpd/PLAN.md`): the
+  `apt-state` mode now serves the os_apt_maintenance state file like
+  `os_apt_maintenance_httpd.py.j2`: the `meta` block with
+  `state_file_fresh`, `state_max_age_seconds` and `state_reboot_required`,
+  the `summary` (last run, freshness, `overall_ok`) and the reboot state of
+  `reboot_state()` (live flag plus the persisted kernel signal; the flag
+  file and `uname` are read per request), with exact integer arithmetic.
+  Where the Python handler crashes (a `reasons` value `in` cannot search, a
+  top-level value that is not an object, invalid UTF-8) Rust answers with a
+  JSON error (D-2), and every 5xx gets one error line on stderr (D-9).
+  `EndpointRebootStateTests` is ported to Rust unit tests; the new fixture
+  family `apt_state` (`fixtures/apt_state.json`, replayed by
+  `tests/apt_state.rs`) records the rendered script's `reboot_state()` and
+  its handler's answers for 47 state files, and
+  `tests/test_metrics_httpd_fixtures.py` checks that every Rust/Python
+  difference there is a named error answer. No role behaviour changes.
+
+## Unreleased — Rust ports: rust_release_binary install helper (F3)
+
+- New internal helper role `rust_release_binary` (slice F3 of
+  `rust/PLAN-foundation.md`, section 6.2) for the pinned release binaries of
+  the Rust ports, included with `tasks_from`: `install` (checksum-verified
+  download or local archive, exact regular-file member check, staging and
+  `mv --no-target-directory` into `/opt/<crate>/<version>/`, `--version`
+  validation as an unprivileged user, never replaces an installed version;
+  on failure it removes only its own fresh install and either stops the play
+  or warns with `rust_release_binary_failed` so a Python rollback is never
+  blocked), `pin` (`.pins/<consumer>` plus the rollback pin
+  `.pins/<consumer>.previous`, which moves only when the consumer pins a new,
+  verified version) and `prune` (keeps the newest `keep_versions`, every
+  current and previous pin of every consumer and every version in the
+  consumer's live-state `protect` list, which also takes executable paths
+  such as `/proc/<pid>/exe` of a still-running oneshot run; deletes nothing
+  when the live state is marked unknown, after a failed install of the crate
+  in the same run, when the root or `.pins` cannot be listed completely, or
+  when a pin or protect entry cannot be interpreted).
+  The decisions live in the new filter plugin `plugins/filter/rust_release.py`.
+  New `tests/test_rust_release_binary.py` (`just test-rust-release-binary`,
+  part of `just test`) with filter unit tests and localhost
+  `ansible-playbook` runs, including the owner's 2026-10-21 cases (v1 → v2 →
+  v1 → v3 keeps v1 as the previous pin; repeated failed deploys with
+  different targets never prune the live version). No role uses the helper
+  yet; `rust/PLAN-foundation.md` 6.1/6.2 now describe the previous pin, the
+  `protect` input and the fail-closed prune.
+
+## Unreleased — Rust ports: metrics-httpd static mode (S2e)
+
+- `rust/metrics-httpd` (slice S2e of `rust/metrics-httpd/PLAN.md`): the
+  `static` mode now serves `static_site_deploy`'s site (the port of
+  `static-site-httpd.py.j2`) with `tower-http`'s `ServeDir`: files with
+  `Content-Type`, `Content-Length` and `Last-Modified`, `index.html` for a
+  directory, Python's 301 for a directory without trailing `/`,
+  `If-Modified-Since` → 304, Python's 404 page, 501 for methods other than
+  GET and HEAD, and the four `end_headers` headers (`Cache-Control`,
+  `Referrer-Policy`, `X-Content-Type-Options`, `X-Frame-Options`) on every
+  answer; access lines on stdout as Python writes them. Files are streamed
+  in chunks (the response body of all modes is now a boxed body). Allowed
+  differences pinned by the new fixture family `static`
+  (`fixtures/static.json`, the rendered template on a sample tree): `Range`
+  is honoured (206/416, plus `Accept-Ranges`), a directory with only
+  `index.htm` and targets with `..` segments get 404, an
+  `If-Modified-Since` that is not an HTTP date is ignored (D-11), the 404
+  page of a directory without index says "File not found" (D-3), and a NUL
+  in the path gets 404 where Python drops the connection (D-2). New
+  `parity/static_site.py` compares the Rust binary with the Python server
+  on a site directory; run against the deployed benchmark site on staging
+  (2026-10-21, `fixtures/static_real_site.json`), every published file had
+  the same status, body, type and headers, so the static cutover (S9e)
+  stays in the plan. No role behaviour changes.
+
+## Unreleased — Rust ports: metrics-httpd script mode (S2b)
+
+- `rust/metrics-httpd` (slice S2b of `rust/metrics-httpd/PLAN.md`): the
+  `script` mode now serves `metrics_endpoint`'s requests past the gate as
+  `metrics_httpd.py.j2` does: it runs the metrics script without a shell or
+  arguments and answers 200 with its stdout (Python's universal-newline
+  translation, no JSON validation), 502 with the stripped stderr or
+  "Metrics script failed" for an exit ≠ 0, and 504 after
+  `--script-timeout`. Allowed differences pinned by tests: a timeout kills
+  the script's whole process group (D-8), the stderr text goes into the
+  page body instead of the reason phrase (D-3), a missing or
+  non-executable script and non-UTF-8 output get answers where Python
+  drops the connection (D-2), stdout is capped at 64 MiB (D-12), and each
+  5xx logs one error line (D-9). New fixture family `script`
+  (`fixtures/script.json`, generated from the rendered template with real
+  fixture scripts) checked by `just test-metrics-httpd-fixtures`. The plan
+  now records the newline translation and the script's stdin. No role
+  behaviour changes.
+
+## Unreleased — Rust ports: echoport-command-guard parity gate (S5)
+
+- `echoport-command-guard` (slice S5 of `rust/echoport-command-guard/PLAN.md`):
+  the parity gate against the Python guard. New decision property tests
+  (`tests/decisions.rs`: grammar-aware random commands with the PLAN.md 7.2
+  mutations in random virtual hosts, against the Python guard through the
+  oracle; Rust may only accept what Python accepts, with the same decision,
+  and refusals carry Python's reason outside the PLAN.md 4.4 classes) and
+  the decision invariants (`tests/common/invariants.rs`). Layer 2 gains the
+  decision comparison on real trees (`parity/e2e/layer2_decide.py`: every
+  path state of each path-taking shape, the real-tree scp test, runs as
+  `nobody`, random trees). New Layer 3 (`parity/e2e/layer3_sshd.py`, `just
+  echoport-command-guard-layer3`): the Python, Rust and shadow forced
+  commands through sshd on Ubuntu 24.04 and Debian 13 with every runner
+  command, real scp/rsync transfers, redirects, refusals, SFTP and the
+  locale cases, compared on exit codes, output, files, the exec'd tools'
+  argv/environment/fds/signals/umask and the syslog lines. New cargo-fuzz
+  targets (`fuzz/`, `just echoport-command-guard-fuzz`) for the prefilter
+  and tokeniser, `check()`, the policy loader and `repr`, run for an hour
+  each with the corpus committed. The PLAN.md 4.4 classes are reviewed in
+  the crate README; `parity/allowed_differences.json` stays empty. No guard
+  behaviour changes; nothing is installed anywhere.
+
+## Unreleased — Rust ports: echoport-command-guard rules with filesystem (S3b)
+
+- `echoport-command-guard` (slice S3b of `rust/echoport-command-guard/PLAN.md`):
+  `check()` now decides the remaining branches of the Python guard, in
+  Python's order and with Python's refusal reasons, through the filesystem
+  helpers of S2: the raw `umask 077 && tar …` shape (the private media
+  archive, umask `077`) and `umask 077 && cat > …` (the restore dump as a
+  created stdout redirect), `scp -f/-t` (uploads as `runuser -u <owner>`),
+  the three rsync server forms (receivers as the root's owner), `rm -f` of
+  SQLite `-wal`/`-shm` files, the snapshot `cat` (a stdin redirect owned by
+  the service user), `sha256sum`, `readlink -f`, `test`, `mv`, `mkdir -p`
+  (as the root's owner), `chmod` and `chown`. An unbalanced quote in the
+  `tar` shape, where the Python guard crashes, is refused as an unparsable
+  command. Every Layer-1 fixture case is now decided: each case Python allows
+  (3,505) is allowed with an identical decision, and no branch is pending
+  any more. Nothing installs the binary; no role behaviour changes.
+
+## Unreleased — Rust ports: echoport-command-guard filesystem layer (S2)
+
+- `echoport-command-guard` gets its filesystem layer (slice S2 of
+  `rust/echoport-command-guard/PLAN.md`): the real `GuardEnv` (`geteuid`,
+  `getpwnam_r` through NSS via `nix`, `lstat` with glibc's `strerror` texts),
+  a port of CPython's non-strict `os.path.realpath` (`pyrealpath`) and the
+  plain-file, private-directory and policy-root helpers of `check()` with the
+  Python guard's refusal reasons. `realpath` refuses where Python returns a
+  partly resolved path: symlink loops, more than 40 symlink traversals, `lstat` errors
+  other than `ENOENT`/`ENOTDIR`, `readlink` errors and link targets that are
+  not UTF-8 (`path not checkable`, PLAN.md 4.2). The `soft-canonicalize`
+  crate was evaluated against the oracle and rejected (265 of 1,531 probes
+  differ, 49 of them resolving inside a tree that Python resolves outside).
+  New differential tests against the Python oracle over random virtual and
+  real trees (`tests/realpath.rs`; the oracle gets an `os_realpath` op), and
+  the Layer-2 container harness `parity/e2e/run-layer2.sh` (`just
+  echoport-command-guard-layer2`) that compares `realpath`, `lstat` and user
+  lookups as root with Ubuntu 24.04's Python 3.12 and Debian 13's Python
+  3.13. The binary now runs on `RealEnv`, replacing S4's placeholder whose
+  `lstat`/`realpath` failed closed; the rules that use the helpers come with
+  S3b. Nothing installs the binary and no role behaviour changes.
+
+## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
+
+- `echoport-command-guard` (slice S4 of `rust/echoport-command-guard/PLAN.md`):
+  forced-command mode now runs the Python guard's flow instead of refusing
+  everything: interactive sessions refused before the policy is read,
+  `policy error` refusals, `check()`, the umask, the redirects (opened with
+  `O_NOFOLLOW` relative to a checked private directory, as Python does), the
+  `allowed from` log line, and the exec with `PATH = SAFE_PATH`, CPython's
+  PEP 538 `LC_CTYPE` coercion, SIGPIPE and SIGXFSZ ignored and CPython's
+  `os.execvp` search (no `/bin/sh` fallback, exit 127 with `cannot run`).
+  Log lines go to syslog under the Python guard's identifier, facility and
+  priorities, with Python's `repr` of the command (undecodable bytes as
+  `\udcNN`) cut at 1000 characters. New modes a client cannot reach:
+  `--decide <policy>` (the decision as JSON on stdout) and `--shadow <policy>
+  <python> -I <guard> <policy>` (logs the Rust decision under
+  `echoport-remote-command-guard-shadow`, then execs the Python guard with the
+  same PID). New process tests (`tests/flow.rs`, Linux) record what the
+  executed command inherits and compare the locale coercion with CPython
+  3.12 and 3.13. Until S2 the binary's filesystem lookups fail closed.
+  Nothing installs the binary; no role behaviour changes.
+
+## Unreleased — Rust ports: metrics-httpd core (S1)
+
+- `rust/metrics-httpd` (slice S1 of `rust/metrics-httpd/PLAN.md`): the
+  command line of all five modes (`json-file`, `script`, `apt-state`,
+  `logyard-health`, `static`) with `--check-config` (validates the htpasswd
+  file, JSON directory, script, site root and logyard environment without
+  binding; exit 0 or 2), the HTTP server core (IPv4/IPv6, request timeout,
+  64 connections, graceful SIGTERM, Python's access line), Basic auth with
+  the rules of the `htpasswd` binary in process (bcrypt `$2y$`/`$2a$`), a
+  `serde_json` formatter that writes `json.dumps(..., sort_keys=True)` byte
+  for byte (including `float.__repr__`), the `meta` helpers and
+  `TESTMAP.md`. Every mode answers the 501/404/401 gate of the Python
+  scripts; the mode bodies arrive with S2a–S2e. New Python oracle
+  `rust/metrics-httpd/fixtures/generate.py` with committed fixtures (float
+  reprs, JSON round trips, meta, auth decisions with the real `htpasswd`,
+  gate answers of the rendered scripts) and test-only htpasswd files; new
+  `tests/test_metrics_httpd_fixtures.py` (`just test-metrics-httpd-fixtures`,
+  part of `just test`) fails when the fixtures drift from the Python
+  scripts or a Rust/Python difference is not an allowed one; new recipe
+  `just metrics-httpd-fixtures` regenerates them. The plan records the
+  allowed differences found on the way (D-4 nesting depth, D-6 `htpasswd`
+  rules, new D-14 request parsing). No role behaviour changes.
+
+## Unreleased — Rust ports: echoport-command-guard rules without filesystem (S3a)
+
+- `echoport-command-guard` (slice S3a of `rust/echoport-command-guard/PLAN.md`):
+  `check()` now decides the branches of the Python guard that need no
+  filesystem, in Python's order and with Python's refusal reasons: `sudo -u
+  postgres` and `runuser -u postgres --` with every PostgreSQL branch
+  (`pg_dump`, `dropdb`, `createdb`, `pg_restore` including the scratch
+  restore with its `< file` redirect, `psql`), `runuser -u <user> -- sqlite3`
+  (`.backup`, `.timeout`, the integrity check), `systemctl`, `curl`, `rm -f`
+  of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du` and the `sh -c`
+  probe. The Layer-1 runner now requires every fixture case outside the
+  filesystem branches (S3b) to be decided as Python decides, and lets a `p3`
+  case differ only when the prefilter refuses it or Python's `check()`
+  crashes. Forced-command mode still refuses everything until S4; nothing
+  installs the binary; no role behaviour changes.
+
+## Unreleased — Rust ports: echoport-command-guard crate skeleton, policy and tokeniser (S1)
+
+- Add the `echoport-command-guard` crate to the Rust workspace (slice S1 of
+  `rust/echoport-command-guard/PLAN.md`): `--version`, `--check-policy` (the
+  Python guard's validation and messages, with strict JSON types: duplicate
+  keys, `NaN`/`Infinity`, out-of-range numbers, lone surrogates and nesting
+  deeper than 127 arrays and objects are refused), the command prefilter (printable ASCII and tab only, no `\` or
+  `#`), the tokeniser (`shlex` crate, proven equal to Python's `shlex.split`
+  by differential tests against the Python oracle), the `Decision` types,
+  the virtual `GuardEnv` and a fail-closed dispatcher that still refuses
+  every command; forced-command mode refuses everything and executes nothing
+  until S4. New Layer-1 runner over all committed fixtures. `rust.yml` gains
+  this crate's steps: Python 3.12 from uv for the oracle tests and the
+  fixture drift check (`gen_fixtures.py check` under 3.12 and 3.13, `check
+  --record` in the repo venv). The fixture generator now tags numbers
+  outside the double range and nesting deeper than 127 as `policy-type` (new
+  cases `raw-big-integer`, `raw-nesting-127`, `raw-nesting-128`).
+  Nothing installs the binary; no role behaviour changes.
+
+## Unreleased — Rust ports: release pipeline with per-binary tags (foundation F2)
+
+- New GitHub Actions workflow `.github/workflows/rust-release.yml` (slice F2 of `rust/PLAN-foundation.md`): a pushed tag `metrics-httpd-v<semver>`, `echoport-command-guard-v<semver>` or `software-live-v<semver>` builds that crate for `x86_64-unknown-linux-gnu` on `ubuntu-22.04` (glibc 2.35) after fmt, clippy and the workspace tests, checks every binary's glibc ceiling and `NEEDED` libraries and its `--version` line (`<binary> <version> (<commit>)`), packs a deterministic `<crate>-<version>-x86_64-unknown-linux-gnu[-<variant>].tar.gz` with a `.sha256` file and publishes the GitHub release `<crate> <version>` (never marked latest; only the publish job may write). `workflow_dispatch` with a crate runs the same build and checks and keeps the archives as workflow artifacts. New stdlib script `rust/scripts/release_checks.py` (`tag`, `matrix`, `glibc-floor`, `smoke`, `verify`, `pack`) with tests and a two-variant fixture; an optional `rust/<crate>/release.json` declares build variants (container image, apt packages, members to build, archive binaries with their own glibc ceiling, extra `NEEDED` sonames and smoke commands, archive files). Release how-to in `rust/README.md` "Releases". No role behaviour changes; nothing is installed anywhere.
+
+## Unreleased — ca_trust_consumers: Node.js trust in sudo sessions (2.64.2)
+
+- `ca_trust_consumers` with `ca_trust_consumers_node_cli` now also gives sudo
+  sessions `NODE_OPTIONS=--use-openssl-ca`: Debian 13's sudo PAM stack does not
+  read `/etc/environment`, so `sudo -u <app>` sessions (Ansible/pyinfra
+  `become`, e.g. `npm ci`, `yarn install`) lost the flag. A visudo-validated
+  sudoers drop-in sets `Defaults env_file=` to a root-owned file with the same
+  merged value; a caller's own `NODE_OPTIONS` is never passed through. The
+  effective policy is read with sudo's own `cvtsudoers -f json` before and
+  after the change: any `env_file` other than exactly one unbound entry for the
+  role's file (scoped, negated, foreign, duplicated) or an unexportable policy
+  makes the role fail.
+  `ca_trust_consumers_node_cli_sudo: false` turns this off.
+
+## Unreleased — opsgate_deploy leaves the Rust port out of the Python app dirs
+
+- `opsgate_deploy`: `opsgate_rsync_excludes` gains `/rust/`, so the source
+  sync no longer copies the opsgate repository's Rust port workspace (sources,
+  plans and, after a local `cargo build`, gigabytes of `rust/target/`) into the
+  API and runner app directories. The pattern is anchored to the top of the
+  checkout; a nested directory named `rust` still ships. A `rust/` an older
+  role version already synced stays in place (`rsync --delete` never removes
+  excluded paths) and is inert. New `tests/test_opsgate_rsync_excludes.py`
+  (`just test-opsgate-rsync-excludes`) runs the role's own sync tasks with its
+  defaults in check mode against a temporary opsgate-shaped checkout.
+
+## Unreleased — graphyard_deploy: Python/Rust agent selector
+
+- `graphyard_deploy`: new `graphyard_agent_impl` (`python`, the default, or
+  `rust`) with `graphyard_agent_rust_version`, `_sha256`, `_release_url`,
+  `_local_archive`, `_install_root` (`/opt/graphyard-agent`) and
+  `_keep_versions` (3), per section 8.3 of graphyard's `agent-rs/PLAN.md`. A
+  pinned version is installed after the migrations into
+  `<root>/<version>/graphyard-agent` (sha256-checked download or local
+  archive, only the regular files `graphyard-agent` and `LICENSE`, an
+  installed version is never replaced) and validated as `graphyard_user`
+  with `--version` and `--check-schema --db <django path>/db.sqlite3` before
+  anything switches. With `rust` the drop-in
+  `graphyard-agent.service.d/agent-impl.conf` replaces only `ExecStart`; with
+  `python` it is removed. A version change or switch reloads systemd and
+  restarts the agent; afterwards the role checks the live process
+  (`/proc/<pid>/exe` for Rust, `manage.py start_agent` argv for Python) and
+  prunes old versions, keeping the pinned, live and previously selected ones.
+  The default stays Python and installs nothing, so existing deploys are
+  unchanged. `graphyard_rsync_excludes` gains `agent-rs/target/`. New
+  Molecule scenario (`just test-graphyard-deploy-molecule`) and contract
+  tests (`just test-graphyard-deploy-agent`, part of `just test`).
+
+## Unreleased — Rust ports: echoport-command-guard contract fixtures (S0)
+
+- Add the Python oracle and fixture generator for the Rust port of the
+  `echoport_remote_command_guard` forced-command guard
+  (`rust/echoport-command-guard/parity/oracle.py`, `gen_fixtures.py`) and the
+  generated Layer-1 decision fixtures (`rust/echoport-command-guard/fixtures/`,
+  about 13.4k cases: every runner command, the live journal shapes, every
+  unit-test call, mutations, filesystem states and `--check-policy`
+  documents), plus `TESTMAP.md`. `just test-echoport-remote-command-guard`
+  now also runs `tests/test_echoport_command_guard_fixtures.py`: the
+  fixtures must match the guard's sha256 and regenerate byte for byte
+  (runners re-recorded), and the Python guard must accept only printable
+  ASCII and tab. New recipe `just echoport-command-guard-fixtures`
+  regenerates them after a guard or runner change. No role behaviour changes.
+
+## Unreleased — Rust ports: echoport-command-guard plan
+
+- Add `rust/echoport-command-guard/PLAN.md`, the plan for a Rust port of the `echoport_remote_command_guard` forced-command guard (Python guard as oracle, generated decision fixtures, stricter refusals only, an impl selector `python | shadow | rust` with Python as rollback, shadow runs, staging canary with rollback drills, and Python retirement), including the owner decisions of 2026-10-21. Plan only; no role behaviour changes.
+
+## Unreleased — Rust ports: foundation, metrics-httpd and software-live plans
+
+- Rust foundation (slice F1 of `rust/PLAN-foundation.md`): Cargo workspace under `rust/` (explicit members, pinned toolchain 1.99.1 = MSRV, shared lints and release profile, committed `Cargo.lock`, cargo-deny policy `rust/deny.toml`, MIT `rust/LICENSE`, `rust/README.md`) with the `metrics-httpd` crate skeleton (`metrics-httpd --version` prints `metrics-httpd 0.0.0 (<commit>)`, nothing else yet). New GitHub Actions workflow `.github/workflows/rust.yml` (the repository's first; `rust/**` only, read-only permissions): fmt, clippy `-D warnings`, `cargo test`, cargo-deny and the `rust/scripts` tests; `[workspace.metadata.ci] exclude` (via `rust/scripts/ci_excludes.py`) can leave a crate with special build dependencies out of that job. New `just rust-check` and `just rust-test` (not part of `just test`). `galaxy.yml` `build_ignore` now excludes `rust` and `.github`, so a collection built from a checkout never packs `rust/target/`; `tests/test_collection_build_ignore.py` (`just test-collection-build-ignore`, part of `just test`) builds the collection and checks it. No role behaviour changes.
+- Add `rust/PLAN-foundation.md` (shared Cargo workspace under `rust/`, toolchain and cargo-deny policy, CI, per-binary release tags such as `metrics-httpd-v0.1.0`, glibc 2.35 floor, collection `build_ignore`, and the shared install helper for pinned release binaries) and `rust/metrics-httpd/PLAN.md` (Rust replacement for the Python HTTP endpoint daemons of the `*_metrics_endpoint`, `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy`, `openclaw_deploy`, `logyard_deploy` and `static_site_deploy` roles). Both plans record the owner decisions of 2026-10-21 (first GitHub Actions workflows, coordinator-made collection releases, static site as the last cutover, 7-day Python retirement, the separate GPL `software-live-apt` helper, up to three review rounds). Plans only; no role behaviour changes.
+- Add `rust/software-live/PLAN.md` (Rust replacement for the `software_live` collector, endpoint and inventory export; MIT main binary plus the separate GPL `software-live-apt` helper per distribution variant, with a CI dependency-graph check that keeps `rust-apt` out of every other member; role switch through `rust_release_binary` with a live-state `protect` list and a `previous` rollback pin, shadow units, staged cutover and a 7-day soak before the Python retirement). Plan only; no role behaviour changes.
+
+## Unreleased — Home Assistant integration downloads use the system CA store (2.64.1)
+
+- `homeassistant_deploy`: new `homeassistant_uv_system_certs` (default `true`)
+  installs a managed drop-in with only `Environment=UV_SYSTEM_CERTS=1`, so
+  Home Assistant's bundled uv (integration requirement installs) trusts the
+  patched operating-system CA store instead of its built-in roots, which for
+  Home Assistant 2026.7.2 (uv 0.11.25) still include emSign ECC Root CA - G3.
+  Before any change it refuses existing trust settings (unit, unit file,
+  service-manager environment or running service), EnvironmentFiles, other
+  drop-ins and a system store that still holds a distrusted root; its own
+  managed setting is accepted on repeat. New maintenance entry point
+  `tasks_from: uv_system_certs.yml` applies only the drop-in to an existing
+  service, restarts when it changed, waits for health and verifies. No Home
+  Assistant, uv, package or integration-constraint changes.
+- `python_security_floor`: new read-only `tasks_from: system_store.yml`.
+
+## Unreleased — certifi/pip deploy-time security floor (2.64.0)
+
+- New `python_security_floor` role and `local.ops_library.uv_lock_floor_violations`,
+  `python_security_constraints` and `python_security_report_violations` filters:
+  keep certifi at 2026.10.19 or later and upstream pip at 26.2.2 or later across
+  normal deploys (eMudhra/emSign CA compromise, GHSA-6q48-6c7w-9gw2). Nothing is
+  added to environments without certifi/pip; distrusted roots are matched by
+  SHA-256 fingerprint; system-site certifi/pip is accepted only when owned by the
+  distribution package and using the system store; explicit trust overrides are
+  left alone.
+- `metube_deploy`: resolves `metube_repo_version` to one commit in a staging
+  checkout (new `metube_source_check_dir` when the UI build is off), refuses that
+  commit's `uv.lock` below the floor before the install directory or environment
+  changes, checks out exactly that commit, and verifies the environment after
+  the sync.
+- `homeassistant_deploy`, `open_webui_venv_deploy`, `paperless_deploy`,
+  `takahe_deploy`: verify existing environments before changing anything
+  (`paperless_deploy` and `takahe_deploy` through `python_security_floor` as
+  their first role dependency, ahead of the uv/Redis/PostgreSQL installs), pass a
+  constraint file to every package install the role runs, and verify again
+  afterwards. Environments below the floor that the role's own installs would
+  not raise (for example a stale pip) now fail the deploy before any change:
+  remediate them first. Disable per role with
+  `<role>_python_security_floor_enabled: false`.
+
+## Unreleased — interrupted trust package recovery (2.63.6)
+
+- Recover explicitly proven interrupted certifi updates with immutable prior-install evidence, exact generated-cache ownership repair and owner-identity offline restoration.
+
+## Unreleased — loopback trust preflight and validation labels (2.63.5)
+
+- Correct OpenClaw trust validation task-name prefixes so strict role lint accepts the incident checks; validation behavior is unchanged.
+- Keep LiveKit idle-preflight bearer-token API requests on loopback even when ambient HTTP proxies are configured; exercise the actual CLI under a hostile proxy environment.
+
+## Unreleased — CA trust for Node.js and long-running TLS clients (2.63.4)
+
+- New `ca_trust_consumers` role, for the eMudhra intermediate CA key
+  compromise (October 2026): a fixed system CA store does not reach Node.js,
+  which verifies against its compiled-in Mozilla store, nor running Go services,
+  which load system roots once per process. Behind a CA readiness gate (minimum
+  `ca-certificates` version and no forbidden root, by SHA-256, in the bundle,
+  `/etc/ssl/cert.pem`, `/etc/ssl/certs` or `/etc/pki/tls/certs`) the role
+  - merges `--use-openssl-ca` into `NODE_OPTIONS` in `/etc/environment` for
+    login/SSH/sudo/cron sessions (npm, corepack, yarn, deploy tools), keeping
+    existing options;
+  - adds a `NODE_OPTIONS` drop-in to listed Node.js services (stopped ones
+    too, without starting them), keeping the unit's own options, failing
+    closed on any `EnvironmentFile=` that mentions `NODE_OPTIONS`, uses a
+    wildcard or cannot be read, and checking the effective value (later
+    drop-ins, `UnsetEnvironment=`);
+  - restarts listed services, one at a time with health checks, only when
+    running and started before the CA bundle changed (or, for Node.js
+    services, while a running process lacks the flag), never starting a
+    stopped unit and refusing restarts that would activate staged binary,
+    unit or config changes; a detached `systemd-run` restart covers
+    `tailscaled`;
+  - verifies the flag in the unit's effective environment and in every
+    running Node.js process of the listed services;
+  - refuses, before writing anything, when a listed unit already awaits
+    `daemon-reload`, and never logs or diffs `/etc/environment` or unit
+    definitions (they can hold secrets).
+  `--use-system-ca` and `NODE_EXTRA_CA_CERTS` only add roots and leave the
+  bundled copy of a distrusted root trusted, so the role does not use them.
+
+## Unreleased — Voxhelm Python trust cache refresh (2.63.3)
+
+- Add an explicit Voxhelm Python trust-cache refresh entrypoint with read-only aggregate idle checks, existing-unit provenance validation, patched certifi TLS probes, and verified launchd child replacement without source deployment.
+
+## Unreleased — legacy trust metadata and check-mode compatibility (2.63.2)
+
+- Keep narrowly scoped trust updates compatible with malformed unrelated legacy dependency metadata while rejecting malformed trust-package constraints. Preserve inherited collection paths in the fresh-host check-mode fixture and prevent fresh AWS drop-in parent failures under check mode.
+
+## Unreleased — bounded container trust activation (2.63.1)
+
+- Add bounded trust-only Compose fleet activation with exact installed image retention, private receipts, recovery, and one Docker daemon restart. Optional `container_ca_activate_livekit_config` performs read-only room/egress idle preflight and requires existing target PyYAML.
+
+## Unreleased — eMudhra macOS and container trust remediation (2.63.0)
+
+- Remediate Apple curl's separate macOS CA bundle with atomic trust-preserving backups and TLS probes.
+- Patch explicitly allowlisted macOS Python environments and certifi-only deployed lock records without adding packages.
+- Prepare isolated per-image replacement container CA stores; optional Graphyard, Logyard and OpenClaw settings consume them.
+- Repair LinuxServer native Qt/OpenSSL trust before application startup, failing closed on unknown trust formats.
+- Add supported managed Chrome distrust policy for eight compromised eMudhra keys, covering the browser's independent root store.
+
+## Unreleased — nyxmon_deploy: deploys no longer fail on a vanishing SQLite journal (2.62.2)
+
+- `nyxmon_deploy` no longer fails while the monitoring agent writes. The
+  database uses `journal_mode=delete`, so every write transaction creates
+  `db.sqlite3-journal` and deletes it at commit. Two tasks lost that race
+  (the Rust agent cutover needed three runs): `sqlite_privacy | Restrict
+  database and sidecars` listed a journal that was gone when its `file` call
+  ran, and `source_rsync | Set ownership for synced files` walked the site
+  root recursively and failed on a journal deleted mid-walk.
+- The ownership fix now sets owner/group on the site root, lists its entries
+  without the transient sidecars (`db.sqlite3-*`) and recurses into each entry
+  on its own; top-level symlinks are changed, not followed. The database, its
+  agent lock and backups stay in the pass.
+- The privacy pass still restricts every `db.sqlite3*` file it finds. A failure
+  on a transient sidecar is no longer an error, but the verify pass is
+  unchanged: every database file still present afterwards must be the service
+  user's and `0600`, or the deploy fails. Failures on the database, the lock or
+  a backup fail the deploy as before.
+- rsync deploys now require `nyxmon_django_path` to equal `nyxmon_site_path`
+  (the Django sync puts the project and `db.sqlite3` there).
+
+## Unreleased — explicit Java fresh-trigger recovery (2.62.1)
+
+- `java_ca_refresh`: explicitly process the distribution Java fresh trigger when
+  Ubuntu does not forward `--fresh` to hooks; retain backup provenance and an
+  anchored custom-certificate identity baseline across recovery before JVM restarts.
+
+## Unreleased — Linux trust remediation (2.62.0)
+
+- Add narrowly scoped Linux CA and virtual-environment trust remediation with offline verified wheels, dependency preflight, rollback evidence and serial health-checked restarts.
+
+## Unreleased — macOS Java trust copies (2.61.0)
+
+- `macos_java_trust`: maintain fingerprint-filtered JSSE trust copies and explicit
+  PyCharm VM options while preserving vendor bundles and unrelated trust. A narrow
+  GUI LaunchAgent supplies per-app options without suppressing IDE settings import.
+
+## Unreleased — distribution Java trust refresh (2.60.0)
+
+- `java_ca_refresh`: refresh stale Debian Java trust through distribution hooks
+  after patched OS CA updates, then restart only explicitly selected JVMs.
+
+## Unreleased — FastDeploy token issuance admins and restore policies (2.59.0)
+
+- `fastdeploy_deploy`: new `fastdeploy_service_token_admin_users` (list) and
+  `fastdeploy_restore_policies` (service name to `{bucket, prefixes}`) write
+  FastDeploy's `SERVICE_TOKEN_ADMIN_USERS` and `RESTORE_POLICIES` (FastDeploy
+  main `8faa9bd`). Without them FastDeploy refuses API token issuance (403,
+  also the web UI deploy button) and every restore (422). Each is written only
+  when non-empty, as compact JSON in single quotes in `.env` and `.env.shell`,
+  byte-identical to ops-deploy's `FastdeployConfig`. Values that FastDeploy
+  would not parse, or that could break the quoting, fail the role before
+  `.env` is written. See "Token issuance admins and restore policies" in the
+  role README.
+
+## Unreleased — explicit AWS system trust (2.58.0)
+
+- Support an explicit system CA bundle override for allowlisted botocore consumers without certifi, preserving custom trust configuration and serial health-checked restarts.
+
+## Unreleased — maintained Python trust tools (2.57.1)
+
+- Pin uv 0.13.4 with verified Linux/macOS release hashes and matching Home Assistant, MeTube and OpenWebUI installer defaults.
+- Update controller certifi to 2026.10.19 for the eMudhra trust incident.
+
+<!-- Historical release notes repeat category headings within a release. -->
+<!-- markdownlint-disable MD024 -->
+
+## Unreleased — Traefik ACME storage adoption transaction (2.57.0)
+
+- `traefik_deploy` transactions add the narrow `acme_storage` action: byte-exact
+  store copy, resolver-only email/storage repair, source SHA256 and public
+  certificate-set checks, pre/post SNI fingerprint comparison, and config rollback.
+  Read-only health probes can capture/compare TLS fingerprints; the controller
+  offers an offline candidate check. A target that is an exact copy of the
+  source (left by a rolled-back attempt) is accepted so a reviewed retry needs no
+  manual cleanup; any other target content is still refused. The new
+  `health_probe_capture` task entry captures a fresh probe baseline read-only
+  from a temporary directory. Validated in a
+  native Traefik 3.7.14 VM (success and forced rollback, no CA traffic). No
+  production migration has run.
+
+## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
+
+- The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`
+  `requires_ansible`, `pyproject.toml`), and its own lock and test environment
+  move from ansible-core 2.20.0 to 2.20.10. ansible-core 2.20.0–2.20.2 write a
+  stray `Install-Python-Debian: no` line into deb822 repository files (seen on
+  macmini's PostgreSQL apt repo), which newer controllers remove again, so the
+  same deploy reported changed whenever the controller version flipped. Note
+  that Ansible only warns on a `requires_ansible` mismatch unless
+  `collections_on_ansible_version_mismatch = error` is set.
+- `metube_deploy`: the `uv sync` task no longer reports changed (and restarts
+  MeTube) on every run. Its `changed_when` ended in `or rc == 0` and only read
+  stdout, while uv prints its summary to stderr; it now reports changed only
+  when uv installs or uninstalls packages.
+
+## Unreleased — No secrets in sudo-logged task environments (2.55.0)
+
+- With `become_user` set to an unprivileged account, Ansible puts every task
+  `environment:` value into the command it hands to sudo, and sudo logs that
+  command to the journal and `/var/log/auth.log`; `no_log` does not prevent it.
+  Several roles passed secrets that way, so they ended up in host logs on every
+  deploy. Fixed:
+  - `daybook_operations_api_deploy`: `migrate`/`provision_operations` source a new
+    0600 `environment.shell` companion (Django secret, database URL, signing
+    keyring were logged before).
+  - `chesslab_deploy`, `weeknotes_home_deploy`: management commands source a 0600
+    `.env.shell` companion; chesslab app-user passwords come from stdin.
+  - `echoport_deploy`: `migrate`/`collectstatic` rely on the settings reading the
+    0600 `.env`; `ensure_superuser` reads the password from stdin.
+  - `fastdeploy_backup`: `pg_dump` reads the password from stdin.
+  - `graphyard_auth_bootstrap_deploy`: the bootstrap user's credentials travel
+    inside the stdin script.
+  - `homeassistant_deploy`: the WebSocket helpers read the API token and the
+    Custom Conversation API key as JSON from stdin.
+  - `marina_deploy`: `ensure_superuser` reads the password from stdin.
+  - `postgres_install`: the admin password is a `login_password` module
+    parameter instead of a `PGPASSWORD` environment value.
+  - `paperless_deploy`: the superuser bootstrap script, password included, goes
+    to `manage.py shell` on stdin instead of a heredoc on the shell command line.
+- The service environment templates of the daybook operations API, chesslab and
+  weeknotes.home render unchanged for systemd; `task_shell_environment: true`
+  renders the shell-quoted companion.
+- New guard `tests/test_become_environment_secrets.py`
+  (`just test-become-environment-secrets`, part of `just test`): fails on
+  secret-looking names or secret-named variables in the environment or command
+  line of a task that becomes an unprivileged user. Reviewed exceptions:
+  `heis_deploy` admin password (open, outside this change's scope) and the
+  non-secret asset-build environments of `metube_deploy` and `wagtail_deploy`.
+- Values already logged are not removed by this change; rotate the affected
+  secrets and clean the host logs separately.
+
+## Unreleased — Non-exclusive authorized_keys mode and opsgate deploy keys (2.54.0)
+
+- `ssh_authorized_keys_manage` gains `ssh_authorized_keys_manage_exclusive`
+  (default `true`, the full-file rendering as before). With `false` the role
+  runs `ansible.posix.authorized_key` (`state: present`, `exclusive: false`)
+  once per entry: missing keys are appended, a listed key with other options
+  or another comment is rewritten in place, and every other line (keys other
+  roles installed, comments) stays. The declared line equals the one the
+  full-file mode renders, so switching a file rendered by the role is a no-op.
+  Before writing, the non-exclusive mode rehearses on scratch copies with the
+  module itself and refuses, changing nothing, when the module would rewrite
+  lines the role does not declare (merged duplicate keys or identical
+  comment/blank lines, rebuilt key lines, CRLF) or when two entries share a
+  key. No entry field may contain a line break any more. New
+  `tests/test_ssh_authorized_keys_manage.py` (`just
+  test-ssh-authorized-keys-manage`) runs both modes against a temporary home.
+- `opsgate_deploy` gains `opsgate_ops_github_deploy_keys`: one key pair per
+  GitHub SSH workspace repository (read-only deploy keys), installed as
+  `~/.ssh/id_github_deploy_<name>` with a `Host github-<name>` alias, and the
+  workspace is cloned/fetched as `git@github-<name>:...` (an existing clone's
+  `origin` is rewritten). Once deploy keys are configured and the account key
+  variable is empty, the old account key files are removed. The deploy-key
+  tasks run with `no_log`.
+- `opsgate_deploy`: the GitHub SSH URL checks in `validate.yml` and
+  `workspace_repos.yml` wrote `github\\.com` inside folded YAML scalars, which
+  reached the regex as a literal backslash and never matched. The GitHub host
+  key task was therefore always skipped and the "GitHub SSH repos need a key"
+  validation always passed. They now use `github[.]com`. New
+  `tests/test_opsgate_deploy_keys.py` (`just test-opsgate-deploy-keys`).
+
+## Unreleased — Every SQLite backup waits for writers (2.53.0)
+
+- `echoport_backup`: the SQLite handling of the generic runner (2.51.1) moved
+  into the shared `templates/_sqlite_backup.py.j2`, and every other runner that
+  copies a SQLite database includes it: `echoport_backup.py.j2` (Echoport's own
+  database), `homeassistant_backup.py.j2`, `graphyard_backup.py.j2`,
+  `delve_backup.py.j2`, `vaultwarden_backup.py.j2` and
+  `marina_staging_backup.py.j2`. Each backup now passes `.timeout 30000` before
+  `.backup`, retries a failed backup or integrity check up to 3 times 5 s apart,
+  removes a partial copy, requires `PRAGMA integrity_check` to print exactly
+  `ok` (the old substring test accepted any report containing "ok", for example
+  "broken"), and the failure names the database and the sqlite3 error (the
+  `run_cmd` callers used to report only the exit status). The delve and
+  Vaultwarden runners used Python's `sqlite3` backup API with its 5 s busy
+  timeout; they now use the same `sqlite3` call, and the Vaultwarden runner no
+  longer creates an empty database when the source is missing. The
+  pre-restore integrity checks use the exact `ok` test too.
+- `echoport_backup` GoToSocial runner: the online snapshot on the host sends
+  `sqlite3 <db> ".timeout 30000" ".backup '<tmpdir>/<name>'"` and retries up to
+  3 times, each attempt into a new file (`retry<N>-sqlite.db`) in the private
+  temp dir; the `snapshot` step carries the sqlite3 error.
+- `echoport_remote_command_guard`: a `sqlite_snapshots` `.backup` may carry one
+  `.timeout <ms>` argument before it (1 to 999999 ms); the old form is still
+  accepted. Deploy the guard on the GoToSocial host before the runner.
+- `homelab_backup`, `work_app_backup`, `nyxmon_backup`, `homeassistant_backup`:
+  the hot `sqlite3 .backup` task passes `.timeout 30000`; `nyxmon_backup` and
+  `homeassistant_backup` retry it twice, 5 s apart (homelab and work_app
+  already retried and fall back to an offline copy). `vaultwarden_backup` is
+  unchanged: it stops the service before its `.backup`.
+- The heis and villakunterbunt runners are not changed.
+- Tests: new `tests/test_sqlite_backup_runners.py` (in
+  `just test-echoport-sqlite-backup`) backs up a real database through each
+  local runner while another connection holds its exclusive lock, checks the
+  retry, the partial-copy cleanup, the exact `ok`, that no runner template runs
+  its own `.backup`, that Ansible's `template` module resolves the include, and
+  the four role tasks. `tests/test_gotosocial_echoport_backup.py` covers the
+  remote snapshot under a lock, `tests/test_echoport_remote_command_guard.py`
+  the new guard shapes.
+
+## Unreleased — Metadata-only MinIO backups (2.52.0)
+
+- `minio_backup`: `minio_backup_include_data: false` makes a metadata-only
+  snapshot: IAM export, bucket metadata export (policies, versioning,
+  lifecycle, replication config), env file, systemd unit, Traefik/TLS config.
+  MinIO is not stopped, no data directory is checked, measured or copied, and
+  the disk check only asks for `minio_backup_metadata_min_free_bytes`.
+  `metadata.yml` records `scope: metadata` and empty `data_dirs`. The default
+  (`true`) keeps the cold full backup unchanged.
+- `minio_backup`: `minio_backup_keep_count` (default `0`, keep all) keeps the
+  newest N `<prefix>-<timestamp>` snapshots under `minio_backup_root` and
+  deletes older ones of the same prefix.
+- `minio_restore`: a `scope: metadata` snapshot only re-imports bucket
+  metadata and IAM into the running MinIO; no stop, no data rsync, no data
+  directory checks. System files come back only with
+  `minio_restore_metadata_restore_system_files: true`;
+  `minio_restore_allow_metadata_only: false` refuses such snapshots. A full
+  restore now refuses to run without a data directory.
+- New Molecule scenario `roles/minio_backup/molecule/default` (real MinIO in
+  Docker, binaries copied from a MinIO image because dl.min.io no longer
+  serves them): metadata-only backup while MinIO keeps running, retention,
+  and an IAM restore of a deleted user from that snapshot.
+
+## Unreleased — encrypted_volume_prepare stops rewriting fstab and remounting (2.51.3)
+
+- `encrypted_volume_prepare`: every run rewrote the fstab entry twice and
+  remounted the mounted volume. `lineinfile` wrote the line with `0 2`, then
+  `ansible.posix.mount` (`state: mounted`, no `dump`/`passno`, so both `0`)
+  wrote it back with `0 0`, and a changed fstab entry on a mounted path makes
+  the module run `mount -o remount` (macmini: `/mnt/cryptdata` under a running
+  MinIO on every `deploy-one minio`). The `lineinfile` fstab task is gone; the
+  mount task is the only writer and takes the new
+  `encrypted_volume_fstab_dump` and `encrypted_volume_fstab_passno` (default
+  `"0"`/`"0"`, the fields the mount task has been leaving on the host). A
+  matching entry is not touched and the volume is not remounted; a real change
+  (options, source, dump, passno) still rewrites the entry and remounts, so new
+  options take effect. A new `file` task keeps `/etc/fstab` `root:root 0644`.
+- Validate-only mode: the crypttab/fstab asserts used the string result of
+  `regex_search` as a conditional, which current ansible-core rejects; they
+  now test `is not none`. The fstab check uses the configured dump/passno
+  instead of a fixed `0 2` and accepts `UUID=<uuid>` (what the configure path
+  writes) only when the mapper is open and that is its filesystem UUID;
+  the mapper path is always accepted.
+- New `just test-encrypted-volume-fstab` (part of `just test`): runs the
+  role's mount task against a temporary fstab and the validate-only assert.
+
+## Unreleased — Mastodon federation cache tasks pass lint-strict (2.51.2)
+
+- `mastodon_deploy`: the tasks in `federation_cache.yml` and
+  `federation_cache_items.yml` now carry their file prefix
+  (`federation_cache | ...`, `federation_cache_items | ...`), so
+  `just lint-strict` passes again (it reported four `name[prefix]` findings).
+  Task names only; behavior is unchanged.
+
+## Unreleased — Generic Echoport runner waits for SQLite writers (2.51.1)
+
+- `echoport_backup`: the generic runner (`backup.py.j2`, used by nyxmon and
+  the other `generic_paths` targets) ran `sqlite3 <db> ".backup ..."` without
+  a busy handler. A writer committing at that moment holds the exclusive lock
+  of a rollback-journal database, and sqlite3 then fails at once with
+  "database is locked"; the nyxmon backups of 2026-10-17 and 2026-10-20 failed
+  this way (the nyxmon agent commits a check result every few seconds). The
+  runner now passes `.timeout 30000` before `.backup`, retries a failed backup
+  or integrity check up to 3 times 5 s apart, removes a partial copy, requires
+  the integrity check to print exactly `ok`, and appends the sqlite3 error to
+  the `Failed to backup database: <path>` step message. New
+  `tests/test_echoport_sqlite_backup.py` (`just test-echoport-sqlite-backup`)
+  backs up a real database while another connection holds its exclusive lock.
+
+## Unreleased — certbot_dns_deploy removes listed stray config trees (2.51.0)
+
+- `certbot_dns_deploy` gains `certbot_dns_stray_config_dirs` (default `[]`):
+  an explicit list of leftover certbot config trees outside
+  `certbot_dns_config_dir` to delete, such as the `/letsencrypt` an earlier
+  `certbot_dns_restore` extracted into `/` (old account key and DNS
+  credentials). New `tasks/stray.yml` runs after `cleanup.yml`. Each path must
+  be absolute and normalized (letters, digits, `.`, `_`, `-`, `/` only) and must
+  not be equal to, inside or above the live config dir or
+  `/etc/letsencrypt`, `/var/lib/letsencrypt` and `/var/log/letsencrypt`, both as
+  given and after resolving symlinks on the host. It must be a real directory
+  (not a symlink) with a `renewal/` directory. The live trees must use
+  only literal paths: each protected dir is its own real path, the only
+  symlinks are certbot's lineage links (`live/<name>/<cert|chain|fullchain|privkey>.pem`
+  -> `../../archive/<name>/<same>N.pem`), and every value with a `/` in any
+  protected tree's `renewal/*.conf` is an `https://` URL or a plain absolute path
+  inside the protected dirs; otherwise nothing is removed. These host checks are
+  in `files/certbot_stray_guard.py`, and a read error counts as a refusal. Any
+  failed check stops the run before anything is removed; a missing path is
+  skipped; check mode only reports. Tests in `tests/test_certbot_dns_rfc2136.py`.
+
+## Unreleased — Grafana password check needs an exact MATCH (2.50.1)
+
+- `graphyard_auth_bootstrap_deploy`: the final Grafana admin password
+  verification passed with a wrong password. It tested `'MATCH' in stdout`,
+  which is also true for `MISMATCH`. The verification (`until` and
+  `failed_when`) and the reset condition now compare the trimmed status line
+  exactly (`== "MATCH"` / `== "MISMATCH"`). A new regression test runs the
+  embedded check script against a temporary Grafana-style database with the
+  right and a wrong password and evaluates the tasks' own conditions. A sweep
+  of the collection for the same substring test found no other status token
+  that is contained in its opposite.
+
+## Unreleased — Backup archives on the host are owner-only (2.50.0)
+
+- Backup roles no longer leave archives readable by other accounts on the
+  host. They wrote them with the default umask (`0644`), e.g.
+  `/opt/backups/traefik/*.tar.gz` with `acme.json` inside; only
+  `minecraft_java_backup` set `0600`. Every `archive` task now sets
+  `mode: "0600"`, and every `tar` either runs under `umask 077` or is followed
+  by a task that sets the archive to `0600`: `certbot_dns_backup`,
+  `fastdeploy_backup`, `homeassistant_backup`, `homelab_backup`,
+  `jellyfin_backup`, `mail_backup`, `mastodon_backup`, `metube_backup`,
+  `minio_backup`, `navidrome_backup`, `nyxmon_backup`, `postfixadmin_backup`
+  (`templates_c.tar.gz`), `snappymail_backup`, `tailscale_backup`,
+  `takahe_backup`, `traefik_backup`, `unifi_backup`, `vaultwarden_backup`
+  (also the `.age` file), `wagtail_backup` and `work_app_backup`.
+- Archives from earlier runs are fixed by the next backup run: each of those
+  roles (and `minecraft_java_backup` and `paperless_backup`) finds the files
+  matching `*.tar`, `*.tar.*` and `*.tgz` directly in its backup root and sets
+  every one that is not `0600` yet to `0600` with the file module (no
+  recursive chmod; a second run changes nothing). Other files stay as they are.
+- Backup roots: `homeassistant_backup_dir_mode` and `wagtail_backup_dir_mode`
+  default to `0700` (were `0750`), and `homeassistant_backup` now creates its
+  backup root explicitly with that mode. `snappymail_backup` gets
+  `snappymail_backup_dir_mode` (default `0700`) for its root, which used
+  `snappymail_backup_mode`, and `snappymail_backup_mode` (archive and manifest)
+  defaults to `0600` (was `0640`). The roots of `fastdeploy_backup`,
+  `mail_backup` and `paperless_backup` stay group-traversable because `pg_dump`
+  writes into them as `postgres`; there `tar` runs under `umask 077`
+  (`fastdeploy_backup`, `mail_backup`) or into a private temporary file
+  (`paperless_backup`).
+- `fastdeploy_backup` no longer sets the archive to `0644` "for the fetch": it
+  applies the new `fastdeploy_backup_archive_mode` (default `0600`) whether or
+  not the archive is fetched, and `mail_backup` sets its archive to `0600`
+  also when it is not fetched. **Rollout:** the synchronize fetch reads the
+  archive as the SSH user; with a non-root SSH user give the archive a group
+  of that user and set `fastdeploy_backup_archive_mode` to `0640`.
+- `traefik_backup` has a Molecule scenario (an old world-readable archive in a
+  `0755` root ends up `0600` in a `0700` root next to a new `0600` archive);
+  the `snappymail_backup` scenario checks the root and archive modes;
+  `tests/test_backup_archive_modes.py` checks every backup role and runs
+  `traefik_backup` on localhost.
+
+## Unreleased — Nyxmon account, removal and restore fixes (2.49.2)
+
+- `nyxmon_deploy`: a fresh host gets the `nyxmon` account the role asks for
+  (primary group `nyxmon_group`, `/bin/bash`, `nyxmon_home`). The existence
+  check tested `.failed` on a `getent` task with `failed_when: false`, which is
+  never true, so the create task was skipped and the "add to group" task
+  created the account with useradd's defaults (group `users`, `/bin/sh`).
+  Files the service user then created carried group `users`, which the next
+  run's recursive ownership tasks would change once. The group task also appended
+  `nyxmon` to its own primary group on the run after a fresh install; it now
+  runs only for an existing account whose primary group differs.
+- `nyxmon_remove`: removes the `sqlite-privacy.conf` drop-ins `nyxmon_deploy`
+  installs for `nyxmon` and `nyxmon-monitor`, and their `.service.d`
+  directories when they are then empty.
+- `nyxmon_restore`: the restored directories (media, static, cache, logs) end
+  at `0755` again. `rsync -a` copied the archive directory's `0700`
+  (nyxmon_backup creates them that way) onto the live directories, so a
+  restore changed their mode and the next deploy changed it back.
+- The `nyxmon_deploy` Molecule scenario checks the created account and that
+  later runs leave its group alone, and runs `nyxmon_remove` at the end;
+  `tests/test_nyxmon_lifecycle.py` pins the task structure.
+
+## Unreleased — Traefik basic-auth hashes stay stable across deploys (2.49.1)
+
+- New shared task file `webapp_deploy_internal/tasks/traefik_basic_auth_hash.yml`
+  resolves the bcrypt hash a Traefik basicAuth middleware renders: it reuses
+  the hash in the deployed dynamic file while `htpasswd -v` confirms it still
+  matches the current password, and hashes anew only when there is no
+  deployed hash, the password changed or the hash is malformed. bcrypt salts
+  are random, so hashing on every run rewrote the dynamic file on every deploy
+  and fired any notified Traefik reload or restart even when nothing changed.
+- `traefik_config.yml` uses it, so `fastdeploy_deploy`, `nyxmon_deploy`,
+  `chesslab_deploy`, `graphyard_ingress_deploy` and `work_app_deploy` no
+  longer rewrite their Traefik file on a no-op deploy. `echoport_deploy`,
+  `homelab_deploy`, `jellyfin_deploy`, `metube_deploy`, `minio_deploy`,
+  `navidrome_deploy`, `ollama_proxy_deploy`, `open_webui_deploy`,
+  `open_webui_venv_deploy` and `weeknotes_home_deploy` switch from their own
+  hash tasks to the shared one. That also stops `echoport_deploy`,
+  `homelab_deploy` and `minio_deploy` from putting the password into a shell
+  command line and `jellyfin_deploy`, `metube_deploy`, `navidrome_deploy`,
+  `ollama_proxy_deploy` and `open_webui*_deploy` from passing it as an
+  `htpasswd -b` argument: the password reaches htpasswd on stdin only. A
+  provided `*_basic_auth_password_hash` is still used as is.
+- Check mode: the hash lookup and verification run in check mode too, so a
+  `--check` run of an unchanged deploy reports the Traefik file unchanged; a
+  pending password change renders a placeholder hash instead of failing on
+  the skipped `htpasswd` call (`weeknotes_home_deploy` already did this).
+- New Molecule scenario `webapp_deploy_internal/default`: the idempotence step
+  fails if a second run rewrites either route, and verify covers a password
+  change and a malformed deployed hash. `scripts/checkout-collections-path.sh`
+  lets local playbook tests resolve `local.ops_library` roles from the
+  checkout.
+
+## Unreleased — FastDeploy runners move to a root-owned directory (2.49.0)
+
+FastDeploy's services root was owned by the `fastdeploy` user, and every
+FastDeploy deploy handed the whole site, including the backup scripts that
+sudo runs as root, back to it: code running as fastdeploy could rewrite (or,
+by renaming a directory, replace) a script and run it as root.
+
+- New role `fastdeploy_runner`: installs a script FastDeploy starts through
+  sudo in `/usr/local/libexec/fastdeploy/<service>/` (root:root `0755`
+  directories, script root:`deploy` `0750`; fails if a directory above the
+  libexec root is not root-owned or is writable by others), writes
+  `config.json` with the absolute script path (FastDeploy runs absolute
+  `deploy_script` paths as they are; no FastDeploy change needed), writes
+  sudoers rules with that fixed path only, runs `commands.py syncservices` as
+  the fastdeploy user and then removes the old copy in the services root.
+  Idempotent; Molecule covers the migration from the old layout, tamper
+  attempts as fastdeploy and deploy, and a run through the sudo chain.
+- `echoport_backup` uses it: the runner moves to
+  `/usr/local/libexec/fastdeploy/<service>/backup.py`
+  (`echoport_backup_libexec_root`). The service sync now runs locally as the
+  fastdeploy user; `echoport_backup_api_base`/`echoport_backup_api_token` are
+  no longer used.
+- `fastdeploy_deploy`: the services root is root:root `0755` and is excluded
+  from rsync and from the ownership pass (which replaced the recursive
+  `chown` of the whole site); every deploy makes everything below the
+  services root root-owned again and creates `fastdeploy_libexec_path`
+  (`/usr/local/libexec/fastdeploy`, root:root `0755`).
+- `fastdeploy_register_service`: the service directory, the `deploy.py` copy
+  and `config.json` are root-owned.
+- FastDeploy restores (`fastdeploy_restore`, Echoport `fastdeploy-backup`)
+  leave the services root root-owned and restore an archived sudoers file
+  only when its scripts are root-owned runners below `/usr/local/libexec`
+  (or, for rules that run as `deploy`, in `/home/deploy/runners/`); rules
+  naming `/home/fastdeploy/site/services/` are skipped.
+- Rollout: deploy FastDeploy, then rerun every backup registration whose
+  playbook uses `fastdeploy_runner` (ops-control). Until a registration is
+  rerun its script stays in the (now root-owned) services root.
+
+## Unreleased — uv_install works under --check (2.48.2)
+
+- `uv_install`: `ansible-playbook --check` no longer fails. The read-only
+  `uv --version` probe ran only in real runs, so check mode reached the version
+  parse without a result and failed unless `-e uv_update_existing=false` was
+  passed. The probe and the final verification now also run in check mode; a
+  pending install or update is reported as one changed task and nothing is
+  downloaded or installed. The Molecule scenario covers three `--check` cases.
+
+## Unreleased — archive_deploy documents archive_workers
+
+- `archive_deploy`: the README lists `archive_workers` (default `2`, the
+  gunicorn worker count of the web app) under the common overrides. The
+  variable already existed; nothing changes for deployments.
+
+## Unreleased — Echoport runner fails closed on a missing mc alias (2.48.1)
+
+- The generic Echoport runner (`echoport_backup`, `backup.py.j2`) checks with
+  `mc --json alias list` that the object key's mc alias exists before it
+  archives anything and before every `mc cp`/`mc stat`, and fails the backup or
+  restore with an error naming the alias and the key prefix. mc reads an
+  unknown alias as a local path, so a target without its own alias, whose
+  fallback alias had been removed, wrote its archives below the runner's
+  working directory and Echoport recorded them as successful backups. The
+  alias listing carries the secret key and is never printed.
+- New `echoport_backup_minio_require_prefix_alias` (default `false`) refuses
+  keys without an entry in `echoport_backup_minio_prefix_aliases` instead of
+  falling back to `echoport_backup_minio_alias`.
+
+## Unreleased — Server ad analysis: Delve settings, llama-server role, worker profile runtime (2.48.0)
+
+Slice 16 of the podcast repo's server ad analysis
+(`docs/player/specs/server-ad-analysis-design.md`). Nothing changes for a
+deployment that leaves the new switches off.
+
+- `delve_deploy`: new `delve_smart_skip_analysis` (default `false`). When on,
+  the role installs apt `ffmpeg`, copies the analysis profile JSON
+  (`delve_smart_skip_analysis_profile_src`) to `/etc/delve`, creates
+  `delve_analysis_media_dir` (delve, 0700; added to the unit's
+  `ReadWritePaths` when it is outside the data directory), writes the voxhelm
+  producer token and the detector API key to their own files (root:delve
+  0640, `no_log`) and renders `DELVE_SMART_SKIP_ANALYSIS`,
+  `DELVE_SMART_SKIP_ANALYSIS_PROFILE`, `DELVE_ANALYSIS_MEDIA_DIR`,
+  `DELVE_ANALYSIS_MEDIA_DISK_CAP_BYTES`, `DELVE_FFPROBE_PATH`,
+  `DELVE_FFMPEG_PATH`, `DELVE_VOXHELM_URL` + `DELVE_VOXHELM_TOKEN_FILE`,
+  `DELVE_DETECTOR_URL` + `DELVE_DETECTOR_API_KEY_FILE` and the optional
+  timeouts. URLs must be bare origins; a secret must be at least 32 characters
+  and not `CHANGEME`, and the detector API key at least 32 of
+  `A-Z a-z 0-9 . _ ~ + / = -` (`delve_detector_api_key_pattern`, checked
+  without printing it). Off, none of this is
+  rendered and the env file and unit are unchanged; the secret files are removed.
+  ops-deploy's `delve` service mirrors the new `delve.env.j2` and
+  `delve.service.j2` lines byte for byte (its parity tests vendor both).
+- New role `llama_server_deploy`: one pinned llama.cpp `llama-server` on macOS
+  as a LaunchDaemon, started through a wrapper copied from the control node
+  (Delve's `detector-server.sh`, checked to pin the same GGUF SHA-256 and the
+  private flags). Installs Homebrew `llama.cpp` when missing (never upgrades)
+  and fails unless the installed build is `llama_server_build`; downloads the
+  GGUF at a pinned Hugging Face commit with its SHA-256; writes the API key file
+  (0600, service user); binds to the host's Tailscale address (`tailnet`) or a
+  loopback/tailnet literal; and checks after a start that `/v1/models` serves
+  exactly the alias, `/props` the build and one slot, and `/v1/models`
+  without the key answers 401. The API key must be at least 32 of
+  `A-Z a-z 0-9 . _ ~ + / = -` (`llama_server_api_key_pattern`): llama-server
+  skips key-file lines starting with `#` and does not trim, so another value
+  could leave it without authentication.
+  `llama_server_enabled: false` unloads it and removes the plist and key file.
+- `voxhelm_remote_worker_deploy`: new
+  `voxhelm_remote_worker_ad_analysis_enabled` (default `false`) for the
+  `ad-analysis-v1` profile runtime: installs `whisper-cpp` and `ffmpeg` when
+  missing, downloads `ggml-large-v3-turbo.bin` at a pinned commit and checks
+  its SHA-256 (or links a verified existing file), renders
+  `VOXHELM_WINDOW_MODEL`, `VOXHELM_WINDOW_TIMEOUT_SECONDS` and
+  `VOXHELM_FFPROBE_BIN`, and requires Parakeet to be enabled.
+
+## Unreleased
+
+- Remove `stsPreload: true` from all role Traefik templates so their HSTS
+  middleware no longer advertises `preload`. No domains were submitted to the
+  browser preload list; the owner decided against registration on 2026-10-19.
+  HSTS lifetimes, subdomain settings, and all other security headers are unchanged.
 
 ## Unreleased — Voice Memo Matter terminology (2.47.1)
 

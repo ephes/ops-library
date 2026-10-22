@@ -12,6 +12,8 @@ import json
 import os
 import re
 import shutil
+import socket
+import ssl
 import stat
 import subprocess
 import tarfile
@@ -324,8 +326,7 @@ def validate_metrics_bind(
         require(setting == "delete", "only the approved delete strategy is supported")
         if name != "traefik":
             require(
-                entries[name].get("http", {}).get("aliasHeadersStrategy")
-                == "delete",
+                entries[name].get("http", {}).get("aliasHeadersStrategy") == "delete",
                 "existing entrypoint alias policy is incomplete",
             )
     metrics = old.get("metrics")
@@ -344,6 +345,116 @@ def validate_metrics_bind(
         new == expected,
         "metrics binding candidate changes unrelated static configuration",
     )
+
+
+def validate_acme_storage(before: bytes, after: bytes, policy: dict[str, Any]) -> None:
+    """Accept only the misplaced resolver email/storage repair, without reserializing."""
+    require(policy.get("acme_source") == "/acme.json", "unsupported ACME source")
+    require(
+        policy.get("acme_target") == "/etc/traefik/acme/acme.json",
+        "unsupported ACME target",
+    )
+    old, new = tomllib.loads(before.decode()), tomllib.loads(after.decode())
+    expected = copy.deepcopy(old)
+    misplaced = expected.pop("acme", None)
+    require(
+        isinstance(misplaced, dict) and set(misplaced) == {"email", "storage"},
+        "expected only misplaced email and storage",
+    )
+    require(isinstance(misplaced["email"], str), "email must be a string")
+    if expected.get("letsencrypt") == {}:
+        del expected["letsencrypt"]
+    resolver = expected["certificatesResolvers"]["letsencrypt"]["acme"]
+    require(
+        "email" not in resolver and "storage" not in resolver,
+        "resolver already has email or storage",
+    )
+    resolver.update(email=misplaced["email"], storage=policy["acme_target"])
+    require(new == expected, "ACME candidate changes unrelated configuration")
+
+
+def certificate_set(data: bytes) -> list[tuple[tuple[str, ...], str]]:
+    """Public certificate identities only; never serialize account or key material."""
+    store = json.loads(data)
+    require(set(store) == {"letsencrypt"}, "expected one letsencrypt resolver")
+    certificates = store["letsencrypt"]["Certificates"]
+    require(isinstance(certificates, list) and certificates, "empty certificate store")
+    result = []
+    for item in certificates:
+        domain = item["domain"]
+        names = tuple(sorted({domain["main"], *domain.get("sans", [])}))
+        require(
+            all(isinstance(name, str) and name for name in names),
+            "invalid certificate domains",
+        )
+        pem = base64.b64decode(item["certificate"], validate=True)
+        # OpenSSL parses the leaf at the start of Traefik's PEM chain.
+        expiry = run(
+            ["openssl", "x509", "-noout", "-enddate"], input=pem.decode("ascii")
+        ).strip()
+        require(expiry.startswith("notAfter="), "missing certificate expiry")
+        result.append((names, expiry))
+    return sorted(result)
+
+
+def acme_preflight(
+    policy: dict[str, Any],
+) -> tuple[bytes, list[tuple[tuple[str, ...], str]]]:
+    source, target = Path(policy["acme_source"]), Path(policy["acme_target"])
+    trusted_file(source)
+    require(stat.S_IMODE(source.stat().st_mode) == 0o600, "ACME source must be 0600")
+    for parent in (target.parent.parent, target.parent):
+        info = parent.lstat()
+        require(
+            stat.S_ISDIR(info.st_mode)
+            and info.st_uid == 0
+            and not info.st_mode & 0o022,
+            "unsafe ACME parent directory",
+        )
+    data = source.read_bytes()
+    if target.exists() or target.is_symlink():
+        trusted_file(target)
+        # An exact copy is what a rolled-back attempt leaves; anything else is foreign.
+        require(
+            target.stat().st_size == 0 or target.read_bytes() == data,
+            "ACME target must be absent, empty or an exact copy of the source",
+        )
+    return data, certificate_set(data)
+
+
+def tls_fingerprints(names: list[str]) -> dict[str, str]:
+    """Probe every stored hostname directly on local Traefik using SNI."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    result = {}
+    for name in names:
+        with (
+            socket.create_connection(("127.0.0.1", 443), timeout=10) as connection,
+            context.wrap_socket(connection, server_hostname=name) as connection_tls,
+        ):
+            cert = connection_tls.getpeercert(binary_form=True)
+            if not cert:
+                raise Refused("missing served certificate")
+            result[name] = hashlib.sha256(cert).hexdigest()
+    return result
+
+
+def verify_tls_fingerprints(names: list[str], baseline: dict[str, str]) -> None:
+    """Allow bounded resolver startup settling; never accept a different leaf."""
+    last: Exception | None = None
+    for attempt in range(5):
+        try:
+            require(
+                tls_fingerprints(names) == baseline,
+                "served certificate fingerprint changed",
+            )
+            return
+        except (OSError, Refused) as exc:
+            last = exc
+            if attempt < 4:
+                time.sleep(2)
+    raise Refused("TLS fingerprint verification failed") from last
 
 
 def candidate_binary(
@@ -394,7 +505,11 @@ def backup(policy: dict[str, Any], directory: Path) -> None:
         all(Path(p).is_absolute() and ".." not in Path(p).parts for p in paths),
         "invalid backup path",
     )
-    require(all(Path(p).exists() for p in paths), "required backup path absent")
+    require(
+        all(Path(p).exists() or p == policy.get("acme_target") for p in paths),
+        "required backup path absent",
+    )
+    paths = [p for p in paths if Path(p).exists()]
     run(
         [
             "tar",
@@ -445,7 +560,15 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
     validate_policy(policy)
     require(
         action
-        in ["inspect", "enroll", "binary", "alias", "metrics_bind", "resume"],
+        in [
+            "inspect",
+            "enroll",
+            "binary",
+            "alias",
+            "metrics_bind",
+            "acme_storage",
+            "resume",
+        ],
         "unknown action",
     )
     state_path = STATE_ROOT / "state.json"
@@ -556,6 +679,8 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
             after = base64.b64decode(request["candidate_config_base64"], validate=True)
             if action == "alias":
                 validate_alias(old_config, after, policy["alias_policy"])
+            elif action == "acme_storage":
+                validate_acme_storage(old_config, after, policy)
             else:
                 validate_metrics_bind(old_config, after, policy["alias_policy"])
             candidate = directory / "candidate.toml"
@@ -577,6 +702,24 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
                 identity(policy) == live, "identity changed during no-op verification"
             )
             return {"changed": False, "state": state}
+        if action == "acme_storage":
+            require(
+                policy["acme_source"] in policy["acme_paths"]
+                and policy["acme_source"] in policy["backup_paths"],
+                "source backup is required",
+            )
+            source_bytes, certificates = acme_preflight(policy)
+            source_hash = hashlib.sha256(source_bytes).hexdigest()
+            names = sorted({name for domains, _ in certificates for name in domains})
+            fingerprints = tls_fingerprints(names)
+            save(
+                directory / "acme-baseline.json",
+                {
+                    "source_sha256": source_hash,
+                    "certificates": certificates,
+                    "tls_fingerprints": fingerprints,
+                },
+            )
         backup(policy, directory)
         original = directory / "original"
         shutil.copy2(destination, original)
@@ -595,11 +738,35 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
         save(state_path, pending)
         replaced = False
         try:
+            if action == "acme_storage":
+                # Recheck after backup and baseline capture, before any live write.
+                latest, _ = acme_preflight(policy)
+                require(
+                    hashlib.sha256(latest).hexdigest() == source_hash,
+                    "ACME source changed before copy",
+                )
+                target = Path(policy["acme_target"])
+                if target.exists():
+                    atomic(directory / "acme-target.orig", target.read_bytes())
+                target.parent.chmod(0o700)
+                atomic(target, source_bytes, 0o600)
+                require(digest(target) == source_hash, "ACME copy hash mismatch")
             replaced = True
             atomic(destination, candidate.read_bytes(), mode)
             accepted = restart_verify(
                 policy, expected, request["acceptance_probe"], request["cleanup_probe"]
             )
+            if action == "acme_storage":
+                require(
+                    digest(Path(policy["acme_source"])) == source_hash,
+                    "ACME source changed since copy",
+                )
+                require(
+                    certificate_set(Path(policy["acme_target"]).read_bytes())
+                    == certificates,
+                    "ACME certificate set changed",
+                )
+                verify_tls_fingerprints(names, fingerprints)
             complete = state_for(
                 policy,
                 "clear",
@@ -621,7 +788,11 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
                 review_due=int(time.time()) + 3600,
             )
             try:
-                check_probe(request["cleanup_probe"])
+                cleanup_failure = None
+                try:
+                    check_probe(request["cleanup_probe"])
+                except BaseException as exc:  # noqa: BLE001
+                    cleanup_failure = exc
                 if replaced:
                     atomic(destination, original.read_bytes(), mode)
                     restart_verify(
@@ -630,6 +801,10 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
                         request["baseline_probe"],
                         request["cleanup_probe"],
                     )
+                    if action == "acme_storage":
+                        verify_tls_fingerprints(names, fingerprints)
+                if cleanup_failure is not None:
+                    raise cleanup_failure
                 recovery["identity"] = identity(policy)
             except BaseException as restore_failure:  # noqa: BLE001
                 # Any interrupted recovery must retain degraded state.

@@ -1,7 +1,7 @@
 ---
 namespace: local
 name: ops_library
-version: 2.48.0
+version: 2.67.0
 readme: README.md
 authors:
   - Jochen Wersdörfer
@@ -27,3 +27,8 @@ build_ignore:
   - __pycache__
   - .DS_Store
   - tests
+  # The Rust sources and their build output (rust/target/ can be hundreds of
+  # MB) and the GitHub workflows are not part of the collection
+  # (rust/PLAN-foundation.md section 5; tests/test_collection_build_ignore.py).
+  - rust
+  - .github

@@ -1,0 +1,33 @@
+---
+# Give the FastDeploy site to the fastdeploy user, except the services root:
+# it stays root-owned (tasks/runner_layout.yml). A recursive chown over the
+# whole site used to hand every runner script below services/ back to
+# fastdeploy on each deploy, so fastdeploy could rewrite scripts that sudo
+# runs as root.
+- name: site_ownership | Hand the site to the FastDeploy user, skipping the services root
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ fastdeploy_ownership_root | default(fastdeploy_site_path) }}"
+      - -path
+      - "{{ fastdeploy_services_path }}"
+      - -prune
+      - -o
+      - (
+      - "!"
+      - -user
+      - "{{ fastdeploy_user }}"
+      - -o
+      - "!"
+      - -group
+      - "{{ fastdeploy_group }}"
+      - )
+      - -print
+      - -exec
+      - chown
+      - -h
+      - "{{ fastdeploy_user }}:{{ fastdeploy_group }}"
+      - "{}"
+      - +
+  register: fastdeploy_site_ownership
+  changed_when: fastdeploy_site_ownership.stdout | length > 0

@@ -20,7 +20,8 @@ The archive stores the directory by name (`letsencrypt/live/...`). The role:
 
 Pre-restore copies are never removed by the role; inspect and prune them by hand. Earlier
 versions extracted into `/`, which created `/letsencrypt` and left `/etc/letsencrypt`
-unchanged; delete a stray `/letsencrypt` from such a run by hand after checking it.
+unchanged; remove a stray `/letsencrypt` from such a run with `certbot_dns_deploy`'s
+`certbot_dns_stray_config_dirs`, which checks it first.
 
 ## Role Variables
 

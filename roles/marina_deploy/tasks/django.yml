@@ -42,12 +42,24 @@
   register: marina_collectstatic_result
   changed_when: "'0 static files copied' not in marina_collectstatic_result.stdout"
 
+# The admin password arrives on stdin, never in the task environment: under become,
+# Ansible puts task environment values into the command it hands to sudo, and sudo
+# logs that command.
 - name: Ensure admin user exists
-  shell: |
-    set -a
-    . {{ marina_env_file }}
-    set +a
-    {{ marina_venv_bin }}/python manage.py ensure_superuser
+  shell:
+    cmd: |
+      set -a
+      . {{ marina_env_file }}
+      set +a
+      # Lossless: stdin is 'x' + value with no added newline (never empty, so the
+      # command never inherits another stdin); both sentinels are stripped.
+      ADMIN_PASSWORD=$(cat; printf x)
+      ADMIN_PASSWORD=${ADMIN_PASSWORD%x}
+      ADMIN_PASSWORD=${ADMIN_PASSWORD#x}
+      export ADMIN_PASSWORD
+      {{ marina_venv_bin }}/python manage.py ensure_superuser
+    stdin: "x{{ marina_admin_password }}"
+    stdin_add_newline: false
   args:
     chdir: "{{ marina_site_path }}"
     executable: /bin/bash
@@ -55,7 +67,6 @@
     DJANGO_SETTINGS_MODULE: "{{ marina_django_settings_module }}"
     ADMIN_USERNAME: "{{ marina_admin_username }}"
     ADMIN_EMAIL: "{{ marina_admin_email | default('') }}"
-    ADMIN_PASSWORD: "{{ marina_admin_password }}"
   become: true
   become_user: "{{ marina_user }}"
   when:

@@ -58,6 +58,7 @@ binary then treats them as `false`). When set, they must be a boolean or the
 string `true`/`false` (any case), and are written as `"true"`/`"false"`. Any
 other value (`yes`, `1`, a typo) fails validation instead of silently turning
 the flag off.
+
 - `delve_storekit_root_certs_path` + `delve_storekit_bundle_id` +
   `delve_storekit_product_ids` — enable StoreKit verification. When the certs
   path is set, the role copies its bundled public Apple Root CA - G3 PEM to that
@@ -82,6 +83,67 @@ the flag off.
   active episode TTL, 100 items per feed/run, and 100 sources per run. The source
   cap plus collector concurrency floor keeps the app lock and 35-minute systemd
   timeout coherent.
+
+## Server ad analysis
+
+`delve_smart_skip_analysis: true` switches on Delve's server ad analysis
+(`DELVE_SMART_SKIP_ANALYSIS`; podcast repo,
+`docs/player/specs/server-ad-analysis-design.md` and
+`docs/backend/specs/deployment-and-operations.md`). Off (the default), the
+role renders none of the settings below, so the env file and the unit stay
+byte-identical to a deployment without them, and it removes the two secret
+files if an earlier deploy wrote them.
+
+When on, the role
+
+1. installs `delve_smart_skip_packages` (apt `ffmpeg`: Delve probes downloads
+   with ffprobe and decodes edge windows with ffmpeg);
+2. copies the analysis profile JSON from the control node
+   (`delve_smart_skip_analysis_profile_src`, required, checked to be a JSON
+   object) to `delve_smart_skip_analysis_profile_path` (default
+   `/etc/delve/smart-skip-analysis-profile.json`, root:delve 0640) and renders
+   `DELVE_SMART_SKIP_ANALYSIS_PROFILE`. `delved` refuses to start with a profile
+   it does not implement, so a wrong profile fails the loopback health check;
+3. creates `delve_analysis_media_dir` (delve:delve 0700) when it is set and
+   renders `DELVE_ANALYSIS_MEDIA_DIR`; a directory outside `delve_data_dir` is
+   added to the unit's `ReadWritePaths`. Empty keeps Delve's default
+   (`<data dir>/smart-skip-media`). Keep it off the backup path: it holds
+   publisher audio and transcripts. The role never deletes it;
+4. writes `delve_voxhelm_token` to `delve_voxhelm_token_path` and
+   `delve_detector_api_key` to `delve_detector_api_key_path` (root:delve 0640,
+   `no_log`) when the matching URL is set, and renders `DELVE_VOXHELM_URL` +
+   `DELVE_VOXHELM_TOKEN_FILE` and `DELVE_DETECTOR_URL` +
+   `DELVE_DETECTOR_API_KEY_FILE`. A URL must be a bare origin
+   (`http(s)://host[:port]`); its secret must be at least 32 characters and not
+   `CHANGEME`, and the detector key must match
+   `delve_detector_api_key_pattern` (the key llama-server reads whole, as
+   `llama_server_deploy` checks it); both are checked without printing them;
+5. renders the optional `DELVE_ANALYSIS_MEDIA_DISK_CAP_BYTES`,
+   `DELVE_FFPROBE_PATH`, `DELVE_FFMPEG_PATH`, `DELVE_VOXHELM_TIMEOUT_SECONDS`,
+   `DELVE_VOXHELM_UPLOAD_TIMEOUT_SECONDS`, `DELVE_VOXHELM_POLL_SECONDS` and
+   `DELVE_DETECTOR_TIMEOUT_SECONDS` only when set (empty: Delve's defaults).
+
+Changing the profile, a secret file, the env file or the unit restarts
+`delved`. The detector is a `llama-server` started by the
+[`llama_server_deploy`](../llama_server_deploy/README.md) role; pass it the same
+API key.
+
+```yaml
+delve_smart_skip_analysis: true
+delve_smart_skip_analysis_profile_src: "{{ playbook_dir }}/../../files/delve/smart-skip-analysis-profile.json"
+delve_analysis_media_dir: /var/lib/delve-smart-skip-media
+delve_analysis_media_disk_cap_bytes: 20000000000
+delve_ffprobe_path: /usr/bin/ffprobe
+delve_ffmpeg_path: /usr/bin/ffmpeg
+delve_voxhelm_url: "http://voxhelm.example.ts.net:8787"
+delve_voxhelm_token: "{{ delve_secrets.voxhelm_token }}"
+delve_detector_url: "http://studio.example.ts.net:8177"
+delve_detector_api_key: "{{ delve_secrets.detector_api_key }}"
+```
+
+Switching the analysis off again (`false`) removes the settings and the secret
+files and restarts `delved`; the media directory, the profile file and the
+analysis tables stay.
 
 ## Legacy iOS transition
 

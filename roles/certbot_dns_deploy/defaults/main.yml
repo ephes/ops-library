@@ -62,5 +62,14 @@ certbot_dns_reconfigure_on_provider_change: true
 # that still uses it, for example after a failed switch, keeps it.
 certbot_dns_remove_unused_credentials: true
 
+# Leftover certbot config trees outside certbot_dns_config_dir to delete, as an
+# explicit list of absolute paths (e.g. a copy made by hand during a migration).
+# Each must be a real directory with a renewal/ directory, must not overlap the
+# live config dir or certbot's default dirs (also after resolving symlinks), and
+# the live trees must use only literal paths (no symlinks besides certbot's
+# lineage links, plain renewal configuration paths inside them); otherwise the
+# run fails before anything is removed. Empty by default: nothing is removed.
+certbot_dns_stray_config_dirs: []
+
 # Package management
 certbot_dns_package_state: present

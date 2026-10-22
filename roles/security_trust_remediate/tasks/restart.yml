@@ -1,0 +1,29 @@
+---
+- name: restart | Restart affected long-running TLS client
+  ansible.builtin.systemd_service:
+    name: "{{ trust_service }}"
+    state: restarted
+
+- name: restart | Wait for application health after each restart
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    status_code: "{{ item.status_codes | default([200]) }}"
+    follow_redirects: none
+    headers: "{{ item.headers | default({}) }}"
+  register: security_trust_health
+  retries: 30
+  delay: 2
+  until: security_trust_health is succeeded
+  loop: "{{ trust_env.health_urls }}"
+
+- name: restart | Verify the individual worker remains active and running
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - "{{ trust_service }}"
+      - --property=ActiveState,SubState
+      - --value
+  register: security_trust_unit_state
+  changed_when: false
+  failed_when: security_trust_unit_state.stdout_lines | sort != ['active', 'running']

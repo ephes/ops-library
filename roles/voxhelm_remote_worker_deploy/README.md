@@ -96,6 +96,34 @@ files are present, re-checked on every heartbeat. Jobs reach it only after the
 control plane sets `voxhelm_known_speaker_stt_backend: "parakeet"`
 (`voxhelm_deploy`); until then nothing changes.
 
+### `ad-analysis-v1` profile (Delve's server ad analysis)
+
+Off by default (`voxhelm_remote_worker_ad_analysis_enabled: false`). The
+profile (Voxhelm D-26 to D-29) runs Parakeet with its own fixed settings, then
+the German drift check and the chapter windows with whisper large-v3-turbo,
+and measures the media with ffprobe. A worker advertises
+`capabilities.profiles: ["ad-analysis-v1"]` only while all of these resolve
+(checked at every heartbeat); a profile job waits for such a worker and never
+falls back to another engine. When enabled, the role
+
+- requires `voxhelm_remote_worker_parakeet_enabled` (the CLI and the pinned
+  model above);
+- installs `voxhelm_remote_worker_ad_analysis_brew_packages` (`whisper-cpp`,
+  `ffmpeg`) when missing and fails unless `voxhelm_remote_worker_whispercpp_bin`
+  and `voxhelm_remote_worker_ffprobe_bin` exist;
+- downloads `ggml-large-v3-turbo.bin` at a pinned Hugging Face commit into the
+  worker's model cache and verifies its SHA-256
+  (`voxhelm_remote_worker_window_model_sha256`, the hash Voxhelm pins as
+  `WINDOW_MODEL_SHA256`; any other file leaves the profile unavailable), or, with
+  `voxhelm_remote_worker_window_model_source`, checks an existing file's hash
+  and links it there;
+- renders `VOXHELM_WINDOW_MODEL`, `VOXHELM_WINDOW_TIMEOUT_SECONDS` and
+  `VOXHELM_FFPROBE_BIN`, and restarts the worker when the model or the env
+  file changed.
+
+The installed `voxhelm` package must be a release that has the profile
+(`voxhelm_remote_worker_package_version`); an older worker never advertises it.
+
 ## Example
 
 ```yaml

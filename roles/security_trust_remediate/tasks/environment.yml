@@ -1,0 +1,170 @@
+---
+- name: environment | Validate virtual environment allowlist entry
+  ansible.builtin.assert:
+    that:
+      - trust_env.path is match('^/(home|opt)/[a-zA-Z0-9_./-]+$')
+      - "'/../' not in trust_env.path"
+      - trust_env.services is defined
+      - trust_env.health_urls is defined
+      - trust_env.services | length == 0 or trust_env.health_urls | length > 0
+
+- name: environment | Determine virtual environment owner
+  ansible.builtin.stat:
+    path: "{{ trust_env.path }}"
+  register: security_trust_owner
+
+- name: environment | Inspect installed metadata and actual trust bundles
+  ansible.builtin.script:
+    cmd: inspect_environment.py
+    executable: "{{ trust_env.path }}/bin/python"
+  become: true
+  become_user: "{{ security_trust_owner.stat.pw_name }}"
+  register: security_trust_before_raw
+  changed_when: false
+
+- name: environment | Parse environment preflight
+  ansible.builtin.set_fact:
+    security_trust_before: "{{ security_trust_before_raw.stdout | from_json }}"
+    security_trust_targets:
+      certifi: "{{ security_trust_certifi_version }}"
+      pip: "{{ security_trust_pip_version }}"
+
+- name: environment | Reject system Python and incompatible installed dependency requirements
+  ansible.builtin.assert:
+    that:
+      - security_trust_before.prefix != security_trust_before.base_prefix
+      - security_trust_before.prefix == trust_env.path
+      - (security_trust_before | local.ops_library.trust_update_conflicts(security_trust_targets)) | length == 0
+    fail_msg: "{{ security_trust_before | local.ops_library.trust_update_conflicts(security_trust_targets) }}"
+
+- name: environment | Select only already installed outdated trust packages
+  ansible.builtin.set_fact:
+    security_trust_updates: []
+
+- name: environment | Build narrowly pinned upgrade list
+  ansible.builtin.set_fact:
+    security_trust_updates: "{{ security_trust_updates + [item.key] }}"
+  loop: "{{ security_trust_targets | dict2items }}"
+  when:
+    - item.key in security_trust_before.packages
+    - security_trust_before.packages[item.key].version is version(item.value, '<', version_type='pep440')
+
+- name: environment | Preserve restart requirement across interrupted runs
+  ansible.builtin.copy:
+    content: "Restart services after trust remediation for {{ trust_env.path }}\n"
+    dest: "{{ security_trust_backup_dir }}/{{ trust_env.path | hash('sha256') }}.restart-required"
+    mode: '0600'
+    force: false
+  when:
+    - trust_env.services | length > 0
+    - security_trust_updates | length > 0 or security_trust_apt.changed
+
+- name: environment | Read persistent restart requirement
+  ansible.builtin.stat:
+    path: "{{ security_trust_backup_dir }}/{{ trust_env.path | hash('sha256') }}.restart-required"
+  register: security_trust_restart_required
+
+- name: environment | Update and verify an affected environment
+  when: security_trust_updates | length > 0
+  block:
+    - name: environment | Create unique rollback evidence directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: "{{ security_trust_backup_dir }}"
+        prefix: environment-
+      register: security_trust_snapshot
+
+    - name: environment | Save original metadata and bundle fingerprints
+      ansible.builtin.copy:
+        content: "{{ security_trust_before | to_nice_json }}"
+        dest: "{{ security_trust_snapshot.path }}/before.json"
+        mode: '0600'
+
+    - name: environment | Preserve full virtual environment for operator rollback
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -cpf
+          - "{{ security_trust_snapshot.path }}/environment.tar"
+          - -C
+          - "{{ trust_env.path }}"
+          - .
+      changed_when: true
+
+    - name: environment | Hash the immutable archive for explicitly allowlisted cache recovery
+      ansible.builtin.stat:
+        path: "{{ security_trust_snapshot.path }}/environment.tar"
+        checksum_algorithm: sha256
+      register: security_trust_recovery_archive
+      when: trust_env.cache_recovery_paths | default([]) | length > 0
+
+    - name: environment | Recover explicitly allowlisted generated cache before package replacement
+      ansible.builtin.include_role:
+        name: local.ops_library.security_trust_recover
+      vars:
+        security_trust_recover_wheel: "{{ security_trust_wheel_dir }}/{{ (security_trust_wheels | selectattr('package', 'equalto', 'certifi') | first).name }}"
+        security_trust_recover_sha256: "{{ (security_trust_wheels | selectattr('package', 'equalto', 'certifi') | first).sha256 }}"
+        security_trust_recover_version: "{{ security_trust_certifi_version }}"
+        security_trust_recover_uv_bin: "{{ security_trust_uv_bin }}"
+        security_trust_recover_entries:
+          - path: "{{ trust_env.path }}"
+            owner: "{{ security_trust_owner.stat.pw_name }}"
+            before: "{{ security_trust_snapshot.path }}/before.json"
+            before_sha256: "{{ (security_trust_before | to_nice_json) | hash('sha256') }}"
+            archive_sha256: "{{ security_trust_recovery_archive.stat.checksum }}"
+            cache_paths: "{{ trust_env.cache_recovery_paths }}"
+      when: trust_env.cache_recovery_paths | default([]) | length > 0
+
+    - name: environment | Install only existing trust packages from offline pinned wheels
+      ansible.builtin.command:
+        argv: "{{ [security_trust_uv_bin, 'pip', 'install', '--python', trust_env.path + '/bin/python', '--no-deps', '--no-index'] + (security_trust_wheels | selectattr('package', 'in', security_trust_updates) | map(attribute='name') | map('regex_replace', '^', security_trust_wheel_dir + '/') | list) }}"
+      become: true
+      become_user: "{{ security_trust_owner.stat.pw_name }}"
+      changed_when: true
+
+- name: environment | Inspect updated metadata and bundles in a fresh interpreter
+  ansible.builtin.script:
+    cmd: inspect_environment.py
+    executable: "{{ trust_env.path }}/bin/python"
+  become: true
+  become_user: "{{ security_trust_owner.stat.pw_name }}"
+  register: security_trust_after_raw
+  changed_when: false
+
+- name: environment | Verify exact target versions for changed packages
+  ansible.builtin.assert:
+    that:
+      - (security_trust_after_raw.stdout | from_json).packages[item].version == security_trust_targets[item]
+  loop: "{{ security_trust_updates }}"
+
+- name: environment | Verify no affected root remains in installed package bundles
+  ansible.builtin.assert:
+    that:
+      - "'emSign ECC Root CA - G3' not in security_trust_after_raw.stdout"
+      - "'AAA Certificate Services' not in security_trust_after_raw.stdout"
+
+- name: environment | Verify actual bundle files independently with system Python
+  ansible.builtin.script:
+    cmd: "verify_bundles.py {{ trust_env.path | quote }} {{ (security_trust_after_raw.stdout | from_json).bundles.values() | map(attribute='path') | map('quote') | join(' ') }}"
+    executable: /usr/bin/python3
+  changed_when: false
+
+- name: environment | Restart affected services serially
+  ansible.builtin.include_tasks: restart.yml
+  loop: "{{ trust_env.services }}"
+  loop_control:
+    loop_var: trust_service
+  when: security_trust_restart_required.stat.exists
+
+- name: environment | Record completion only after all service probes pass
+  ansible.builtin.copy:
+    content: "All allowlisted services restarted and health checked after trust remediation\n"
+    dest: "{{ security_trust_backup_dir }}/{{ trust_env.path | hash('sha256') }}.{{ [security_trust_ca_version, security_trust_certifi_version, security_trust_pip_version] | join(':') | hash('sha256') }}.restart-complete"
+    mode: '0600'
+  when: security_trust_restart_required.stat.exists
+
+- name: environment | Clear restart requirement only after every service is healthy
+  ansible.builtin.file:
+    path: "{{ security_trust_backup_dir }}/{{ trust_env.path | hash('sha256') }}.restart-required"
+    state: absent
+  when: security_trust_restart_required.stat.exists

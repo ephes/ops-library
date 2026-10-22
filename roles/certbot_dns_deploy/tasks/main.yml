@@ -14,5 +14,8 @@
 - name: Remove unused credentials of other providers
   ansible.builtin.import_tasks: cleanup.yml
 
+- name: Remove listed stray certbot config trees
+  ansible.builtin.import_tasks: stray.yml
+
 - name: Configure renewal hooks and timer
   ansible.builtin.import_tasks: renewal.yml

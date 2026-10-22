@@ -28,6 +28,11 @@
     - '{{ software_live_data_dir }}'
     - '{{ software_live_install_dir }}'
 
+# Python or Rust (rust/software-live/PLAN.md 7.3): validated before anything
+# changes; impl rust also needs a released variant, version and checksum here.
+- name: Validate the implementation selection
+  ansible.builtin.include_tasks: impl_inputs.yml
+
 - name: Validate private IPv4 endpoint binding
   ansible.builtin.command:
     argv:
@@ -98,6 +103,8 @@
     group: '{{ software_live_group }}'
     mode: '0640'
 
+# With impl rust the Rust candidate validates the same file before anything
+# points at it (tasks/rust.yml, PLAN.md 7.3 steps 3 and 5).
 - name: Validate software observation policy
   ansible.builtin.command:
     argv:
@@ -107,7 +114,9 @@
       - --config
       - '{{ software_live_config_dir }}/policy.json'
   changed_when: false
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - software_live_impl == 'python'
 
 - name: Verify current software endpoint credentials
   ansible.builtin.command:
@@ -192,10 +201,15 @@
         group: '{{ software_live_inventory_group }}'
         mode: '0750'
 
+# Live state, Python rollback first, Rust install and candidate validation,
+# shadow units, drop-ins (PLAN.md 7.3 steps 0-4, 8.1).
+- name: Select the software observation implementation
+  ansible.builtin.include_tasks: impl.yml
+
 - name: Install software observation units
   ansible.builtin.template:
     src: '{{ item.src }}'
-    dest: '/etc/systemd/system/{{ item.dest }}'
+    dest: '{{ software_live_systemd_dir }}/{{ item.dest }}'
     owner: root
     group: root
     mode: '0644'
@@ -210,6 +224,30 @@
 
 - name: Load software observation units
   ansible.builtin.meta: flush_handlers
+
+# A run the timer started before the units were reloaded still executes the
+# previous program, and `state: started` below would see it as running and
+# start nothing. Wait until it is over (the unit allows 90 s), so the initial
+# collection runs the selected program (rust/software-live/PLAN.md 7.3 step 6).
+- name: Wait for a running software observation to finish
+  ansible.builtin.command:
+    argv: [systemctl, show, --property=ActiveState, --value, software-live-collector.service]
+  register: _software_live_collector_state
+  changed_when: false
+  failed_when: false
+  retries: '{{ software_live_collector_wait_retries | int }}'
+  delay: '{{ software_live_verify_delay | int }}'
+  until: >-
+    _software_live_collector_state.rc | default(1) == 0
+    and (_software_live_collector_state.stdout | trim)
+        not in ['activating', 'deactivating', 'reloading', 'refreshing']
+  when: not ansible_check_mode
+
+- name: Check the software observation before the initial collection
+  ansible.builtin.stat:
+    path: '{{ software_live_data_dir }}/state.json'
+    get_checksum: false
+  register: _software_live_state_before
 
 - name: Collect an initial software observation
   ansible.builtin.systemd_service:
@@ -226,3 +264,20 @@
   loop:
     - software-live-collector.timer
     - software-live-endpoint.service
+
+- name: Enable the shadow timer and endpoint
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    state: started
+    enabled: true
+  loop:
+    - software-live-shadow-collector.timer
+    - software-live-shadow-endpoint.service
+  when: software_live_rust_shadow | bool
+
+# PLAN.md 7.3 step 6: the units run the selected program; then step 7.
+- name: Verify the running software observation implementation
+  ansible.builtin.include_tasks: verify_impl.yml
+
+- name: Pin and prune the software-live releases
+  ansible.builtin.include_tasks: rust_pins.yml

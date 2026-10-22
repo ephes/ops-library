@@ -49,6 +49,17 @@
     fail_msg: "Nyxmon SQLite database is missing or ambiguous."
   when: not ansible_check_mode
 
+# The writers keep running during the deploy. With journal_mode=delete every
+# write transaction creates db.sqlite3-journal and deletes it at commit (in WAL
+# mode -wal/-shm go away when the last connection closes), so a sidecar listed
+# above can be gone before this loop reaches it. A failure on such a transient
+# sidecar (db.sqlite3-*) therefore does not fail this step. That costs no
+# privacy: the re-read and verify below are the guarantee. Every file still
+# present then must belong to the service account with mode 0600, so a sidecar
+# that survived a failed restriction stops the deploy there. Sidecars created
+# after this step get the database file's mode from SQLite (and the umask from
+# the drop-ins). The database itself and the other db.sqlite3* files (agent
+# lock, backups) are persistent: any failure on them fails here.
 - name: sqlite_privacy | Restrict database and sidecars
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -58,6 +69,10 @@
   loop: "{{ nyxmon_sqlite_files.files }}"
   loop_control:
     label: "{{ item.path | basename }}"
+  register: nyxmon_sqlite_restricted
+  failed_when:
+    - nyxmon_sqlite_restricted is failed
+    - not (item.path | basename).startswith('db.sqlite3-')
   when: not ansible_check_mode
 
 - name: sqlite_privacy | Re-read database and sidecar metadata

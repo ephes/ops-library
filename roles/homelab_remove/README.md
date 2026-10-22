@@ -19,7 +19,7 @@ Ansible role to remove the homelab Django service from a target host.
 
 - Target system: Linux with systemd
 - Privileges: root (become: true)
-- Ansible: ansible-core 2.20+
+- Ansible: ansible-core 2.20.3+
 
 ## Role Variables
 

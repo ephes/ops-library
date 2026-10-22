@@ -1,0 +1,392 @@
+---
+# Install the pinned Rust agent release and select the agent implementation of
+# graphyard-agent.service. Runs after the migrations (django.yml), so
+# --check-schema sees the schema the agent will run against, and before
+# service.yml.
+#
+# With graphyard_agent_rust_version empty nothing is installed or validated,
+# and with impl python the drop-in is absent: the unit runs the venv
+# `manage.py start_agent`.
+
+- name: agent_rust | Derive agent paths
+  ansible.builtin.set_fact:
+    graphyard_agent_unit: "{{ graphyard_agent_service_name | regex_replace('\\.service$', '') }}"
+    graphyard_agent_rust_dir: "{{ graphyard_agent_rust_install_root }}/{{ graphyard_agent_rust_version }}"
+    graphyard_agent_rust_binary: "{{ graphyard_agent_rust_install_root }}/{{ graphyard_agent_rust_version }}/graphyard-agent"
+    graphyard_agent_rust_staging: "{{ graphyard_agent_rust_install_root }}/.staging"
+
+- name: agent_rust | Derive the drop-in path
+  ansible.builtin.set_fact:
+    graphyard_agent_dropin: "/etc/systemd/system/{{ graphyard_agent_unit }}.service.d/agent-impl.conf"
+
+- name: agent_rust | Install and validate the pinned Rust agent release
+  when: graphyard_agent_rust_version | length > 0
+  block:
+    - name: agent_rust | Ensure the install root exists
+      ansible.builtin.file:
+        path: "{{ graphyard_agent_rust_install_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: agent_rust | Remove leftovers of an interrupted install
+      ansible.builtin.file:
+        path: "{{ graphyard_agent_rust_staging }}"
+        state: absent
+
+    - name: agent_rust | Check whether the pinned version is installed
+      ansible.builtin.stat:
+        path: "{{ graphyard_agent_rust_dir }}"
+      register: graphyard_agent_rust_dir_stat
+
+    - name: agent_rust | Checksum the local archive
+      ansible.builtin.stat:
+        path: "{{ graphyard_agent_rust_local_archive }}"
+        get_checksum: true
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: graphyard_agent_rust_local_archive_stat
+      when: graphyard_agent_rust_local_archive | length > 0
+
+    - name: agent_rust | Assert the local archive exists and matches a pinned checksum
+      ansible.builtin.assert:
+        that:
+          - graphyard_agent_rust_local_archive_stat.stat.exists
+          - graphyard_agent_rust_local_archive_stat.stat.isreg
+          - >-
+            graphyard_agent_rust_sha256 == '' or
+            graphyard_agent_rust_local_archive_stat.stat.checksum == graphyard_agent_rust_sha256
+        fail_msg: >-
+          graphyard_agent_rust_local_archive {{ graphyard_agent_rust_local_archive }} is
+          missing, not a file, or its sha256
+          ({{ graphyard_agent_rust_local_archive_stat.stat.checksum | default('n/a') }})
+          differs from graphyard_agent_rust_sha256.
+      when: graphyard_agent_rust_local_archive | length > 0
+
+    - name: agent_rust | Determine the expected archive checksum
+      ansible.builtin.set_fact:
+        graphyard_agent_rust_archive_sha256: >-
+          {{
+            graphyard_agent_rust_local_archive_stat.stat.checksum
+            if graphyard_agent_rust_local_archive | length > 0
+            else graphyard_agent_rust_sha256
+          }}
+
+    - name: agent_rust | Read the archive checksum of the installed version
+      ansible.builtin.slurp:
+        path: "{{ graphyard_agent_rust_dir }}/.archive-sha256"
+      register: graphyard_agent_rust_installed_sha256
+      failed_when: false
+      when: graphyard_agent_rust_dir_stat.stat.exists
+
+    # An installed version directory is never modified in place: the same
+    # version must come from the same archive.
+    - name: agent_rust | Refuse a different archive for an installed version
+      ansible.builtin.assert:
+        that:
+          - graphyard_agent_rust_installed_sha256.content is defined
+          - >-
+            (graphyard_agent_rust_installed_sha256.content | b64decode | trim)
+            == graphyard_agent_rust_archive_sha256
+        fail_msg: >-
+          {{ graphyard_agent_rust_dir }} is installed from an archive with sha256
+          {{ (graphyard_agent_rust_installed_sha256.content | default('') | b64decode | trim) or 'unknown' }},
+          but this run pins {{ graphyard_agent_rust_archive_sha256 }}. An installed
+          version is never replaced in place. Pin the matching archive, or remove
+          the directory by hand when it is not the active version
+          ({{ graphyard_agent_dropin }}).
+      when: graphyard_agent_rust_dir_stat.stat.exists
+
+    - name: agent_rust | Stage the pinned release
+      when:
+        - not graphyard_agent_rust_dir_stat.stat.exists
+        - not ansible_check_mode
+      block:
+        - name: agent_rust | Create the staging directory
+          ansible.builtin.file:
+            path: "{{ graphyard_agent_rust_staging }}/tree"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: agent_rust | Download the release archive
+          ansible.builtin.get_url:
+            url: "{{ graphyard_agent_rust_release_url }}"
+            dest: "{{ graphyard_agent_rust_staging }}/archive.tar.gz"
+            checksum: "sha256:{{ graphyard_agent_rust_sha256 }}"
+            owner: root
+            group: root
+            mode: "0600"
+          when: graphyard_agent_rust_local_archive | length == 0
+
+        - name: agent_rust | Copy the local archive
+          ansible.builtin.copy:
+            src: "{{ graphyard_agent_rust_local_archive }}"
+            dest: "{{ graphyard_agent_rust_staging }}/archive.tar.gz"
+            owner: root
+            group: root
+            mode: "0600"
+          when: graphyard_agent_rust_local_archive | length > 0
+
+        - name: agent_rust | Checksum the staged archive
+          ansible.builtin.stat:
+            path: "{{ graphyard_agent_rust_staging }}/archive.tar.gz"
+            get_checksum: true
+            checksum_algorithm: sha256
+          register: graphyard_agent_rust_staged_archive
+
+        - name: agent_rust | Assert the staged archive is the pinned one
+          ansible.builtin.assert:
+            that:
+              - graphyard_agent_rust_staged_archive.stat.checksum == graphyard_agent_rust_archive_sha256
+            fail_msg: >-
+              The staged archive has sha256 {{ graphyard_agent_rust_staged_archive.stat.checksum }},
+              expected {{ graphyard_agent_rust_archive_sha256 }}.
+
+        # Checked before extraction: only regular files named graphyard-agent and
+        # LICENSE, each once. A link or device member could otherwise make the
+        # following tasks act on a path outside the staging directory.
+        - name: agent_rust | List the archive members
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --list
+              - --gzip
+              - --file
+              - "{{ graphyard_agent_rust_staging }}/archive.tar.gz"
+          changed_when: false
+          register: graphyard_agent_rust_member_names
+
+        - name: agent_rust | List the archive member types
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --list
+              - --verbose
+              - --gzip
+              - --file
+              - "{{ graphyard_agent_rust_staging }}/archive.tar.gz"
+          changed_when: false
+          register: graphyard_agent_rust_member_types
+
+        - name: agent_rust | Assert the archive holds only the agent and its license as regular files
+          ansible.builtin.assert:
+            that:
+              - graphyard_agent_rust_members | sort(case_sensitive=true) == ['LICENSE', 'graphyard-agent']
+              - graphyard_agent_rust_member_types.stdout_lines | length == graphyard_agent_rust_members | length
+              - graphyard_agent_rust_member_types.stdout_lines | reject('match', '-') | list | length == 0
+            fail_msg: >-
+              The release archive must hold exactly the regular files
+              graphyard-agent and LICENSE at its root, once each; found
+              {{ graphyard_agent_rust_member_types.stdout_lines }}.
+          vars:
+            graphyard_agent_rust_members: "{{ graphyard_agent_rust_member_names.stdout_lines | map('regex_replace', '^[.]/', '') | list }}"
+
+        - name: agent_rust | Unpack the release archive
+          ansible.builtin.unarchive:
+            src: "{{ graphyard_agent_rust_staging }}/archive.tar.gz"
+            dest: "{{ graphyard_agent_rust_staging }}/tree"
+            remote_src: true
+            owner: root
+            group: root
+
+        - name: agent_rust | Check the unpacked agent binary
+          ansible.builtin.stat:
+            path: "{{ graphyard_agent_rust_staging }}/tree/graphyard-agent"
+            follow: false
+            get_checksum: false
+          register: graphyard_agent_rust_unpacked_binary
+
+        - name: agent_rust | Assert the unpacked agent is a regular file
+          ansible.builtin.assert:
+            that:
+              - graphyard_agent_rust_unpacked_binary.stat.isreg | default(false)
+            fail_msg: "{{ graphyard_agent_rust_staging }}/tree/graphyard-agent is not a regular file."
+
+        - name: agent_rust | Make the agent binary root-owned and executable
+          ansible.builtin.file:
+            path: "{{ graphyard_agent_rust_staging }}/tree/graphyard-agent"
+            state: file
+            follow: false
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: agent_rust | Record the archive checksum with the version
+          ansible.builtin.copy:
+            content: "{{ graphyard_agent_rust_archive_sha256 }}\n"
+            dest: "{{ graphyard_agent_rust_staging }}/tree/.archive-sha256"
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: agent_rust | Move the staged version into place
+          ansible.builtin.command:
+            argv:
+              - mv
+              - --no-target-directory
+              - "{{ graphyard_agent_rust_staging }}/tree"
+              - "{{ graphyard_agent_rust_dir }}"
+            creates: "{{ graphyard_agent_rust_dir }}"
+
+        - name: agent_rust | Remove the staging directory
+          ansible.builtin.file:
+            path: "{{ graphyard_agent_rust_staging }}"
+            state: absent
+
+    # Validated by the versioned path before the drop-in points at it, as the
+    # service user. A fresh install that fails is removed again; an installed
+    # version, the drop-in and the running unit are left alone.
+    - name: agent_rust | Validate the candidate binary
+      when: not ansible_check_mode or graphyard_agent_rust_dir_stat.stat.exists
+      block:
+        - name: agent_rust | Read the version of the candidate binary
+          ansible.builtin.command:
+            argv:
+              - "{{ graphyard_agent_rust_binary }}"
+              - --version
+          become: true
+          become_user: "{{ graphyard_user }}"
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: graphyard_agent_rust_version_check
+
+        - name: agent_rust | Assert the candidate reports the pinned version
+          ansible.builtin.assert:
+            that:
+              - graphyard_agent_rust_version_check.rc == 0
+              - (graphyard_agent_rust_version_check.stdout.split() + ['', ''])[0] == 'graphyard-agent'
+              - (graphyard_agent_rust_version_check.stdout.split() + ['', ''])[1] == graphyard_agent_rust_version
+            fail_msg: >-
+              {{ graphyard_agent_rust_binary }} --version exited
+              {{ graphyard_agent_rust_version_check.rc }} with
+              '{{ graphyard_agent_rust_version_check.stdout | trim }}'
+              {{ graphyard_agent_rust_version_check.stderr | trim }};
+              expected 'graphyard-agent {{ graphyard_agent_rust_version }} (<commit>)'.
+
+        - name: agent_rust | Check the database schema with the candidate binary
+          ansible.builtin.command:
+            argv:
+              - "{{ graphyard_agent_rust_binary }}"
+              - --check-schema
+              - --db
+              - "{{ graphyard_django_path }}/db.sqlite3"
+          become: true
+          become_user: "{{ graphyard_user }}"
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: graphyard_agent_rust_schema_check
+
+        - name: agent_rust | Assert the database schema satisfies the candidate
+          ansible.builtin.assert:
+            that:
+              - graphyard_agent_rust_schema_check.rc == 0
+            fail_msg: >-
+              {{ graphyard_agent_rust_binary }} --check-schema exited
+              {{ graphyard_agent_rust_schema_check.rc }}:
+              {{ graphyard_agent_rust_schema_check.stderr | trim }}
+              {{ graphyard_agent_rust_schema_check.stdout | trim }}
+
+      rescue:
+        - name: agent_rust | Remove the rejected fresh install
+          ansible.builtin.file:
+            path: "{{ graphyard_agent_rust_dir }}"
+            state: absent
+          when: not graphyard_agent_rust_dir_stat.stat.exists
+
+        - name: agent_rust | Stop on a rejected candidate
+          ansible.builtin.fail:
+            msg: >-
+              graphyard-agent {{ graphyard_agent_rust_version }} failed validation
+              ({{ ansible_failed_result.msg | default('see above') }}). Nothing was
+              switched: the drop-in, the running unit and the other installed
+              versions are unchanged.
+
+- name: agent_rust | Check for an agent implementation drop-in
+  ansible.builtin.stat:
+    path: "{{ graphyard_agent_dropin }}"
+  register: graphyard_agent_dropin_stat
+
+- name: agent_rust | Read the agent implementation drop-in
+  ansible.builtin.slurp:
+    path: "{{ graphyard_agent_dropin }}"
+  register: graphyard_agent_dropin_before
+  when: graphyard_agent_dropin_stat.stat.exists
+
+- name: agent_rust | Derive the Rust version the drop-in selected so far
+  ansible.builtin.set_fact:
+    graphyard_agent_rust_active_before: >-
+      {{
+        (
+          (graphyard_agent_dropin_before.content | default('') | b64decode)
+          | regex_search(
+              '(?m)^ExecStart=' ~ (graphyard_agent_rust_install_root | regex_escape)
+              ~ '/([^/ ]+)/graphyard-agent( |$)', '\1')
+          | default([], true)
+          | first
+        ) | default('', true)
+      }}
+
+- name: agent_rust | Ensure the agent unit drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ graphyard_agent_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: graphyard_agent_impl == 'rust'
+
+# The version is part of the drop-in, so every version change and every impl
+# flip changes the file and restarts the unit; an unchanged deploy restarts
+# nothing. The base unit keeps the Python ExecStart, User, EnvironmentFile,
+# WorkingDirectory and the runtime dependency for both implementations.
+- name: agent_rust | Select the Rust agent for graphyard-agent
+  ansible.builtin.template:
+    src: agent-impl.conf.j2
+    dest: "{{ graphyard_agent_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: graphyard_agent_dropin_rust
+  notify:
+    - reload systemd
+    - restart graphyard agent
+  when: graphyard_agent_impl == 'rust'
+
+- name: agent_rust | Select the Python agent for graphyard-agent
+  ansible.builtin.file:
+    path: "{{ graphyard_agent_dropin }}"
+    state: absent
+  register: graphyard_agent_dropin_python
+  notify:
+    - reload systemd
+    - restart graphyard agent
+  when: graphyard_agent_impl == 'python'
+
+- name: agent_rust | Check the previously selected Rust version
+  ansible.builtin.stat:
+    path: "{{ graphyard_agent_rust_install_root }}/{{ graphyard_agent_rust_active_before }}"
+  register: graphyard_agent_rust_active_before_stat
+  when: graphyard_agent_rust_active_before | length > 0
+
+# Kept by the pruning step as the rollback target. Written only when the
+# selection moves away from that version (another version, or Python), not when
+# the drop-in changes for another reason.
+- name: agent_rust | Remember the previously selected Rust version
+  ansible.builtin.copy:
+    content: "{{ graphyard_agent_rust_active_before }}\n"
+    dest: "{{ graphyard_agent_rust_install_root }}/.previous-version"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - graphyard_agent_rust_active_before | length > 0
+    - graphyard_agent_rust_active_before_stat.stat.isdir | default(false)
+    - >-
+      graphyard_agent_rust_active_before
+      != (graphyard_agent_rust_version if graphyard_agent_impl == 'rust' else '')

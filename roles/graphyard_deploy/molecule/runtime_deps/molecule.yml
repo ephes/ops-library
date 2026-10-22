@@ -1,0 +1,55 @@
+---
+# Unit dependencies against real systemd (no Docker inside the instance): the
+# role renders and starts graphyard-web/graphyard-agent (tasks/service.yml)
+# and graphyard-runtime from its template; stub programs stand in for
+# granian, manage.py start_agent, the Rust agent and `docker compose`.
+# verify.yml restarts, stops/starts and fails the runtime and checks that web
+# and agent keep running, with the Python and the Rust agent selected.
+driver:
+  name: docker
+
+platforms:
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-ubuntu2404-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+  - name: "debian13-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-debian13-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+
+provisioner:
+  name: ansible
+  playbooks:
+    converge: converge.yml
+    verify: verify.yml
+  env:
+    ANSIBLE_FORCE_COLOR: "true"
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/..:~/.ansible/roles:/etc/ansible/roles"
+
+verifier:
+  name: ansible
+
+scenario:
+  name: runtime_deps
+  test_sequence:
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy

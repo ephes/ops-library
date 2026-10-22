@@ -236,6 +236,38 @@ Notes:
 | `dns_ddns_status_endpoint_enabled` | `false` | Serve the status file over authenticated HTTP |
 | `dns_ddns_status_endpoint_bind` / `_port` / `_path` | Tailscale IP / `9112` / `/.well-known/ddns` | Status endpoint address |
 | `dns_ddns_status_endpoint_auth_user` / `_password` | `"CHANGE_ME"` | Basic-auth credentials (required when enabled) |
+| `dns_ddns_status_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | Status endpoint server: `python` or `rust` (see [Status endpoint implementation](#status-endpoint-implementation-python-or-rust)) |
+
+### Status endpoint implementation (Python or Rust)
+
+`dns_ddns_status_endpoint_impl` selects the HTTP server of the DDNS status
+endpoint (`ddns-status-endpoint.service`, only with
+`dns_ddns_status_endpoint_enabled`): `python` runs
+`dns_ddns_status_endpoint_server_path` (the unit's `ExecStart=`), `rust` runs
+the pinned `metrics-httpd` release through the drop-in
+`/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
+([`metrics_httpd_switch`](../metrics_httpd_switch/README.md),
+`rust/metrics-httpd/PLAN.md` section 7). The endpoint keeps its path, port,
+realm, htpasswd file, status file, user, sandbox and IP allow list; the unit
+file and the Python script stay as they are with either value.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `dns_ddns_status_endpoint_impl` | `{{ metrics_httpd_impl \| default('python') }}` | `python` or `rust`; override per host for a canary. |
+| `metrics_httpd_impl` | (unset: `python`) | Fleet-wide default for every metrics-httpd endpoint. |
+| `metrics_httpd_rust_version` / `metrics_httpd_rust_sha256` | (unset) | Pinned release and the sha256 of its archive. Required for `rust`; with `python` a set version is installed and checked ahead of the switch. |
+
+With `rust` the binary runs `json-file --bind --port --path --json-path
+<dns_ddns_status_path> --htpasswd-file --realm ddns-status --server-name
+ddns-status-httpd/0.1 --missing-message "Status file not found - updater may
+not have run yet" --request-timeout 10` from the variables above. Before the
+drop-in is written the binary's `--check-config` must pass as `ddns` in the
+unit's sandbox; after the restart the deploy checks that the unit runs the
+selected implementation and that an unauthenticated request gets 401 with the
+realm, then pins the version in `/opt/metrics-httpd/.pins/<service>`.
+Switching back to `python` removes the drop-in and restarts the Python script.
+
+The switch is part of the DDNS tasks, so `--tags ddns` deploys it too.
 
 ## How It Works
 

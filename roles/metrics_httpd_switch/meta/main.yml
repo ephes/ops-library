@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: metrics_httpd_switch
+  author: Jochen Wersdörfer
+  description: >-
+    Internal helper: select the Python script or the pinned Rust metrics-httpd
+    for one endpoint unit through a systemd drop-in, and verify the switch.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+
+dependencies: []
