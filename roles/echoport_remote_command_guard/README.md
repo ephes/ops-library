@@ -126,8 +126,9 @@ root's service user could redirect with a symlink after the guard's checks
 each directory of the path with `O_NOFOLLOW|O_DIRECTORY`, so a symlink
 anywhere on the path is refused, and works relative to the last directory
 it opened. `chmod`, `mv` and `rm` run as the root's owner (the guard drops to
-that user first), so they can only do what that user could do itself;
-`chown` needs root:
+that user first), so they can only do what that user could do itself, and
+since the guard opens what it walks for reading, not a `chmod` of a file or
+`mv`/`rm` in a directory that user cannot read; `chown` needs root:
 
 - `chmod`/`chown`: the entry is opened with `O_NOFOLLOW` and must be the
   inode `lstat` saw, a directory or a regular file with one link (a hard

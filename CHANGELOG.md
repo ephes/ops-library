@@ -35,7 +35,8 @@
   root-owned file and `mv`/`rm` inside a root-owned directory fail (as with
   any change the root's owner may not make; `mv`/`rm` of an entry in a
   directory the owner can write follow that directory's permissions, as
-  `rename`/`unlink` do), `chown -R` leaves
+  `rename`/`unlink` do; also `chmod` of a file and `mv`/`rm` in a directory
+  the owner cannot read, which the guard opens for reading), `chown -R` leaves
   symlinks' own owners alone, and `mv` never moves into an existing target
   directory or across filesystems. The `echoport_backup` runners' tests pass
   unchanged.
