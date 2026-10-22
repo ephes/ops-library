@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — software-live Rust port: inventory pin and runbook (S8)
+
+- `rust/software-live/PLAN.md` (status, 7.5, 8.1) and `README.md`: the
+  ops-control side of slice S8 is done — the inventory pins
+  `software-live-v0.1.0` (both variant checksums), every host stays on
+  `software_live_impl: python` with the shadow off, the deploy playbook
+  requires collection 2.65.0 (which contains the S6 role switch) and checks
+  the shadow endpoint against production when the shadow is on. No role or
+  collection change.
+
 ## Unreleased — Rust ports: echoport-command-guard ops-control wiring (S8)
 
 - `rust/echoport-command-guard/PLAN.md` 6.3 ("As built (S8)") and the crate
