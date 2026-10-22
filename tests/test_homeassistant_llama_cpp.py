@@ -178,6 +178,20 @@ class ProvisionTests(unittest.IsolatedAsyncioTestCase):
             [c[1] for c in ha.calls if c[0] == "POST"], ["/api/conversation/process"]
         )
 
+    async def test_yaml_block_prompt_matches_core_trimmed_storage(self):
+        ha = FakeHA()
+        ha.config["instructions"] = "\n  Shared microphone.\nKeep replies brief.\n"
+        await ha.ensure()
+        stored = ha.current["subentries"][0]["data"]
+        self.assertEqual(stored["prompt"], "Shared microphone.\nKeep replies brief.")
+        ha.calls = []
+        ha.changed = False
+        result = await ha.ensure()
+        self.assertFalse(result["changed"])
+        self.assertEqual(
+            [c[1] for c in ha.calls if c[0] == "POST"], ["/api/conversation/process"]
+        )
+
     async def test_prompt_and_control_drift_repaired_without_recreating(self):
         ha = FakeHA()
         await ha.ensure()

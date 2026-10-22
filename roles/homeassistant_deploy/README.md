@@ -5,7 +5,9 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 ## Built-in OpenAI-compatible voice bridge
 
 Set `homeassistant_llama_cpp_enabled: true` on Core 2026.10.2 or newer to use
-Home Assistant's built-in `llama_cpp` conversation agent. Configure
+Home Assistant's built-in `llama_cpp` conversation agent. Surrounding prompt
+whitespace is normalized to match Core storage for repeat deployments; blank
+prompts are rejected. Configure
 `homeassistant_llama_cpp_base_url`, `homeassistant_llama_cpp_api_key`,
 `homeassistant_llama_cpp_model` and `homeassistant_llama_cpp_instructions`, then
 select `conversation_engine: "auto:llama_cpp"` in managed Assist pipelines.

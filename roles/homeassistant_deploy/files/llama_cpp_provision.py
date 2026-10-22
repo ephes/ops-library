@@ -243,7 +243,8 @@ class Provisioner:
     async def configure_subentry(self, entry_id, subentry_id, stored):
         desired = {
             "chat_model": self.config["model"],
-            "prompt": self.config["instructions"],
+            # Core's TemplateSelector trims surrounding whitespace on storage.
+            "prompt": self.config["instructions"].strip(),
             "llm_hass_api": [],
             "recommended": True,
         }

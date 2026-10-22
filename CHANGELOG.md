@@ -81,6 +81,15 @@
   Nothing installs or runs the binary; the `software_live` role is
   unchanged.
 
+## [2.66.1] - 2026-10-22
+
+### Fixed
+
+- `homeassistant_deploy`: normalize surrounding conversation prompt whitespace
+  the same way as Core's TemplateSelector. YAML block prompts with a final newline
+  no longer trigger repeated subentry updates and agent reloads on every deploy.
+  Reject whitespace-only prompts during validation.
+
 ## [2.66.0] - 2026-10-22
 
 ### Home Assistant built-in voice bridge

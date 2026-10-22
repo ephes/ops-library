@@ -241,7 +241,7 @@
       - homeassistant_llama_cpp_base_url | length > 0
       - homeassistant_llama_cpp_api_key | length > 0
       - homeassistant_llama_cpp_model | length > 0
-      - homeassistant_llama_cpp_instructions | length > 0
+      - homeassistant_llama_cpp_instructions | trim | length > 0
     quiet: true
     fail_msg: "Core llama_cpp requires a pinned Core >=2026.10.2, connection details, instructions and exclusive ownership of the voice bridge."
   no_log: true
