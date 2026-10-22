@@ -7,6 +7,11 @@ After=docker.service
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/docker builder prune --all --force --filter until={{ docker_cache_cleanup_unused_hours }}h
+{% if docker_cache_cleanup_max_used_bytes | int > 0 %}
+# The size pass intentionally has no age filter: retained recent leaf records
+# otherwise keep their entire dependency chains above the requested size.
+ExecStart=/usr/bin/docker buildx prune --builder default --all --force --max-used-space {{ docker_cache_cleanup_max_used_bytes }} --reserved-space 0
+{% endif %}
 TimeoutStartSec=30min
 Nice=10
 IOSchedulingClass=best-effort

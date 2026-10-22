@@ -65,6 +65,21 @@ class DockerCacheCleanupTests(unittest.TestCase):
         self.assertIn("Persistent=true", config)
         self.assertIn("RandomizedDelaySec=30m", config)
 
+    def test_size_pass_is_independent_of_age_and_has_no_reserved_floor(self):
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        template = Environment(undefined=StrictUndefined).from_string(
+            (ROLE / "templates/docker-cache-cleanup.service.j2").read_text()
+        )
+        config = template.render(**{**defaults, "docker_cache_cleanup_max_used_bytes": 10000000000})
+        commands = [shlex.split(line.split("=", 1)[1]) for line in config.splitlines()
+                    if line.startswith("ExecStart=")]
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(commands[1], [
+            "/usr/bin/docker", "buildx", "prune", "--builder", "default", "--all", "--force",
+            "--max-used-space", "10000000000", "--reserved-space", "0",
+        ])
+        self.assertNotIn("--filter", commands[1])
+
 
 if __name__ == "__main__":
     unittest.main()

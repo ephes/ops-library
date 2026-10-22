@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.68.0] - 2026-10-22
+
+### External bulk storage and bounded Docker build cache
+
+- `docker_cache_cleanup`: optional byte target adds a separate default-buildx
+  size pass with no age filter or reserved cache floor. Validate CLI support
+  before installing units; the default remains age-only. Images and runtime
+  data remain untouched.
+- `host_storage_migrate`: attended external bind-storage migration for local
+  backups and Docker/containerd together, with offline checksum validation,
+  transitive Requires/BindsTo/PartOf/Wants/After service restoration and explicit
+  finalization. Before external exposure, failures attempt best-effort rollback;
+  after exposure they retain external data and require forward `recover` rather
+  than activating stale copies. The health timeout is configurable. Optional
+  eMudhra recovery storage is relocated intact, preserving retention and paths.
+  Stop/start operations use explicit consumer/Docker/containerd phases so
+  Compose shutdown retains its live backend; verified pre-exposure rollbacks
+  can be prepared again without deleting destination data.
+  Unit preflight runs before stopping services and includes fstab-generated
+  mount units via the host's complete systemd unit search path. Command failure
+  details are retained in private diagnostic files.
+
 ## Unreleased — Consolidated APT source migration (2.67.0)
 
 - `postgres_install` and `vector_apt_install`: opt-in

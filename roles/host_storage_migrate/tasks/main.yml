@@ -1,0 +1,36 @@
+---
+- name: Validate attended storage migration configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_service_mgr == 'systemd'
+      - host_storage_migrate_mount is match('^/[A-Za-z0-9_/-]+$')
+      - host_storage_migrate_uuid is match('^[A-Za-z0-9-]+$')
+      - host_storage_migrate_root is match('^/[A-Za-z0-9_/-]+$')
+      - host_storage_migrate_cache_bytes | string is match('^[1-9][0-9]*$')
+      - host_storage_migrate_health_timeout | string is match('^[1-9][0-9]*$')
+      - host_storage_migrate_health_timeout | int <= 3600
+      - host_storage_migrate_sources | length > 0
+      - host_storage_migrate_sources | difference(['/opt/backups', '/var/backups/security-trust-remediation', '/var/lib/docker', '/var/lib/containerd']) | length == 0
+      - "'/var/lib/docker' in host_storage_migrate_sources"
+      - "'/var/lib/containerd' in host_storage_migrate_sources"
+
+- name: Install attended storage migration tool
+  ansible.builtin.copy:
+    src: migrate.py
+    dest: /usr/local/sbin/host-storage-migrate
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install private storage migration configuration
+  ansible.builtin.copy:
+    dest: /etc/host-storage-migrate.json
+    content: >-
+      {{ {'mount': host_storage_migrate_mount, 'uuid': host_storage_migrate_uuid,
+          'root': host_storage_migrate_root, 'cache_bytes': host_storage_migrate_cache_bytes | int,
+          'busy_sqlite': host_storage_migrate_busy_sqlite,
+          'health_timeout': host_storage_migrate_health_timeout | int,
+          'sources': host_storage_migrate_sources} | to_nice_json }}
+    owner: root
+    group: root
+    mode: "0600"

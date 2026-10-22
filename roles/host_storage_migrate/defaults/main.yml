@@ -1,0 +1,12 @@
+---
+host_storage_migrate_mount: ""
+host_storage_migrate_uuid: ""
+host_storage_migrate_root: ""
+host_storage_migrate_cache_bytes: 10000000000
+host_storage_migrate_health_timeout: 300
+# Optional read-only SQLite count queries. Any positive count refuses cutover.
+host_storage_migrate_busy_sqlite: []
+host_storage_migrate_sources:
+  - /opt/backups
+  - /var/lib/docker
+  - /var/lib/containerd

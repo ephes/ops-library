@@ -51,6 +51,7 @@ Available runbooks:
 :maxdepth: 1
 
 docker_cache_cleanup
+host_storage_migrate
 time_sync_check
 
 daybook_operations_api_restore

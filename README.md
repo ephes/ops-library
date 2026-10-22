@@ -228,7 +228,8 @@ consumer repos depend on.
 | Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Service registration | [`fastdeploy_runner`](roles/fastdeploy_runner/README.md) | Install a script FastDeploy runs through sudo in a root-owned directory and register it. |
-| Operations | [`docker_cache_cleanup`](roles/docker_cache_cleanup/README.md) | Daily cleanup of Docker build cache unused for seven days. |
+| Operations | [`docker_cache_cleanup`](roles/docker_cache_cleanup/README.md) | Scheduled Docker build-cache cleanup by age and optional size target. |
+| Operations | [`host_storage_migrate`](roles/host_storage_migrate/README.md) | Attended external backup/Docker storage migration with checksum verification and service recovery. |
 | Operations | [`time_sync_check`](roles/time_sync_check/README.md) | Read-only check that a host's clock is NTP-synchronized (chrony or systemd-timesyncd, offset threshold, controller comparison); fails or warns. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |

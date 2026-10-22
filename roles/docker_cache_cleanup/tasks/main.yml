@@ -5,9 +5,10 @@
       - ansible_service_mgr == "systemd"
       - docker_cache_cleanup_enabled is boolean
       - docker_cache_cleanup_unused_hours | string is match('^[1-9][0-9]*$')
+      - docker_cache_cleanup_max_used_bytes | string is match('^[0-9]+$')
       - docker_cache_cleanup_calendar | string is match('^[^\r\n]+$')
       - docker_cache_cleanup_randomized_delay | string is match('^[0-9]+(s|min|m|h|d)$')
-    fail_msg: "Cache cleanup requires systemd, positive whole hours, and single-line timer settings."
+    fail_msg: "Cache cleanup requires systemd, positive whole hours, a nonnegative integer byte target, and single-line timer settings."
 
 - name: Verify Docker builder is available
   ansible.builtin.command:
@@ -15,6 +16,26 @@
   changed_when: false
   check_mode: false
   when: docker_cache_cleanup_enabled
+
+- name: Verify size-based build cache cleanup is supported
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, buildx, prune, --help]
+  register: _docker_cache_cleanup_buildx_help
+  changed_when: false
+  check_mode: false
+  when:
+    - docker_cache_cleanup_enabled
+    - docker_cache_cleanup_max_used_bytes | int > 0
+
+- name: Require buildx size and reservation controls
+  ansible.builtin.assert:
+    that:
+      - "'--max-used-space' in _docker_cache_cleanup_buildx_help.stdout"
+      - "'--reserved-space' in _docker_cache_cleanup_buildx_help.stdout"
+    fail_msg: "A size target requires buildx prune with --max-used-space and --reserved-space."
+  when:
+    - docker_cache_cleanup_enabled
+    - docker_cache_cleanup_max_used_bytes | int > 0
 
 - name: Check whether Docker cache cleanup timer exists
   ansible.builtin.stat:
