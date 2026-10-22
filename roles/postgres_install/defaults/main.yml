@@ -14,6 +14,8 @@ postgres_install_repo_components:
   - main
 postgres_install_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 postgres_install_repo_keyring: /etc/apt/keyrings/postgresql.asc
+# Opt-in migration of exact five-field stanzas from consolidated deb822 files.
+postgres_install_repo_legacy_deb822_files: []
 
 # Packages (server, client, contrib, development headers)
 postgres_install_packages:

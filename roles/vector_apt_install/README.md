@@ -18,6 +18,7 @@ manage `/etc/vector/config.d`, service environment, or any pipeline fragments.
 | `vector_apt_install_repo_key_tmp` | `/tmp/vector-datadog-archive-keyring.public` | Temporary download path for the key |
 | `vector_apt_install_repo_keyring_path` | `/usr/share/keyrings/datadog-archive-keyring.gpg` | Installed dearmored keyring path |
 | `vector_apt_install_repo_list_file` | `/etc/apt/sources.list.d/vector.list` | Apt source list path |
+| `vector_apt_install_repo_legacy_deb822_files` | `[]` | Absolute consolidated `.sources` paths to migrate |
 
 ## Example
 
@@ -36,3 +37,20 @@ manage `/etc/vector/config.d`, service environment, or any pipeline fragments.
   still verify the desired candidate for their release before an OS upgrade.
 - Downstream roles are still responsible for validating Vector configuration and
   starting `vector.service`.
+
+## Migrating a consolidated APT source
+
+Set `vector_apt_install_repo_legacy_deb822_files` to the absolute `.sources`
+paths containing old Vector entries. After configuring `vector.list`, the role
+removes only an exact standalone stanza with the fields `Types: deb`, `URIs`,
+`Suites`, `Components`, `Signed-By`, in that order, matching the current settings
+(with the repository URL's trailing slash omitted). Other entries and layouts
+remain untouched. Missing legacy files are skipped; changed files receive
+Ansible timestamped backups ending in `~`. The separate managed source must
+exist and match before cleanup runs. Repeated cleanup changes nothing.
+With migration enabled, a full-role `--check` also requires the managed source
+to exist already: check mode cannot create a replacement for cleanup to verify.
+
+For an existing, correctly configured `vector.list`, `ansible.builtin.import_role`
+with `tasks_from: repo_cleanup.yml` runs only this migration, without package
+installation or a service restart. Do not list the managed source itself.

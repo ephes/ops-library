@@ -11,3 +11,5 @@ vector_apt_install_repo_key_url: "https://keys.datadoghq.com/DATADOG_APT_KEY_CUR
 vector_apt_install_repo_key_tmp: "/tmp/vector-datadog-archive-keyring.public"
 vector_apt_install_repo_keyring_path: "/usr/share/keyrings/datadog-archive-keyring.gpg"
 vector_apt_install_repo_list_file: "/etc/apt/sources.list.d/vector.list"
+# Opt-in migration of exact five-field stanzas from consolidated deb822 files.
+vector_apt_install_repo_legacy_deb822_files: []

@@ -1,0 +1,55 @@
+---
+# Match only the exact canonical five-field legacy stanza, including paragraph
+# boundaries. Unknown layouts, other suites/keys/components and other repos stay.
+- name: repo_cleanup | Migrate explicitly selected legacy deb822 files
+  when: vector_apt_install_repo_legacy_deb822_files | length > 0
+  vars:
+    _repo_canonical_path: '{{ vector_apt_install_repo_list_file }}'
+    _repo_legacy_stanza: |
+      Types: deb
+      URIs: {{ vector_apt_install_repo_url | regex_replace('/$', '') }}
+      Suites: {{ vector_apt_install_repo_channel }}
+      Components: {{ vector_apt_install_repo_version }}
+      Signed-By: {{ vector_apt_install_repo_keyring_path }}
+  block:
+    - name: repo_cleanup | Validate legacy source paths
+      ansible.builtin.assert:
+        that:
+          - item is match('^/.*\.sources$')
+          - item != _repo_canonical_path
+        fail_msg: Legacy sources must be absolute .sources paths distinct from the managed repository file.
+      loop: "{{ vector_apt_install_repo_legacy_deb822_files }}"
+
+    - name: repo_cleanup | Read the managed repository before removing legacy entries
+      ansible.builtin.slurp:
+        src: "{{ _repo_canonical_path }}"
+      register: _repo_canonical
+
+    - name: repo_cleanup | Require the managed repository to match before cleanup
+      ansible.builtin.assert:
+        that:
+          - >-
+            ('deb [signed-by=' ~ vector_apt_install_repo_keyring_path ~ '] '
+            ~ vector_apt_install_repo_url ~ ' ' ~ vector_apt_install_repo_channel
+            ~ ' ' ~ vector_apt_install_repo_version) in _repo_canonical_lines
+        fail_msg: Configure the managed repository before migrating legacy entries.
+      vars:
+        _repo_canonical_lines: "{{ (_repo_canonical.content | b64decode).splitlines() }}"
+
+    - name: repo_cleanup | Check legacy deb822 files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ vector_apt_install_repo_legacy_deb822_files }}"
+      register: _repo_legacy_files
+
+    - name: repo_cleanup | Remove exact legacy repository stanza and retain other sources
+      ansible.builtin.replace:
+        path: "{{ item.item }}"
+        regexp: '(?m)(?:\A|(?<=\n\n)){{ _repo_legacy_stanza | trim | regex_escape }}(?=\n\n|\n?\Z)\n?'
+        replace: ''
+        backup: true
+      loop: "{{ _repo_legacy_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.stat.exists
+      register: _repo_cleanup_result

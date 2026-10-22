@@ -3,6 +3,15 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Consolidated APT source migration (2.48.0)
+
+- `postgres_install` and `vector_apt_install`: opt-in
+  `*_repo_legacy_deb822_files` migrate exact matching legacy stanzas from
+  consolidated `.sources` files after verifying the separate role-owned source.
+  Other repositories remain intact, changed files are backed up, and repeated
+  runs are idempotent. `tasks_from: repo_cleanup.yml` supports repository-only
+  repairs without package installation or service changes.
+
 ## Unreleased — Voice Memo Matter terminology (2.47.1)
 
 - The Voice Memo inbox role's default ASR prompt explains that the owner's
@@ -1215,7 +1224,6 @@ FastDeploy privilege reduction, stage 1.
   of `SAMEORIGIN`. Traefik's headers middleware replaces the backend's value, so
   the edge had been weakening the `DENY` Voxhelm sends itself. Takes effect on
   the next Voxhelm ingress deploy.
-
 
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 

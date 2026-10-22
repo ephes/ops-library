@@ -1,0 +1,58 @@
+---
+# Match only the exact canonical five-field legacy stanza, including paragraph
+# boundaries. Unknown layouts, other suites/keys/components and other repos stay.
+- name: repo_cleanup | Migrate explicitly selected legacy deb822 files
+  become: true
+  when: postgres_install_repo_legacy_deb822_files | length > 0
+  vars:
+    _repo_canonical_path: '{{ "/etc/apt/sources.list.d/" ~ postgres_install_repo_name ~ ".sources" }}'
+    _repo_legacy_stanza: |
+      Types: deb
+      URIs: {{ postgres_install_repo_url }}
+      Suites: {{ postgres_install_repo_codename }}-pgdg
+      Components: {{ postgres_install_repo_components | join(' ') }}
+      Signed-By: {{ postgres_install_repo_keyring }}
+  block:
+    - name: repo_cleanup | Validate legacy source paths
+      ansible.builtin.assert:
+        that:
+          - item is match('^/.*\.sources$')
+          - item != _repo_canonical_path
+        fail_msg: Legacy sources must be absolute .sources paths distinct from the managed repository file.
+      loop: "{{ postgres_install_repo_legacy_deb822_files }}"
+
+    - name: repo_cleanup | Read the managed repository before removing legacy entries
+      ansible.builtin.slurp:
+        src: "{{ _repo_canonical_path }}"
+      register: _repo_canonical
+
+    - name: repo_cleanup | Require the managed repository to match before cleanup
+      ansible.builtin.assert:
+        that:
+          - "'Types: deb' in _repo_canonical_lines"
+          - "('URIs: ' ~ postgres_install_repo_url) in _repo_canonical_lines"
+          - "('Suites: ' ~ postgres_install_repo_codename ~ '-pgdg') in _repo_canonical_lines"
+          - "('Components: ' ~ (postgres_install_repo_components | join(' '))) in _repo_canonical_lines"
+          - "('Signed-By: ' ~ postgres_install_repo_keyring) in _repo_canonical_lines"
+          - "'Enabled: yes' in _repo_canonical_lines"
+        fail_msg: Configure the managed repository before migrating legacy entries.
+      vars:
+        _repo_canonical_lines: "{{ (_repo_canonical.content | b64decode).splitlines() }}"
+
+    - name: repo_cleanup | Check legacy deb822 files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ postgres_install_repo_legacy_deb822_files }}"
+      register: _repo_legacy_files
+
+    - name: repo_cleanup | Remove exact legacy repository stanza and retain other sources
+      ansible.builtin.replace:
+        path: "{{ item.item }}"
+        regexp: '(?m)(?:\A|(?<=\n\n)){{ _repo_legacy_stanza | trim | regex_escape }}(?=\n\n|\n?\Z)\n?'
+        replace: ''
+        backup: true
+      loop: "{{ _repo_legacy_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.stat.exists
+      register: _repo_cleanup_result

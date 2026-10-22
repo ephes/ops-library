@@ -91,3 +91,15 @@ postgres_install_config_overrides:
 ```
 
 Refer to `roles/postgres_install/defaults/main.yml` for the full list.
+
+## Consolidated repository migration
+
+Set `postgres_install_repo_legacy_deb822_files` (default `[]`) to absolute
+`.sources` files containing the old PGDG stanza. After configuring the managed
+source, the role removes only the exact five-field legacy stanza matching the
+current repository settings, preserving other repositories and backing up each
+changed file. Missing legacy files are skipped; different layouts are retained.
+`tasks_from: repo_cleanup.yml` provides a repository-only entry point, requiring
+an existing matching managed source. See the role README for the stanza format.
+With migration enabled, full-role check mode requires the managed source to
+exist already, since it cannot create a replacement for cleanup to verify.

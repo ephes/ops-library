@@ -20,6 +20,31 @@ Install and configure PostgreSQL from the official PGDG repository (or distro pa
 - Target host must allow the `postgres_install_admin_user` (default `postgres`) to manage databases via peer auth or password
 - Ansible collection `community.postgresql` (install via `ansible-galaxy collection install community.postgresql`)
 
+## Migrating a consolidated APT source
+
+`postgres_install_repo_legacy_deb822_files` (default `[]`) opts specific absolute
+`.sources` paths into cleanup after the role configures its managed repository.
+For example:
+
+```yaml
+postgres_install_repo_legacy_deb822_files:
+  - /etc/apt/sources.list.d/os-upgrade.sources
+```
+
+Cleanup removes only an exact standalone stanza with these fields in order:
+`Types: deb`, `URIs`, `Suites`, `Components`, `Signed-By`. Values must match the
+current repository settings. Other repositories, suites, keys, comments and
+layouts remain untouched; missing legacy files are skipped. Changed files are
+backed up with Ansible's timestamped `~` suffix. Cleanup refuses to proceed
+unless the separate managed source exists and matches the repository settings.
+Repeated cleanup changes nothing. Do not list the managed source itself.
+With migration enabled, a full-role `--check` also requires the managed source
+to exist already: check mode cannot create a replacement for cleanup to verify.
+
+For a repository-only repair on a host whose managed source is already correct,
+use `ansible.builtin.import_role` with `tasks_from: repo_cleanup.yml`. This entry
+point does not install packages, alter PostgreSQL configuration or restart it.
+
 ## Variables
 
 Full list in `defaults/main.yml`. Key knobs:
@@ -129,6 +154,7 @@ postgres_install_config_overrides:
 - Passwords passed via `postgres_install_users` are treated as plaintext (SCRAM hashed server-side) unless you set `encrypted: true`, which allows supplying pre-hashed strings for advanced setups.
 
 Documented expectations:
+
 1. After convergence, `public` belongs to the same owner as the database.
 2. Application users can authenticate over `localhost` using SCRAM (the default `postgres_install_pg_hba_rules` grant loopback access with `scram-sha-256`).
 

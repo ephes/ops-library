@@ -16,9 +16,11 @@ uv_install
 sops_dependencies
 postgres_install
 redis_install
+vector_apt_install
 ```
 
 These roles prepare controllers and target hosts with:
+
 - Package installation
 - Binary downloads and verification
 - Environment configuration

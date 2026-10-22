@@ -35,3 +35,7 @@
     state: "{{ 'present' if postgres_install_use_pgdg_repo else 'absent' }}"
   become: true
   when: postgres_install_use_pgdg_repo is defined
+
+- name: Remove migrated PostgreSQL deb822 stanzas
+  ansible.builtin.import_tasks: repo_cleanup.yml
+  when: postgres_install_use_pgdg_repo | bool
