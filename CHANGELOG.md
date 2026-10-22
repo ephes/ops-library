@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — opsgate_deploy: Python or the Rust release per launchd unit
+## [2.65.0] - 2026-10-22
+
+### opsgate_deploy: Python or the Rust release per launchd unit
 
 - `opsgate_deploy` gets the implementation switch of the opsgate repository's
   `rust/PLAN.md` 10.1 (slice S10): `opsgate_api_impl` and
@@ -31,7 +33,7 @@
   (`just test-opsgate-deploy-impl`, part of `just test`) with plist fixtures
   in `tests/fixtures/opsgate_deploy/`.
 
-## Unreleased — software_live: switch between Python and the Rust release
+### software_live: switch between Python and the Rust release
 
 - `software_live` gets the implementation switch of
   `rust/software-live/PLAN.md` 7.3 (slice S6): `software_live_impl: python`
@@ -60,7 +62,7 @@
 - `software_live_remove` also removes the shadow units and their state and
   the implementation drop-in directories.
 
-## Unreleased — software-live Rust port: collect
+### software-live Rust port: collect
 
 - `rust/software-live` gets `collect` of `software_live.py` (slice S3f of
   `rust/software-live/PLAN.md`): the policy check, the observation steps in
@@ -77,7 +79,7 @@
   (`fixtures/collect.json`). Nothing installs or runs the binary; the
   `software_live` role is unchanged.
 
-## Unreleased — software-live Rust port: inventory export
+### software-live Rust port: inventory export
 
 - `rust/software-live` gets `export-inventory` of `software_live.py` (slice
   S3e of `rust/software-live/PLAN.md`): the safe source read (root-owned
@@ -93,7 +95,7 @@
   Nothing installs or runs the binary; the `software_live` role is
   unchanged.
 
-## Unreleased — software-live Rust port: APT helper
+### software-live Rust port: APT helper
 
 - New Rust crate `rust/software-live-apt` (slice S3d of
   `rust/software-live/PLAN.md`): the APT observation of `software_live.py`
@@ -115,7 +117,7 @@
   `CmpFragment` expects C strings); the helper compares NUL-terminated
   copies (PLAN.md 13.4).
 
-## Unreleased — software-live Rust port: OS and PostgreSQL observations
+### software-live Rust port: OS and PostgreSQL observations
 
 - `rust/software-live` (slice S3c of `rust/software-live/PLAN.md`): the OS
   observation (Python's os-release parser and fallback, lifecycle
@@ -130,7 +132,7 @@
   every probe. Nothing installs or runs the binary; the `software_live`
   role is unchanged.
 
-## Unreleased — software-live Rust port: upstream lookups and caches
+### software-live Rust port: upstream lookups and caches
 
 - `rust/software-live` gets the upstream lookups of `software_live.py` (slice S3a)
   (latest Traefik release on GitHub, endoflife.date lifecycles) with their
@@ -141,7 +143,7 @@
   drift test runs the Python program on it). Not wired into `collect` yet;
   the role is unchanged.
 
-## Unreleased — software-live Rust port: Traefik observation
+### software-live Rust port: Traefik observation
 
 - `rust/software-live` gets the Traefik observation of `software_live.py`
   (slice S3b of `rust/software-live/PLAN.md`): `MainPID`, the
@@ -153,7 +155,7 @@
   a Linux test with real processes. `collect` does not use it yet; nothing
   installs or runs the binary.
 
-## Unreleased — software-live Rust port: crate skeleton
+### software-live Rust port: crate skeleton
 
 - New Rust crate `rust/software-live` in the `rust/` workspace (slice S2 of
   `rust/software-live/PLAN.md`): the command line of `software_live.py`
@@ -169,29 +171,7 @@
   fixture or `TESTMAP.md` no longer matches it. New recipes `just
   rs-software-live` and `just rs-software-live-fixtures`.
 
-## [2.64.5] - 2026-10-21
-
-### Security
-
-- Add a guarded security-only Rustup 1.29.2 manager/proxy patch entrypoint that
-  preserves existing coding toolchains and settings; use patched OS trust and
-  pinned official updater checksums instead of the old embedded downloader.
-
-## [2.64.4] - 2026-10-21
-
-### Fixed
-
-- `container_ca_activate`: allow a bounded 600-second native-owner health
-  convergence budget for both activation and automatic recovery, retaining
-  native health requirements and the legacy non-owner path.
-
-## [2.64.3] - 2026-10-21
-
-### Security
-
-- `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
-
-## Unreleased — Rust ports: echoport-command-guard release 0.1.0 (S7)
+### Rust ports: echoport-command-guard release 0.1.0 (S7)
 
 - `rust/echoport-command-guard` (slice S7 of
   `rust/echoport-command-guard/PLAN.md`): the crate version is now `0.1.0`
@@ -223,7 +203,7 @@
   merged and released before any Rust guard install (S9); 0.1.0 is installed
   nowhere and must never be.
 
-## Unreleased — Rust ports: metrics-httpd role switch of four more endpoints (S5b)
+### Rust ports: metrics-httpd role switch of four more endpoints (S5b)
 
 - `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy` (DDNS status
   endpoint) and `openclaw_deploy` (metrics endpoint) use the internal helper
@@ -251,6 +231,60 @@
   `tests/fixtures/metrics_httpd_switch/<role>/`, and a switch run under a
   tagged include; a Python unit with a host-name bind keeps deploying with
   the probe skipped, the verify behaviour S5c added).
+
+### Rust ports: metrics-httpd switch for logyard and static sites (S5c)
+
+- `logyard_deploy` and `static_site_deploy` (slice S5c of
+  `rust/metrics-httpd/PLAN.md`, section 7.3): new `logyard_health_impl` and
+  `static_site_impl` (default `{{ metrics_httpd_impl | default('python') }}`)
+  select the health endpoint's and the static site's HTTP server through
+  `metrics_httpd_switch`: `rust` runs `metrics-httpd logyard-health` (the
+  unit's `LOGYARD_*` environment) or `metrics-httpd static --bind --port
+  --root` from the drop-in `metrics-httpd-impl.conf`; its `--check-config`
+  runs as the unit's user with the unit's own `[Service]` lines (logyard: its
+  `Environment=` lines exactly as rendered; static: the full hardening incl.
+  `MemoryDenyWriteExecute=` and `RestrictAddressFamilies=`). With the default
+  `python` both roles render exactly the same unit and script as before; the
+  deploy now also checks that the unit runs the Python script and answers
+  (logyard: 200 with a JSON `status`; static: 200 for `/`) and moves the
+  metrics-httpd pin. These roles are the Ansible path and the rollback engine
+  of the pyinfra-deployed `logyard` and `benchmarks_static` services.
+- `static_site_deploy`: `static_site_systemd_unit_name` no longer accepts a
+  dot (it is also the switch's pin name). The service, the Traefik route,
+  the handler flush and the checks now run in one block that carries the
+  switch inputs, in the same order as before.
+- `metrics_httpd_switch`: new `metrics_httpd_switch_probe_timeout` (default
+  `5` s, as before); `logyard_deploy` raises it to three Loki request
+  timeouts plus one `systemctl` timeout per listed unit plus 5 s, since the
+  health endpoint answers only after those calls. verify skips the probe with
+  a message when the bind address is a host name (e.g. `localhost`, which
+  only a Python unit accepts) instead of failing on it.
+- Tests: `tests/test_metrics_httpd_switch_logyard_static.py` (in `just
+  test-metrics-httpd-switch`), goldens in
+  `tests/fixtures/metrics_httpd_switch/{logyard_deploy,static_site_deploy}/`;
+  `tests/test_logyard_deploy.yml` checks the impl default and the drop-in.
+
+## [2.64.5] - 2026-10-21
+
+### Security
+
+- Add a guarded security-only Rustup 1.29.2 manager/proxy patch entrypoint that
+  preserves existing coding toolchains and settings; use patched OS trust and
+  pinned official updater checksums instead of the old embedded downloader.
+
+## [2.64.4] - 2026-10-21
+
+### Fixed
+
+- `container_ca_activate`: allow a bounded 600-second native-owner health
+  convergence budget for both activation and automatic recovery, retaining
+  native health requirements and the legacy non-owner path.
+
+## [2.64.3] - 2026-10-21
+
+### Security
+
+- `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
 
 ## Unreleased — Rust ports: metrics-httpd release 0.1.0 (S4)
 
@@ -348,38 +382,6 @@
   `tests/test_metrics_httpd_fixtures.py` checks that every Rust difference
   names a PLAN.md 5.2 item. Nothing installs the binary; no role behaviour
   changes.
-
-## Unreleased — Rust ports: metrics-httpd switch for logyard and static sites (S5c)
-
-- `logyard_deploy` and `static_site_deploy` (slice S5c of
-  `rust/metrics-httpd/PLAN.md`, section 7.3): new `logyard_health_impl` and
-  `static_site_impl` (default `{{ metrics_httpd_impl | default('python') }}`)
-  select the health endpoint's and the static site's HTTP server through
-  `metrics_httpd_switch`: `rust` runs `metrics-httpd logyard-health` (the
-  unit's `LOGYARD_*` environment) or `metrics-httpd static --bind --port
-  --root` from the drop-in `metrics-httpd-impl.conf`; its `--check-config`
-  runs as the unit's user with the unit's own `[Service]` lines (logyard: its
-  `Environment=` lines exactly as rendered; static: the full hardening incl.
-  `MemoryDenyWriteExecute=` and `RestrictAddressFamilies=`). With the default
-  `python` both roles render exactly the same unit and script as before; the
-  deploy now also checks that the unit runs the Python script and answers
-  (logyard: 200 with a JSON `status`; static: 200 for `/`) and moves the
-  metrics-httpd pin. These roles are the Ansible path and the rollback engine
-  of the pyinfra-deployed `logyard` and `benchmarks_static` services.
-- `static_site_deploy`: `static_site_systemd_unit_name` no longer accepts a
-  dot (it is also the switch's pin name). The service, the Traefik route,
-  the handler flush and the checks now run in one block that carries the
-  switch inputs, in the same order as before.
-- `metrics_httpd_switch`: new `metrics_httpd_switch_probe_timeout` (default
-  `5` s, as before); `logyard_deploy` raises it to three Loki request
-  timeouts plus one `systemctl` timeout per listed unit plus 5 s, since the
-  health endpoint answers only after those calls. verify skips the probe with
-  a message when the bind address is a host name (e.g. `localhost`, which
-  only a Python unit accepts) instead of failing on it.
-- Tests: `tests/test_metrics_httpd_switch_logyard_static.py` (in `just
-  test-metrics-httpd-switch`), goldens in
-  `tests/fixtures/metrics_httpd_switch/{logyard_deploy,static_site_deploy}/`;
-  `tests/test_logyard_deploy.yml` checks the impl default and the drop-in.
 
 ## Unreleased — Rust ports: metrics-httpd role switch (S5a)
 
