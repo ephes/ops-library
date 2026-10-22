@@ -225,8 +225,8 @@
     # The guard's own mutations (H1): made on file descriptors, never through
     # a symlink, also not one check() allows because it resolves inside the
     # root; chown -R leaves a link out of the root and its target alone;
-    # chmod, mv and rm run as the root's owner (nobody), so a root-owned file
-    # in the root is not theirs to change.
+    # chmod, mv and rm run as the root's owner (nobody), so the chmod of a
+    # root-owned file in the root fails.
     - name: Change, move and remove inside the root, never through a symlink
       ansible.builtin.shell:
         executable: /bin/bash

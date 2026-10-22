@@ -31,8 +31,11 @@
   the tool's message) and a `refused from` log line with the reason
   (before: `allowed from`). Stricter than the tools: a symlink on a changed
   path is refused even when it resolves inside the root, a regular file with
-  more than one link and special files are not changed, a root-owned file
-  or directory in a root is not changed by `chmod`/`mv`/`rm`, `chown -R` leaves
+  more than one link and special files are not changed, `chmod` of a
+  root-owned file and `mv`/`rm` inside a root-owned directory fail (as with
+  any change the root's owner may not make; `mv`/`rm` of an entry in a
+  directory the owner can write follow that directory's permissions, as
+  `rename`/`unlink` do), `chown -R` leaves
   symlinks' own owners alone, and `mv` never moves into an existing target
   directory or across filesystems. The `echoport_backup` runners' tests pass
   unchanged.
