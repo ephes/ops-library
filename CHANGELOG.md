@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — software-live Rust port: manual CLI on Rust hosts (S11)
+
+- `rust/software-live/PLAN.md` (status, 4.2 item 10, 7.5) and `README.md`:
+  the ops-control manual CLI `just software-live --host H` runs the
+  installed release
+  `<software_live_install_dir>/releases/<software_live_rust_version>/software-live
+  collect --config-json` over SSH on hosts with `software_live_impl: rust`
+  (version from the inventory pin) and keeps streaming `software_live.py` on
+  the others. No role or collection change.
+
 ## Unreleased — software-live Rust port: inventory pin and runbook (S8)
 
 - `rust/software-live/PLAN.md` (status, 7.5, 8.1) and `README.md`: the
