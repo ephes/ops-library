@@ -54,7 +54,11 @@
   `tests/mutations.rs`; as root in the Layer-2 containers), mutation
   scenarios in Layer 3 and the role's molecule verify. 0.2.0 is the first
   release a host may get (S9); 0.1.0 is never installed. The guard role's
-  molecule scenarios install 0.2.0 built from the checkout.
+  molecule scenarios install 0.2.0 built from the checkout. Released by the
+  tag `echoport-command-guard-v0.2.0` (`966d178e`):
+  `echoport-command-guard-0.2.0-x86_64-unknown-linux-gnu.tar.gz`, sha256
+  `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`,
+  stripped binary 705,952 bytes, highest glibc symbol version `GLIBC_2.34`.
 
 ## Unreleased — software-live Rust port: endpoint
 
