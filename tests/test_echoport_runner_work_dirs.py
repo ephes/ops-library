@@ -7,8 +7,9 @@ For each runner this module checks:
 
 - the rendered defaults and overrides, and that the old temp dir variables
   (``echoport_backup_temp_dir``, ``*_temp_dir``) are ignored;
-- a missing mount refuses backup and restore before any command runs and
-  before ``mkdtemp`` (no fallback to ``/tmp`` or the system temp dir);
+- a missing mount refuses backup and restore before ``mkdtemp`` and before
+  any command after the read-only configuration checks (no fallback to
+  ``/tmp`` or the system temp dir);
 - a symlinked work dir is refused without writing to its target;
 - a failing backup or restore removes its run dir, and restore creates its
   run dir in ``WORK_DIR``.
@@ -45,7 +46,11 @@ BASE_VARS = {
     "fastdeploy_echoport_backup_health_headers": {},
     "paperless_echoport_backup_health_headers": {},
 }
-# Called before the run dir exists; stubbed so the work dir check is reached.
+# Read-only configuration checks (path validation, `which` probes, reading
+# credentials files) that some runners run before the run dir exists. They
+# write nothing, so the work dir check only has to come before the first
+# write; they are stubbed so the test reaches it, and every command after
+# them (dumps, systemctl, mc, ssh) must not run when the mount is missing.
 PRECHECKS = (
     "validate_config_paths",
     "validate_settings",
