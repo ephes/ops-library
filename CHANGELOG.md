@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Docs
+
+- `mail_backend_deploy`: the README and defaults said a local-delivery client
+  gets `Relay access denied` for an outside recipient. Postfix 3.8 answers
+  `554 5.7.1 <unknown[client-ip]>: Client host rejected: Access denied`
+  instead, because the class's `reject` runs inside the client lookup;
+  behaviour is unchanged, only the documented text is corrected (also wrong in
+  the 2.73.0 entry below).
+
 ## [2.73.0] - 2026-10-23
 
 ### NVMe temperature is not a disk failure

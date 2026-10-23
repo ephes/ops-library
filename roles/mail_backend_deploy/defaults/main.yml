@@ -57,7 +57,8 @@ mail_backend_mynetworks:
 # after permit_mynetworks and applies the restriction class
 # local_delivery_only = permit_auth_destination, reject. Recipients this server
 # is the final destination for (mail_backend_domains, their aliases) are
-# accepted; anything else gets "Relay access denied". The other smtpd
+# accepted; anything else gets "554 5.7.1 ... Client host rejected: Access
+# denied" (the class's reject runs inside the client lookup). The other smtpd
 # restrictions (sender domain, HELO syntax, recipient checks) still apply.
 #
 # Empty (the default) renders master.cf and main.cf exactly as before and

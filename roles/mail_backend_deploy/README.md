@@ -114,7 +114,9 @@ The role then
 
 A listed client may deliver to recipients this server is the final destination
 for (`mail_backend_domains`, their aliases and alias domains). Any other
-recipient gets `554 5.7.1 Relay access denied`. Submission (587/465) is
+recipient is refused with `554 5.7.1 <unknown[client-ip]>: Client host
+rejected: Access denied`: the refusal comes from the class's `reject`, which
+runs inside the client lookup (observed on Postfix 3.8). Submission (587/465) is
 unchanged. The global restrictions still apply to these clients: sender
 domains must resolve (`reject_unknown_sender_domain`), the HELO name must be
 syntactically valid, and recipients must exist
