@@ -340,7 +340,7 @@ The molecule scenarios `default` (impl python), `shadow` and `rust` run the
 same playbooks (`molecule/shared/`) on Ubuntu 24.04 and Debian 13: the role,
 the `authorized_keys` line, the post-probe and `confirm_live.yml`, then the
 verify above. `shadow` and `rust` install the guard built from the checkout
-as its crate version (`rust/echoport-command-guard/Cargo.toml`, `0.2.0`;
+as its crate version (`rust/echoport-command-guard/Cargo.toml`, `0.3.0`;
 `rust/echoport-command-guard/parity/e2e/build-local-archive.sh`
 builds it in a Debian 12 container for the Docker host's architecture; set
 `ECHOPORT_GUARD_LOCAL_ARCHIVE` to use another archive). The shadow run also

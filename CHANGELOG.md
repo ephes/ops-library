@@ -12,7 +12,13 @@
 - `echoport_remote_command_guard` (Python guard): allows exactly that `psql`
   shape when `postgres.restore_databases[<db>]` is the quoted role; any other
   argument, statement, schema, role or database is refused. The Rust port's
-  Layer-1 fixtures are regenerated; the Rust guard is ported in the same merge.
+  Layer-1 fixtures are regenerated.
+- `rust/echoport-command-guard` 0.3.0: the Rust guard allows the same shape
+  with the Python guard's checks in its order (argument shape, then the
+  database, then the byte-exact statement) and its reasons; no allowed
+  difference. The role's molecule scenarios install 0.3.0 and send two
+  refused `ALTER SCHEMA` commands through sshd. 0.2.0 refuses the runners'
+  new command, so S9 pins 0.3.0 (tag `echoport-command-guard-v0.3.0`).
 - Rollout: deploy the guard on staging before re-registering the two runners.
 
 ## [2.68.0] - 2026-10-22
