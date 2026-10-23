@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 import yaml
-from jinja2 import ChainableUndefined, Environment, StrictUndefined
+from jinja2 import ChainableUndefined, Environment, FileSystemLoader, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLES = ROOT / "roles"
@@ -255,10 +255,10 @@ class UnifiBackupRestoreArgfileTests(unittest.TestCase):
         self.assertIn("systemd | Require existing custom credentials directory", tasks)
 
     def load_echoport_script(self, chowns):
-        environment = Environment(undefined=ChainableUndefined)
-        source = environment.from_string(
-            (ROLES / "echoport_backup/templates/unifi_backup.py.j2").read_text()
-        ).render(unifi_echoport_backup_group="unifi")
+        environment = Environment(
+            loader=FileSystemLoader(ROLES / "echoport_backup/templates"), undefined=ChainableUndefined
+        )
+        source = environment.get_template("unifi_backup.py.j2").render(unifi_echoport_backup_group="unifi")
         namespace = {"__name__": "unifi_backup_under_test"}
         exec(compile(source, "unifi_backup.py", "exec"), namespace)
         commands = []
