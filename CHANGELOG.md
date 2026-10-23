@@ -59,6 +59,20 @@
   runs are idempotent. `tasks_from: repo_cleanup.yml` supports repository-only
   repairs without package installation or service changes.
 
+## Unreleased — software-live Rust port: shadow evaluation and cutover (S9, S10)
+
+- `rust/software-live/PLAN.md` (status, section 10) and `README.md`: the
+  24 h shadow evaluation of release 0.1.1 passed on 2026-10-23 (96 of 96
+  shadow runs exit 0 per host, `shadow_compare.py` `match` on all four
+  hosts, no warning; collector CPU 47–56 % of Python's and peak 24–25 %
+  below it), and the S10 report: all four hosts run 0.1.1 in production
+  since 2026-10-23 (staging, macmini, fractal, production), with the
+  rollback drill on staging (forward, back to Python, forward, emergency
+  path, redeploy) and the shadow turned off afterwards. Open from the drill:
+  Python reading caches the Rust program wrote (8.4), after the first daily
+  cache refresh by Rust. The 7-day soak before S12 runs from the production
+  cutover. No role or collection change.
+
 ## Unreleased — software-live Rust port: collector CPU (S9b)
 
 - `rust/software-live`: the collector hashes the 185 MB Traefik binary once
