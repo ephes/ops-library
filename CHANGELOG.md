@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — Staging refresh keeps the public schema owner
+
+- `echoport_backup`: the homepage and python-podcast production-DB runners now
+  give the restored database's `public` schema to the app role right after
+  `createdb` (`psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER
+  TO "<role>"'` as postgres; a failure fails `drop_recreate_db`). On staging,
+  `template1`'s `public` schema belongs to `postgres` (cluster upgraded from
+  older majors) and `pg_restore --no-owner` skipped the dump's ALTER, so each
+  nightly refresh reset the owner and pyinfra planned the ALTER on every deploy.
+- `echoport_remote_command_guard` (Python guard): allows exactly that `psql`
+  shape when `postgres.restore_databases[<db>]` is the quoted role; any other
+  argument, statement, schema, role or database is refused. The Rust port's
+  Layer-1 fixtures are regenerated; the Rust guard is ported in the same merge.
+- Rollout: deploy the guard on staging before re-registering the two runners.
+
 ## [2.68.0] - 2026-10-22
 
 ### External bulk storage and bounded Docker build cache

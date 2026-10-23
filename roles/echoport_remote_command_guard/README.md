@@ -50,6 +50,7 @@ itself](#files-the-guard-opens-itself)):
 | `sudo -u postgres pg_dump --format=custom --file=<f> --dbname=<db>` | `db` in `postgres.dump_databases`, `f` is `/tmp/echoport_<prefix>_dump_<stamp>.dump` |
 | `sudo -u postgres dropdb --if-exists --force <db>`, `createdb --owner=<role> <db>`, `pg_restore --exit-on-error --dbname=<db> --no-owner --role=<role> <f>` | `postgres.restore_databases[db] == role`, `f` is `/tmp/echoport_<prefix>_restore_<stamp>.dump` |
 | `sudo -u postgres psql -d <db> -c 'SELECT 1'` | `db` in either database list |
+| `sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER TO "<role>"'` | `db` in `postgres.restore_databases` and `role` is exactly `restore_databases[db]`; the statement must match byte for byte (double-quoted role, no trailing `;`, nothing else); sent right after `createdb --owner`, because `createdb` copies `template1`, whose `public` schema can still belong to `postgres` on clusters upgraded from PostgreSQL < 15, and `pg_restore --no-owner` skips the dump's own `ALTER SCHEMA` |
 | `runuser -u postgres -- <tool> ...` | the same tools and rules as `sudo -u postgres`, plus the Django Chat shapes below |
 | `runuser -u postgres -- pg_dump --format=custom --dbname=<db>` (to stdout) | `db` in `postgres.dump_databases` |
 | `runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -qAt -d <db> -c <sql>` | `SHOW server_version;` on a dump database; `SELECT 1 FROM pg_database WHERE datname = '<scratch>';` on `postgres`; `SELECT count(*) FROM public.<table>;` on a scratch database |

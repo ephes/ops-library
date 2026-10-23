@@ -34,7 +34,7 @@ TEMPLATE = "python_podcast_production_db_backup.py.j2"
 DEFAULT_PATH = "/home/python-podcast/site/private_media"
 
 
-def render_runner(**overrides: Any) -> types.ModuleType:
+def render_runner(template: str = TEMPLATE, **overrides: Any) -> types.ModuleType:
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         undefined=StrictUndefined,
@@ -51,9 +51,9 @@ def render_runner(**overrides: Any) -> types.ModuleType:
         "echoport_backup_temp_dir": "/tmp/pp-prod-db-backup-test",
     }
     variables.update(overrides)
-    source = env.get_template(TEMPLATE).render(**variables)
-    module = types.ModuleType("python_podcast_production_db_backup_test")
-    module.__file__ = str(TEMPLATE_DIR / TEMPLATE)
+    source = env.get_template(template).render(**variables)
+    module = types.ModuleType(template.replace(".py.j2", "_test"))
+    module.__file__ = str(TEMPLATE_DIR / template)
     with warnings.catch_warnings():
         # The runner's pre-existing `return` inside `finally` is intentional.
         warnings.simplefilter("ignore", SyntaxWarning)
@@ -507,6 +507,79 @@ class PrivateMediaRestoreTests(unittest.TestCase):
         self.assertTrue((target / "cast_voice_references" / "speaker-1.wav").is_file())
         self.assertFalse((target / "stale").exists())
         self.assertEqual(sorted(p.name for p in site.iterdir()), ["private_media"])
+
+
+class PublicSchemaOwnerTests(unittest.TestCase):
+    """createdb copies template1, whose public schema may belong to postgres."""
+
+    TEMPLATES = (
+        ("python_podcast_production_db_backup.py.j2", "python-podcast"),
+        ("homepage_production_db_backup.py.j2", "homepage"),
+    )
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def archive(self, db: str) -> tuple[Path, str]:
+        build = self.tmp / "build"
+        (build / "database").mkdir(parents=True, exist_ok=True)
+        (build / "database" / f"{db}.dump").write_bytes(b"PGDMP")
+        (build / "manifest.json").write_text(json.dumps({"target": f"{db}-production-db"}))
+        outer = self.tmp / "backup.tar.gz"
+        with tarfile.open(outer, "w:gz") as tar:
+            for item in sorted(build.iterdir()):
+                tar.add(item, arcname=item.name)
+        return outer, sha256(outer)
+
+    def restore(self, template: str, db: str, fail_alter: bool = False) -> tuple[int, FakeRemote, list[dict]]:
+        runner = render_runner(template)
+        outer, checksum = self.archive(db)
+        remote = FakeRemote(self.tmp)
+        remote.download_source = outer
+        fake_ssh = remote.ssh
+
+        def ssh(host: str, user: str, cmd: str, check: bool = True) -> subprocess.CompletedProcess:
+            result = fake_ssh(host, user, cmd, check)
+            if fail_alter and "ALTER SCHEMA" in cmd:
+                raise subprocess.CalledProcessError(1, cmd, "", "ERROR: must be owner of schema public")
+            return result
+
+        with remote.installed(runner) as out, mock.patch.object(runner, "ssh", side_effect=ssh):
+            rc = runner.restore(bucket="backups", key="t/run.tar.gz", expected_checksum=checksum)
+        return rc, remote, emitted_steps(out.getvalue())
+
+    def test_public_schema_goes_to_the_app_role_before_pg_restore(self) -> None:
+        for template, db in self.TEMPLATES:
+            with self.subTest(template=template):
+                rc, remote, _ = self.restore(template, db)
+                self.assertEqual(rc, 0)
+                commands = remote.ssh_commands
+                createdb = commands.index(f"sudo -u postgres createdb --owner={db} {db}")
+                alter = commands.index(
+                    f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d {db} "
+                    f"-c 'ALTER SCHEMA public OWNER TO \"{db}\"'"
+                )
+                pg_restore = next(i for i, c in enumerate(commands) if "pg_restore" in c)
+                self.assertEqual(alter, createdb + 1)
+                self.assertLess(alter, pg_restore)
+
+    def test_failed_alter_fails_the_step_and_skips_pg_restore(self) -> None:
+        for template, db in self.TEMPLATES:
+            with self.subTest(template=template):
+                rc, remote, steps = self.restore(template, db, fail_alter=True)
+                self.assertEqual(rc, 1)
+                self.assertFalse(any("pg_restore" in c for c in remote.ssh_commands))
+                failed = [s for s in steps if s.get("name") == "drop_recreate_db" and s.get("state") == "failure"]
+                self.assertTrue(failed, steps)
+                self.assertIn("must be owner of schema public", failed[-1]["message"])
+                # The stopped services are started again.
+                self.assertTrue(any(c.startswith("systemctl start") for c in remote.ssh_commands))
+
+    def test_statement_quotes_the_role(self) -> None:
+        runner = render_runner()
+        self.assertEqual(runner.public_schema_owner_sql("python-podcast"),
+                         'ALTER SCHEMA public OWNER TO "python-podcast"')
 
 
 class RestoreOptInTests(unittest.TestCase):

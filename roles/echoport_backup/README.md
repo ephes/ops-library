@@ -208,6 +208,15 @@ dropping and recreating the target database. Every process holding a connection
 must be down for that window, not just the web service:
 
 - `SERVICE_NAME` is always stopped before the drop and started after `pg_restore`.
+- The production-DB runners (`homepage_production_db_backup`,
+  `python_podcast_production_db_backup`) run
+  `psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER TO "<role>"'`
+  as postgres right after `createdb --owner=<role> <db>`, inside the
+  `drop_recreate_db` step (a failure fails the step and the restore). `createdb`
+  copies `template1`, whose `public` schema still belongs to `postgres` on a
+  cluster upgraded from PostgreSQL < 15, and `pg_restore --no-owner` skips the
+  dump's `ALTER SCHEMA public OWNER`; without this, every nightly staging refresh
+  left `public` owned by `postgres` and the next pyinfra deploy planned the ALTER.
 - `AUX_SERVICE_NAMES` lists additional units to stop and start, defaulting to
   `<service>-db-worker` (the Django Tasks worker deployed by `wagtail_deploy`).
   Override per service with `<prefix>_aux_service_names`, e.g.
