@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.71.0] - 2026-10-23
+
 ### Homepage Echoport runners work only on the external disk
 
 - `echoport_backup`: new shared include `templates/_work_dir.py.j2` with the
