@@ -4,8 +4,7 @@
 
 ### Echoport runners work only on the external disk
 
-All Echoport runner templates except `heis_production_backup.py.j2` and
-`villakunterbunt_staging_backup.py.j2` now include `_work_dir.py.j2`: per-run
+The Echoport runner templates listed below now include `_work_dir.py.j2`: per-run
 dirs move from `echoport_backup_temp_dir` or the runner's `*_temp_dir`
 (macmini: `/tmp/<runner>` or `/var/tmp/<runner>` on the internal root
 filesystem) to `<prefix>_work_dir` (default
@@ -14,8 +13,8 @@ filesystem) to `<prefix>_work_dir` (default
 24). Backup and restore fail closed when the mount is missing or wrong; there
 is no fallback to `/tmp`, `/` or the system temp dir any more (several runners
 used to fall back silently when the temp dir was missing or not writable), and
-no runner creates a temp dir before `main`. The old variables are ignored;
-`echoport_backup_temp_dir` stays only for the heis and villakunterbunt runners.
+no runner creates a temp dir before `main`. The old variables are ignored by
+these runners; templates not listed keep using `echoport_backup_temp_dir`.
 The runners keep the process umask: run dirs are `0700` below a `0700` work
 dir, and archive member modes, and so the modes a restore writes into live
 paths, are unchanged. See the role README ("External work dir") for the

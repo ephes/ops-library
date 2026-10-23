@@ -270,11 +270,10 @@ host's key is pinned; the new forms also work unpinned.
 
 ## External work dir (`_work_dir.py.j2`)
 
-`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. Every
-Echoport runner template includes it except `heis_production_backup.py.j2` and
-`villakunterbunt_staging_backup.py.j2`, which still use
-`echoport_backup_temp_dir` (see the header of the include for the constants a
-template defines first). Runners that include it do not read
+`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. The
+runners in the table below include it (see the header of the include for the
+constants a template defines first); templates not in the table still use
+`echoport_backup_temp_dir`. Runners that include it do not read
 `echoport_backup_temp_dir` or their old `*_temp_dir` variable and never fall
 back to `/tmp`, `/` or the system temp dir.
 
