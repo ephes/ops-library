@@ -20,7 +20,9 @@
   database, then the byte-exact statement) and its reasons; no allowed
   difference. The role's molecule scenarios install 0.3.0 and send two
   refused `ALTER SCHEMA` commands through sshd. 0.2.0 refuses the runners'
-  new command, so S9 pins 0.3.0 (tag `echoport-command-guard-v0.3.0`).
+  new command, so S9 pins 0.3.0 (tag `echoport-command-guard-v0.3.0` at `49e67ffe`:
+  `echoport-command-guard-0.3.0-x86_64-unknown-linux-gnu.tar.gz`, sha256
+  `15f86397373de6b07517413d92934cbb3cfcfc4d978d63d90023eadb8026de2e`).
 - Rollout: deploy the guard on staging before re-registering the two runners.
 - `rust/` workspace: `tokio` 1.54.0 -> 1.54.1 in `Cargo.lock` (RUSTSEC-2026-0384,
   1.54.0 yanked; used by `metrics-httpd` and `software-live`, whose released
