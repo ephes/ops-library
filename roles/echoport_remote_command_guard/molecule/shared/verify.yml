@@ -7,7 +7,7 @@
   become: true
   vars:
     guard_impl: "{{ lookup('env', 'MOLECULE_GUARD_IMPL') or 'python' }}"
-    guard_rust_binary: /usr/local/lib/echoport-command-guard/0.2.0/echoport-command-guard
+    guard_rust_binary: /usr/local/lib/echoport-command-guard/0.3.0/echoport-command-guard
     guard_ssh: >-
       /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
@@ -24,6 +24,8 @@
       - chown root:root /srv/marina/site/media
       - systemctl stop ssh.service
       - sudo -u postgres psql -d postgres -c 'SELECT 1'
+      - sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -c 'ALTER SCHEMA public OWNER TO "postgres"'
+      - sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d postgres -c 'ALTER SCHEMA public OWNER TO "homepage"'
   tasks:
     - name: Note the probe start for the journal checks
       ansible.builtin.command:
@@ -76,7 +78,7 @@
             guard_impl == 'python' or (
               guard_rust_files.results[0].stat.pw_name == 'root'
               and guard_rust_files.results[0].stat.mode == '0755'
-              and (guard_rust_pin.content | b64decode) == '0.2.0\n')
+              and (guard_rust_pin.content | b64decode) == '0.3.0\n')
           - guard_impl != 'python' or not (guard_rust_files.results | default([{}]))[0].stat is defined
       vars:
         guard_python: /usr/bin/python3 -I /usr/local/sbin/echoport-remote-command-guard /etc/echoport/remote-command-guard.json

@@ -150,6 +150,11 @@ def _validate_ssh_identifier(value: str, name: str) -> None:
         )
 
 
+def public_schema_owner_sql(role: str) -> str:
+    """The statement that gives the public schema to ``role`` (a quoted identifier)."""
+    return f'ALTER SCHEMA public OWNER TO "{role}"'
+
+
 def ssh(
     remote_host: str, remote_user: str, cmd: str, check: bool = True
 ) -> subprocess.CompletedProcess:
@@ -644,6 +649,17 @@ def restore(
                 RESTORE_HOST,
                 REMOTE_USER,
                 f"sudo -u postgres createdb --owner={shlex.quote(DB_USER)} {shlex.quote(DB_NAME)}",
+            )
+            # createdb copies template1, whose public schema can still belong
+            # to postgres (clusters upgraded from PostgreSQL < 15), and
+            # pg_restore --no-owner skips the dump's ALTER SCHEMA ... OWNER.
+            # Hand the schema to the app role before restoring into it.
+            ssh(
+                RESTORE_HOST,
+                REMOTE_USER,
+                "sudo -u postgres psql -X -v ON_ERROR_STOP=1 "
+                f"-d {shlex.quote(DB_NAME)} "
+                f"-c {shlex.quote(public_schema_owner_sql(DB_USER))}",
             )
             emit_step("drop_recreate_db", "success", "Database recreated")
         except subprocess.CalledProcessError as e:

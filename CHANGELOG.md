@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.69.0] - 2026-10-23
+
+### Staging refresh keeps the public schema owner
+
+- `echoport_backup`: the homepage and python-podcast production-DB runners now
+  give the restored database's `public` schema to the app role right after
+  `createdb` (`psql -X -v ON_ERROR_STOP=1 -d <db> -c 'ALTER SCHEMA public OWNER
+  TO "<role>"'` as postgres; a failure fails `drop_recreate_db`). On staging,
+  `template1`'s `public` schema belongs to `postgres` (cluster upgraded from
+  older majors) and `pg_restore --no-owner` skipped the dump's ALTER, so each
+  nightly refresh reset the owner and pyinfra planned the ALTER on every deploy.
+- `echoport_remote_command_guard` (Python guard): allows exactly that `psql`
+  shape when `postgres.restore_databases[<db>]` is the quoted role; any other
+  argument, statement, schema, role or database is refused. The Rust port's
+  Layer-1 fixtures are regenerated.
+- `rust/echoport-command-guard` 0.3.0: the Rust guard allows the same shape
+  with the Python guard's checks in its order (argument shape, then the
+  database, then the byte-exact statement) and its reasons; no allowed
+  difference. The role's molecule scenarios install 0.3.0 and send two
+  refused `ALTER SCHEMA` commands through sshd. 0.2.0 refuses the runners'
+  new command, so S9 pins 0.3.0 (tag `echoport-command-guard-v0.3.0`).
+- Rollout: deploy the guard on staging before re-registering the two runners.
+- `rust/` workspace: `tokio` 1.54.0 -> 1.54.1 in `Cargo.lock` (RUSTSEC-2026-0384,
+  1.54.0 yanked; used by `metrics-httpd` and `software-live`, whose released
+  binaries are unchanged until their next release), so `cargo deny` passes.
+
 ## [2.68.0] - 2026-10-22
 
 ### External bulk storage and bounded Docker build cache

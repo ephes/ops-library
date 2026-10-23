@@ -184,6 +184,20 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
         )
         self.allowed("sudo -u postgres psql -d homepage -c 'SELECT 1'", self.staging)
 
+    def test_public_schema_owner_after_createdb(self) -> None:
+        for database in ("homepage", "python-podcast"):
+            with self.subTest(database=database):
+                command = (
+                    f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d {database} "
+                    f"-c 'ALTER SCHEMA public OWNER TO \"{database}\"'"
+                )
+                decision = self.allowed(command, self.staging)
+                self.assertEqual(
+                    decision.argv,
+                    ["sudo", "-n", "-u", "postgres", "--", "psql", "-X", "-v", "ON_ERROR_STOP=1",
+                     "-d", database, "-c", f'ALTER SCHEMA public OWNER TO "{database}"'],
+                )
+
     def test_tar_runs_with_umask(self) -> None:
         command = (
             "umask 077 && tar -C /home/python-podcast/site -czf "
@@ -403,6 +417,70 @@ class GuardRefusals(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertRefused(command, self.staging)
                 self.assertRefused(command, self.production)
+
+    def test_public_schema_owner_only_in_its_exact_shape(self) -> None:
+        prefix = "sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d"
+        good_sql = 'ALTER SCHEMA public OWNER TO "homepage"'
+        # The exact command is allowed on staging only (production restores nothing).
+        self.assertRefused(f"{prefix} homepage -c {shlex.quote(good_sql)}", self.production)
+        for sql in (
+            'ALTER SCHEMA public OWNER TO "python-podcast"',  # another restore database's role
+            'ALTER SCHEMA public OWNER TO "postgres"',
+            "ALTER SCHEMA public OWNER TO homepage",  # unquoted role
+            "ALTER SCHEMA public OWNER TO 'homepage'",
+            'ALTER SCHEMA public OWNER TO "homepage";',
+            'ALTER SCHEMA public OWNER TO "homepage" ',
+            ' ALTER SCHEMA public OWNER TO "homepage"',
+            'ALTER SCHEMA  public OWNER TO "homepage"',
+            'alter schema public owner to "homepage"',
+            'ALTER SCHEMA "public" OWNER TO "homepage"',
+            'ALTER SCHEMA pg_catalog OWNER TO "homepage"',
+            'ALTER SCHEMA other OWNER TO "homepage"',
+            'ALTER DATABASE homepage OWNER TO "homepage"',
+            'ALTER SCHEMA public OWNER TO "homepage"; DROP TABLE x',
+            'ALTER SCHEMA public OWNER TO "homepage"; ALTER ROLE homepage SUPERUSER',
+            'ALTER SCHEMA public OWNER TO "Homepage"',
+            'ALTER SCHEMA public OWNER TO "homepage""',
+            'ALTER SCHEMA public OWNER TO ""homepage""',
+            'ALTER SCHEMA public OWNER TO "homepage"\\gexec',
+            "\\! id",
+            "SELECT 1",
+            "",
+        ):
+            with self.subTest(sql=sql):
+                self.assertRefused(f"{prefix} homepage -c {shlex.quote(sql)}", self.staging)
+        q = shlex.quote(good_sql)
+        for command in (
+            # databases outside restore_databases (dump-only, scratch, system)
+            f"{prefix} django-chat -c {shlex.quote(chr(39) + 'x')}",
+            f"{prefix} django-chat -c {shlex.quote('ALTER SCHEMA public OWNER TO \"django-chat\"')}",
+            f"{prefix} postgres -c {shlex.quote('ALTER SCHEMA public OWNER TO \"postgres\"')}",
+            f"{prefix} template1 -c {shlex.quote('ALTER SCHEMA public OWNER TO \"homepage\"')}",
+            f"{prefix} django_chat_restore_42 -c {q}",
+            # other or extra arguments
+            f"sudo -u postgres psql -v ON_ERROR_STOP=1 -X -d homepage -c {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=0 -d homepage -c {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -qAt -d homepage -c {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 --dbname=homepage -c {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage --command {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -f {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -c {q} -c {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -c {q} -o /tmp/x",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -h evil -d homepage -c {q}",
+            f"sudo -u postgres psql -X -X -v ON_ERROR_STOP=1 -d homepage -c {q}",
+            f"sudo -u postgres psql -v ON_ERROR_STOP=1 -d homepage -c {q}",
+            f"sudo -u postgres psql -X -d homepage -c {q}",
+            f"sudo -u postgres psql -d homepage -c {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage {q}",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -c {q}; id",
+            f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d homepage -c {q} && id",
+            # not as postgres
+            f"sudo -u homepage psql -X -v ON_ERROR_STOP=1 -d homepage -c {q}",
+            f"sudo -u root psql -X -v ON_ERROR_STOP=1 -d homepage -c {q}",
+            f"psql -X -v ON_ERROR_STOP=1 -d homepage -c {q}",
+        ):
+            with self.subTest(command=command):
+                self.assertRefused(command, self.staging)
 
     def test_host_specific_rules(self) -> None:
         # production only dumps; staging has no private media.
@@ -1044,6 +1122,18 @@ class RunnerCommandsAreAllowlisted(unittest.TestCase):
                 )
                 self.assert_all_allowed(backup_hosts, {"wersdoerfer.de"})
                 self.assert_all_allowed(restore_hosts, {"staging.wersdoerfer.de"})
+                # The fresh database's public schema goes to the app role
+                # between createdb and pg_restore.
+                db = runner.DB_NAME
+                commands = [command for _, command in restore_hosts.commands]
+                createdb = commands.index(f"sudo -u postgres createdb --owner={db} {db}")
+                alter = commands.index(
+                    f"sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d {db} "
+                    f"-c 'ALTER SCHEMA public OWNER TO \"{db}\"'"
+                )
+                pg_restore = next(i for i, c in enumerate(commands) if c.startswith("sudo -u postgres pg_restore"))
+                self.assertEqual(alter, createdb + 1)
+                self.assertLess(alter, pg_restore)
 
     def test_staging_db_runners(self) -> None:
         cases = [
