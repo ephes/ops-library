@@ -125,6 +125,14 @@ smtpd_relay_restrictions =
     permit_sasl_authenticated,
     reject_unauth_destination
 
+{% if mail_backend_local_delivery_clients | length > 0 %}
+# Port 25 only (master.cf smtp/inet): clients listed in
+# /etc/postfix/local_delivery_clients.cidr may deliver to domains this server
+# is the final destination for, and nothing else.
+smtpd_restriction_classes = local_delivery_only
+local_delivery_only = permit_auth_destination, reject
+
+{% endif %}
 smtpd_recipient_restrictions =
     permit_mynetworks,
     permit_sasl_authenticated,

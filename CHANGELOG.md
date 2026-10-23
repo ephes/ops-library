@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Mail backend: port-25 clients for local delivery only
+
+- `mail_backend_deploy`: new `mail_backend_local_delivery_clients` (default
+  `[]`, no change). Each entry is one host (`/32` or `/128`, canonical form,
+  no brackets) that may deliver on port 25 to the domains the backend is the
+  final destination for, without being in `mail_backend_mynetworks` (which
+  would also let it relay to outside domains through the edge relay). The
+  role writes `/etc/postfix/local_delivery_clients.cidr`, defines the
+  restriction class `local_delivery_only = permit_auth_destination, reject`
+  in `main.cf`, and sets the `smtp/inet` override to
+  `smtpd_relay_restrictions = permit_mynetworks, check_client_access
+  cidr:/etc/postfix/local_delivery_clients.cidr, reject`. Other recipients
+  get `Relay access denied`; sender, HELO, recipient and TLS requirements are
+  unchanged. Entries wider than one host or not in canonical form fail before
+  Postfix is changed. With an empty list `main.cf`/`master.cf` render as
+  before and the map is removed. README: "Port 25 Local-delivery Clients"
+  (also notes that rspamd needs the client in `mail_spam_local_addrs_extra`).
+  New `just test-mail-backend-local-delivery` (part of `just test`).
+
 ### NVMe temperature is not a disk failure
 
 - `nyxmon_storage_exporter`: `health_failed`/`ok` for NVMe disks now ignore

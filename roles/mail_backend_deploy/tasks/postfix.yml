@@ -31,6 +31,23 @@
     mode: "0644"
   notify: Restart postfix
 
+- name: Create local-delivery client map
+  ansible.builtin.template:
+    src: postfix/local_delivery_clients.cidr.j2
+    dest: /etc/postfix/local_delivery_clients.cidr
+    owner: root
+    group: root
+    mode: "0644"
+  when: mail_backend_local_delivery_clients | length > 0
+  notify: Restart postfix
+
+- name: Remove local-delivery client map when no clients are configured
+  ansible.builtin.file:
+    path: /etc/postfix/local_delivery_clients.cidr
+    state: absent
+  when: mail_backend_local_delivery_clients | length == 0
+  notify: Restart postfix
+
 - name: Create PostgreSQL lookup files
   ansible.builtin.template:
     src: "postfix/sql/{{ item }}.cf.j2"

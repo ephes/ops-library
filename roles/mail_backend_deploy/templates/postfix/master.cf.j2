@@ -8,7 +8,11 @@
 smtp      inet  n       -       y       -       -       smtpd
   -o smtpd_tls_security_level={{ mail_backend_smtpd_tls_security_level }}
   -o smtpd_sasl_auth_enable=no
+{% if mail_backend_local_delivery_clients | length > 0 %}
+  -o { smtpd_relay_restrictions = permit_mynetworks, check_client_access cidr:/etc/postfix/local_delivery_clients.cidr, reject }
+{% else %}
   -o smtpd_relay_restrictions=permit_mynetworks,reject
+{% endif %}
 
 # =============================================================================
 # Submission - Port 587 (client submission)

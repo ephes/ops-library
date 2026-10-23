@@ -85,6 +85,53 @@ mail_backend_relay_password: "CHANGEME"  # Set via SOPS
 | `mail_backend_imap_hostname` | `imap.home.wersdoerfer.de` | IMAP hostname |
 | `mail_backend_smtp_hostname` | `smtp.home.wersdoerfer.de` | SMTP hostname |
 
+### Port 25 Local-delivery Clients
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `mail_backend_mynetworks` | localhost + edge IPs | Full trust: relay to any domain (through `mail_backend_relay_host`) |
+| `mail_backend_local_delivery_clients` | `[]` | Single hosts (`/32`, `/128`) that may deliver on port 25 to hosted domains only |
+
+Port 25 relays for `mail_backend_mynetworks` and rejects every other client
+(`smtp/inet` `smtpd_relay_restrictions = permit_mynetworks, reject`). An address
+in `mynetworks` can send to any outside domain through the edge relay, which is
+more than a null client needs to deliver its own `root@` alerts to a local
+mailbox. List such a host in `mail_backend_local_delivery_clients` instead:
+
+```yaml
+mail_backend_local_delivery_clients:
+  - "100.64.0.10/32"
+  - "2001:db8::10/128"
+```
+
+The role then
+
+- writes `/etc/postfix/local_delivery_clients.cidr` (`<client> local_delivery_only`),
+- defines the restriction class `local_delivery_only = permit_auth_destination, reject`
+  in `main.cf`, and
+- sets port 25 to
+  `smtpd_relay_restrictions = permit_mynetworks, check_client_access cidr:/etc/postfix/local_delivery_clients.cidr, reject`.
+
+A listed client may deliver to recipients this server is the final destination
+for (`mail_backend_domains`, their aliases and alias domains). Any other
+recipient gets `554 5.7.1 Relay access denied`. Submission (587/465) is
+unchanged. The global restrictions still apply to these clients: sender
+domains must resolve (`reject_unknown_sender_domain`), the HELO name must be
+syntactically valid, and recipients must exist
+(`smtpd_reject_unlisted_recipient`). Port 25 still requires TLS
+(`mail_backend_smtpd_tls_security_level`), so the client must offer STARTTLS.
+
+Entries must be one host each, in canonical form without brackets
+(`2001:db8::10/128`, not `[2001:DB8::10]/128`); the role refuses anything else
+before touching Postfix. With the default empty list, `main.cf` and `master.cf`
+render exactly as without this feature and the map file is removed.
+
+The role does not open the network path (firewall, tailnet ACL) to port 25,
+and does not change spam filtering: if rspamd scores mail on this host
+(`mail_spam_deploy`), also list the client in `mail_spam_local_addrs_extra`,
+or its mail is scored as an unknown external sender (no reverse DNS, SPF for
+the sender domain) and may land in Junk.
+
 ### Storage
 
 | Variable | Default | Description |
@@ -278,6 +325,7 @@ FROM mail_domains WHERE name = 'wersdoerfer.de';
 | `/etc/postfix/main.cf` | Postfix configuration |
 | `/etc/postfix/master.cf` | Postfix services |
 | `/etc/postfix/sql/*.cf` | PostgreSQL lookups |
+| `/etc/postfix/local_delivery_clients.cidr` | Port-25 local-delivery clients (only with `mail_backend_local_delivery_clients`) |
 | `/etc/dovecot/dovecot.conf` | Dovecot main config |
 | `/etc/dovecot/dovecot-sql.conf.ext` | Dovecot SQL auth |
 | `/etc/dovecot/conf.d/*.conf` | Dovecot modules |
@@ -295,7 +343,7 @@ FROM mail_domains WHERE name = 'wersdoerfer.de';
 
 | Port | Protocol | Description |
 |------|----------|-------------|
-| 25 | SMTP | Inbound from edge (firewall restricted) |
+| 25 | SMTP | Inbound from edge (firewall restricted); optional local-delivery-only clients |
 | 587 | Submission | Client submission (STARTTLS) |
 | 465 | SMTPS | Client submission (implicit TLS) |
 | 993 | IMAPS | IMAP access |

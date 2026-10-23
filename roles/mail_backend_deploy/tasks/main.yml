@@ -56,6 +56,47 @@
   loop: "{{ mail_backend_postfixadmin_domain_aliases | default([]) }}"
   when: mail_backend_postfixadmin_domain_aliases | default([]) | length > 0
 
+- name: Validate local-delivery client list shape
+  ansible.builtin.assert:
+    that:
+      - mail_backend_local_delivery_clients is sequence
+      - mail_backend_local_delivery_clients is not string
+      - mail_backend_local_delivery_clients is not mapping
+      - mail_backend_local_delivery_clients | select('string') | list | length
+        == mail_backend_local_delivery_clients | length
+    fail_msg: >-
+      mail_backend_local_delivery_clients must be a list of strings, got
+      {{ mail_backend_local_delivery_clients | to_json }}.
+
+# Each entry may only ever cover one host. A wider network here would let a
+# whole range deliver to local mailboxes without any further identity check.
+- name: Validate local-delivery clients are single host CIDRs
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - |
+        import ipaddress, json, sys
+        errors = []
+        for entry in json.loads(sys.argv[1]):
+            try:
+                net = ipaddress.ip_network(entry, strict=True)
+            except ValueError as exc:
+                errors.append(f"{entry!r}: {exc}")
+                continue
+            if "/" not in entry or net.prefixlen != net.max_prefixlen:
+                errors.append(f"{entry!r}: must be one host (/32 or /128)")
+            elif str(net) != entry:
+                errors.append(f"{entry!r}: write it as {str(net)!r}")
+        if errors:
+            sys.exit("mail_backend_local_delivery_clients: " + "; ".join(errors))
+      - "{{ mail_backend_local_delivery_clients | to_json }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  when: mail_backend_local_delivery_clients | length > 0
+
 - name: Install mail backend packages
   ansible.builtin.import_tasks: packages.yml
 

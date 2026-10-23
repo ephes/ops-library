@@ -41,6 +41,30 @@ mail_backend_mynetworks:
   - "213.239.212.206/32"
   - "[2a01:4f8:a0:82dc::2]/128"
 
+# Port-25 clients that may deliver to this server's own domains only.
+#
+# Port 25 relays for mail_backend_mynetworks and rejects everyone else
+# (smtp/inet smtpd_relay_restrictions = permit_mynetworks, reject). An address
+# in mynetworks may also relay to any outside domain through
+# mail_backend_relay_host. Hosts that only send their own system mail to a
+# local mailbox (a null client's smartd/ZED alerts, for example) need less
+# than that: list them here instead.
+#
+# Each entry is one host as CIDR, IPv4 "/32" or IPv6 "/128", written in its
+# canonical form without brackets (for example "192.0.2.10/32" or
+# "2001:db8::10/128"). The role writes them to
+# /etc/postfix/local_delivery_clients.cidr; port 25 looks the client up there
+# after permit_mynetworks and applies the restriction class
+# local_delivery_only = permit_auth_destination, reject. Recipients this server
+# is the final destination for (mail_backend_domains, their aliases) are
+# accepted; anything else gets "Relay access denied". The other smtpd
+# restrictions (sender domain, HELO syntax, recipient checks) still apply.
+#
+# Empty (the default) renders master.cf and main.cf exactly as before and
+# removes the map. The network path to port 25 (firewall, tailnet ACL) is not
+# managed by this role.
+mail_backend_local_delivery_clients: []
+
 # Edge relay for outbound mail
 mail_backend_relay_host: "mail.wersdoerfer.de"
 mail_backend_relay_port: 587
