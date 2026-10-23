@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — Staging refresh keeps the public schema owner
+## [2.69.0] - 2026-10-23
+
+### Staging refresh keeps the public schema owner
 
 - `echoport_backup`: the homepage and python-podcast production-DB runners now
   give the restored database's `public` schema to the app role right after
