@@ -34,6 +34,19 @@ variables of each runner.
   measures the work dir instead of the old temp dir. The Minecraft restore
   creates its run dir after resolving the world target, so a failing check no
   longer leaves an empty run dir behind.
+- Root runners with PostgreSQL or the former `get_temp_parent_dir()`
+  fallback: FastDeploy and weeknotes-home (`fastdeploy_backup.py.j2`,
+  `fastdeploy_echoport_backup_*`; weeknotes-home sets its own work dir),
+  Echoport self (`echoport_backup.py.j2`, `echoport_self_backup_*`), Paperless
+  (`paperless_echoport_backup_*`) and the mail DB runner
+  (`mail_db_echoport_backup_*`, previously `/var/tmp/mail-db-backup` on the
+  root filesystem). `get_temp_parent_dir()` is gone; the restore free-space
+  checks measure the work dir. The Paperless database restore no longer
+  stages a `0644` copy of the dump in `<temp dir>/restore-db/` for
+  `psql --file <path>`: it opens the dump in the run dir before dropping the
+  database and feeds it to `psql --file -` on stdin, because `postgres` cannot
+  traverse the root-only run dir. `pg_dump` (stdout) and `pg_restore` (stdin)
+  already worked that way in the other runners.
 
 ### Tests
 
@@ -43,8 +56,10 @@ variables of each runner.
   are ignored, that backup and restore refuse before any command and before
   `mkdtemp` when the mount is missing, that a symlinked work dir is refused
   without writing to its target, and that failing runs remove their run dir in
-  the work dir. `test_postfixadmin_echoport_backup` puts its run dirs in the
-  test tree instead of `echoport_backup_temp_dir`.
+  the work dir. Paperless: `psql` gets the dump on stdin (`--file -`), no path
+  and no staging copy, and an unreadable dump fails before `dropdb`.
+  `test_postfixadmin_echoport_backup` and `test_mail_db_echoport_backup` put
+  their run dirs in the test tree instead of `echoport_backup_temp_dir`.
 
 ## [2.71.0] - 2026-10-23
 

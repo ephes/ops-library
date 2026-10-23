@@ -26,7 +26,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -36,7 +35,15 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ mail_db_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/mail-db-backup') }}"
+WORK_MOUNT = "{{ mail_db_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ mail_db_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("mail_db_backup_", "mail_db_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 DB_NAME = "{{ mail_db_echoport_backup_db_name }}"
 POSTGRES_OS_USER = "{{ mail_db_echoport_backup_postgres_os_user }}"
@@ -276,11 +283,12 @@ def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
         tar.extractall(extract_dir, members=members)
 
 
+{% include '_work_dir.py.j2' %}
+
+
 def work_directory(prefix: str) -> Path:
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
-    work_dir = Path(tempfile.mkdtemp(prefix=prefix, dir=TEMP_DIR))
-    os.chmod(work_dir, 0o700)
-    return work_dir
+    # Fail closed: the run dir is created 0700 below WORK_DIR on WORK_MOUNT.
+    return create_run_dir(prefix)
 
 
 def backup_flow(cenv: Dict) -> int:

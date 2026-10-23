@@ -307,6 +307,10 @@ symlinks; removal failures are reported in `init` and do not stop the run.
 | Minecraft Java | `minecraft_java_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/minecraft-java-backup`), `minecraft_java_echoport_backup_work_mount`, `minecraft_java_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `minecraft_backup_`, `minecraft_restore_` |
 | Home Assistant | `homeassistant_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homeassistant-backup`), `homeassistant_backup_work_mount`, `homeassistant_backup_work_retention_hours` | root (runs via `sudo -n`) | `ha-backup-`, `ha-restore-` |
 | Graphyard | `graphyard_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/graphyard-backup`), `graphyard_echoport_backup_work_mount`, `graphyard_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `graphyard-backup-`, `graphyard-restore-` |
+| FastDeploy, weeknotes-home (`fastdeploy_backup.py.j2`) | `fastdeploy_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/fastdeploy-backup`), `fastdeploy_echoport_backup_work_mount`, `fastdeploy_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `fd-backup-`, `fd-restore-` |
+| Echoport self (`echoport_backup.py.j2`) | `echoport_self_backup_work_dir` (`/mnt/cryptdata/backups/tmp/echoport-self-backup`), `echoport_self_backup_work_mount`, `echoport_self_backup_work_retention_hours` | root (runs via `sudo -n`) | `echoport-self-backup-`, `echoport-self-restore-` |
+| Paperless | `paperless_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/paperless-backup`), `paperless_echoport_backup_work_mount`, `paperless_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `paperless-backup-`, `paperless-restore-` |
+| mail DB | `mail_db_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/mail-db-backup`), `mail_db_echoport_backup_work_mount`, `mail_db_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `mail_db_backup_`, `mail_db_restore_` |
 
 The homepage runners run as `deploy` (FastDeploy's `sudo -u deploy`, no rule to
 root: their SSH key and `mc` config belong to `deploy`), so `deploy` cannot
@@ -338,8 +342,24 @@ Root runners (they re-run themselves through `sudo -n`) create their work dir
 `root:root 0700` on the first run; `/mnt/cryptdata/backups/tmp` must exist
 (the control repo does not provision anything for them). A missing mount fails
 the run before any command: for runners that validate their configuration
-first, after that validation and before the first write. A free-space check
-that looked at the old temp dir (Graphyard restore) now measures the work dir.
+first, after that validation and before the first write. Free-space checks
+that looked at the old temp dir (Graphyard, FastDeploy, Echoport self and
+Paperless restores) now measure the work dir.
+
+The FastDeploy template serves two runners; the weeknotes-home register
+playbook sets `fastdeploy_echoport_backup_work_dir` to its own directory.
+
+PostgreSQL steps never read or write the work dir as `postgres`, which cannot
+traverse the root-only run dir:
+
+- `pg_dump` runs as `postgres` and writes to stdout; the runner (root) writes
+  the file (FastDeploy, Paperless, mail DB);
+- `pg_restore` (FastDeploy, mail DB) and the Paperless `psql` restore read the
+  dump on stdin. The Paperless restore used to copy the dump to
+  `<temp dir>/restore-db/` (outside the run dir, `0644`) and pass that path to
+  `psql --file`; it now opens the dump in the run dir before dropping the
+  database and runs `psql --file -` with the file on stdin, so nothing is
+  staged outside the run dir.
 
 ## UniFi Template Notes
 

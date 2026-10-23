@@ -42,10 +42,13 @@ BASE_VARS = {
     "echoport_backup_default_bucket": "backups",
     "echoport_backup_minio_prefix_aliases": {},
     "echoport_backup_allowed_roots": ["/var/lib/"],
+    "fastdeploy_echoport_backup_health_headers": {},
+    "paperless_echoport_backup_health_headers": {},
 }
 # Called before the run dir exists; stubbed so the work dir check is reached.
 PRECHECKS = (
     "validate_config_paths",
+    "validate_settings",
     "ensure_binaries",
     "detect_php_service",
     "read_db_credentials",
@@ -86,6 +89,17 @@ RUNNERS = (
            ("homeassistant_backup_temp_dir",), ("ha-backup-", "ha-restore-")),
     Runner("graphyard_backup.py.j2", "graphyard_echoport_backup", "graphyard-backup", True, "backup_flow", "restore_flow",
            ("graphyard_echoport_backup_temp_dir",), ("graphyard-backup-", "graphyard-restore-")),
+    # Batch B: root runners with postgres or the former get_temp_parent_dir() fallback.
+    Runner("fastdeploy_backup.py.j2", "fastdeploy_echoport_backup", "fastdeploy-backup", True, "backup", "restore",
+           ("fastdeploy_echoport_backup_temp_dir", "weeknotes_home_backup_temp_dir"), ("fd-backup-", "fd-restore-")),
+    Runner("echoport_backup.py.j2", "echoport_self_backup", "echoport-self-backup", True, "backup", "restore",
+           ("echoport_self_backup_temp_dir",), ("echoport-self-backup-", "echoport-self-restore-")),
+    Runner("paperless_backup.py.j2", "paperless_echoport_backup", "paperless-backup", True, "backup", "restore",
+           ("paperless_echoport_backup_temp_dir",), ("paperless-backup-", "paperless-restore-")),
+    Runner("mail_db_backup.py.j2", "mail_db_echoport_backup", "mail-db-backup", True, "backup_flow", "restore_flow",
+           ("mail_db_echoport_backup_temp_dir",), ("mail_db_backup_", "mail_db_restore_"),
+           {"mail_db_echoport_backup_db_name": "mail", "mail_db_echoport_backup_restore_db_prefix": "mail_restore",
+            "mail_db_echoport_backup_postgres_os_user": "postgres"}),
 )
 
 RESTORE_ENV = {
@@ -274,6 +288,75 @@ class RunnerWorkDirTest(unittest.TestCase):
                     self.assertEqual(sorted(p.name for p in self.base.iterdir()), ["mnt"] + sorted(
                         p.name for p in self.base.iterdir() if p.name.startswith("elsewhere-")
                     ))
+
+
+class PaperlessDatabaseRestoreTest(unittest.TestCase):
+    """psql (as postgres) reads the dump on stdin, never from a path.
+
+    postgres cannot traverse the root-only run dir on the work mount, so the
+    old staging copy in TEMP_DIR/restore-db (outside the run dir, chmod 0644)
+    and ``psql --file <path>`` are gone.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.run_dir = Path(self._tmp.name) / "paperless-restore-x"
+        self.run_dir.mkdir(mode=0o700)
+        self.dump = self.run_dir / "paperless.sql"
+        self.dump.write_text("CREATE TABLE t (id int);\n")
+        self.runner = load_runner(
+            "paperless_backup.py.j2",
+            paperless_echoport_backup_db_name="paperless",
+            paperless_echoport_backup_db_owner="paperless",
+            paperless_echoport_backup_postgres_become_user="postgres",
+        )
+        self.calls: list[tuple[list, bytes | None]] = []
+
+        def run(args, stdin=None, **kwargs):
+            self.calls.append((list(args), stdin.read() if stdin is not None else None))
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        self.runner.subprocess = types.SimpleNamespace(
+            run=run, CalledProcessError=subprocess.CalledProcessError, PIPE=subprocess.PIPE
+        )
+        self.runner.build_postgres_command = lambda args: ["runuser", "-u", "postgres", "--", *args]
+
+    def test_psql_reads_the_dump_on_stdin(self):
+        self.runner.restore_database_from_dump(self.dump)
+        commands = [args[4] for args, _ in self.calls]
+        self.assertEqual(commands, ["dropdb", "createdb", "psql"])
+        psql_args, stdin = self.calls[-1]
+        self.assertEqual(psql_args[-2:], ["--file", "-"])
+        self.assertEqual(stdin, b"CREATE TABLE t (id int);\n")
+        for args, _ in self.calls:
+            self.assertFalse(any(str(self.run_dir) in a for a in args), args)
+        # Nothing staged next to (or outside) the run dir, no mode change.
+        self.assertEqual(sorted(p.name for p in Path(self._tmp.name).iterdir()), ["paperless-restore-x"])
+        self.assertEqual(sorted(p.name for p in self.run_dir.iterdir()), ["paperless.sql"])
+
+    def test_unreadable_dump_fails_before_the_database_is_dropped(self):
+        self.dump.chmod(0o000)
+        self.addCleanup(self.dump.chmod, 0o600)
+        if os.access(self.dump, os.R_OK):
+            self.skipTest("running as a user that can read mode 000 files")
+        with self.assertRaises(PermissionError):
+            self.runner.restore_database_from_dump(self.dump)
+        self.assertEqual(self.calls, [])
+
+    def test_failed_psql_is_reported(self):
+        def run(args, stdin=None, **kwargs):
+            rc = 3 if args[4] == "psql" else 0
+            return subprocess.CompletedProcess(args, rc, "", "ERROR: boom")
+
+        self.runner.subprocess.run = run
+        with self.assertRaisesRegex(RuntimeError, "psql restore failed: ERROR: boom"):
+            self.runner.restore_database_from_dump(self.dump)
+
+    def test_template_has_no_staging_dir(self):
+        source = (TEMPLATES / "paperless_backup.py.j2").read_text()
+        self.assertNotIn("restore-db", source)
+        self.assertNotIn("staged_dump", source)
 
 
 if __name__ == "__main__":
