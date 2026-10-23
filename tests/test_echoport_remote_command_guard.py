@@ -1354,6 +1354,12 @@ class GoToSocialHost:
     def installed(self, runner: types.ModuleType):
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(runner.subprocess, "run", side_effect=self.run))
+            # The external work dir check (_work_dir.py.j2) is covered by
+            # test_echoport_runner_work_dirs; here run dirs go to self.work.
+            stack.enter_context(mock.patch.object(
+                runner, "create_run_dir",
+                side_effect=lambda prefix: Path(tempfile.mkdtemp(prefix=prefix, dir=self.work)),
+            ))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
             yield

@@ -32,7 +32,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -42,7 +41,16 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ django_chat_staging_db_backup_work_dir | default('/mnt/cryptdata/backups/tmp/django-chat-staging-db-backup') }}"
+WORK_MOUNT = "{{ django_chat_staging_db_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ django_chat_staging_db_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("django_chat_db_backup_", "django_chat_db_restore_")
+# The runner runs as the deploy user (no sudo to root): WORK_DIR must belong
+# to that user. ops-control provisions it (register-django-chat-staging-db-backup.yml).
+WORK_OWNER_UID = os.geteuid()
+WORK_OWNER_LABEL = "the runner user"
 
 DB_HOST = "{{ django_chat_staging_db_backup_host }}"
 REMOTE_USER = "{{ django_chat_staging_db_backup_remote_user }}"
@@ -312,11 +320,12 @@ def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
         tar.extractall(extract_dir, members=members)
 
 
+{% include '_work_dir.py.j2' %}
+
+
 def work_directory(prefix: str) -> Path:
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
-    work_dir = Path(tempfile.mkdtemp(prefix=prefix, dir=TEMP_DIR))
-    os.chmod(work_dir, 0o700)
-    return work_dir
+    # Fail closed: the run dir is created 0700 below WORK_DIR on WORK_MOUNT.
+    return create_run_dir(prefix)
 
 
 def backup_flow(cenv: Dict) -> int:

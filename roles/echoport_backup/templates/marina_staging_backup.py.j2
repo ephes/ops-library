@@ -22,7 +22,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -34,7 +33,16 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ marina_staging_backup_work_dir | default('/mnt/cryptdata/backups/tmp/marina-staging-backup') }}"
+WORK_MOUNT = "{{ marina_staging_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ marina_staging_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("marina-backup-", "marina-restore-")
+# The runner runs as the deploy user (no sudo to root): WORK_DIR must belong
+# to that user. ops-control provisions it (register-marina-staging-backup.yml).
+WORK_OWNER_UID = os.geteuid()
+WORK_OWNER_LABEL = "the runner user"
 
 # SSH configuration
 SSH_OPTS = "-o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
@@ -128,6 +136,21 @@ import re
 # Allows alphanumeric, dots, hyphens, underscores - no shell metacharacters
 _SSH_IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def open_run_dir(prefix: str, label: str) -> Optional[Path]:
+    """Return a fresh run dir, or report the refusal and return None."""
+    try:
+        return create_run_dir(prefix)
+    except Exception as exc:
+        error_msg = f"Work directory check failed: {exc}"
+        emit_step("init", "failure", error_msg)
+        emit_result(success=False, error=error_msg)
+        finish_stdout("failure", f"{label} refused: {error_msg}")
+        return None
 
 def _validate_ssh_identifier(value: str, name: str) -> None:
     """
@@ -499,8 +522,10 @@ def backup(
     if backup_files:
         validate_backup_files_unique(backup_files)
 
-    # Create isolated temp directory for this run
-    work_dir = Path(tempfile.mkdtemp(prefix="marina-backup-", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    # Fail closed before any other work: the run dir must be on WORK_MOUNT.
+    work_dir = open_run_dir("marina-backup-", "Backup")
+    if work_dir is None:
+        return 1
     service_stopped = False
     backup_success = False
     result_data = {}
@@ -740,8 +765,10 @@ def restore(
 
     Returns 0 on success, 1 on failure.
     """
-    # Create isolated temp directory for this run
-    work_dir = Path(tempfile.mkdtemp(prefix="marina-restore-", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    # Fail closed before any other work: the run dir must be on WORK_MOUNT.
+    work_dir = open_run_dir("marina-restore-", "Restore")
+    if work_dir is None:
+        return 1
     service_stopped = False
     restore_success = False
     result_data = {}
@@ -1059,9 +1086,6 @@ def main() -> int:
 if __name__ == "__main__":
     # Script runs as deploy user (has SSH access to staging via deploy key)
     # No sudo elevation needed - deploy user can SSH to staging as root
-
-    # Ensure temp directory exists
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())

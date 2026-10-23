@@ -311,13 +311,23 @@ symlinks; removal failures are reported in `init` and do not stop the run.
 | Paperless | `paperless_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/paperless-backup`), `paperless_echoport_backup_work_mount`, `paperless_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `paperless-backup-`, `paperless-restore-` |
 | mail DB | `mail_db_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/mail-db-backup`), `mail_db_echoport_backup_work_mount`, `mail_db_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `mail_db_backup_`, `mail_db_restore_` |
 | generic (`backup.py.j2`, all SQLite/file targets) | role defaults `echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/echoport-backup`), `echoport_backup_work_mount` (`/mnt/cryptdata`), `echoport_backup_work_retention_hours` (`24`) | root (runs via `sudo -n`) | `echoport_`, `echoport_restore_` |
+| django-chat staging DB, ggs-lennestrasse staging DB, mastodon production DB (`django_chat_staging_db_backup.py.j2`) | `django_chat_staging_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/django-chat-staging-db-backup`), `django_chat_staging_db_backup_work_mount`, `django_chat_staging_db_backup_work_retention_hours` | the runner user (`deploy`) | `django_chat_db_backup_`, `django_chat_db_restore_` |
+| GoToSocial | `gotosocial_backup_work_dir` (`/mnt/cryptdata/backups/tmp/gotosocial-backup`), `gotosocial_backup_work_mount`, `gotosocial_backup_work_retention_hours` | the runner user (`deploy`) | `gotosocial-backup-`, `gotosocial-restore-` |
+| marina staging, marina production (`marina_staging_backup.py.j2`) | `marina_staging_backup_work_dir` (`/mnt/cryptdata/backups/tmp/marina-staging-backup`), `marina_staging_backup_work_mount`, `marina_staging_backup_work_retention_hours` | the runner user (`deploy`) | `marina-backup-`, `marina-restore-` |
+| python-podcast media | `python_podcast_media_backup_work_dir` (`/mnt/cryptdata/backups/tmp/python-podcast-media-backup`), `python_podcast_media_backup_work_mount`, `python_podcast_media_backup_work_retention_hours` | the runner user (`deploy`) | `python-podcast-media-` |
+| python-podcast production DB | `pp_prod_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/python-podcast-production-db-backup`), `pp_prod_db_backup_work_mount`, `pp_prod_db_backup_work_retention_hours` | the runner user (`deploy`) | `pp-backup-`, `pp-restore-` |
+| python-podcast staging | `pp_staging_backup_work_dir` (`/mnt/cryptdata/backups/tmp/python-podcast-staging-backup`), `pp_staging_backup_work_mount`, `pp_staging_backup_work_retention_hours` | the runner user (`deploy`) | `pp-backup-`, `pp-restore-` |
+| homepage staging | `homepage_staging_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-staging-backup`), `homepage_staging_backup_work_mount`, `homepage_staging_backup_work_retention_hours` | the runner user (`deploy`) | `homepage-backup-`, `homepage-restore-` |
 
-The homepage runners run as `deploy` (FastDeploy's `sudo -u deploy`, no rule to
-root: their SSH key and `mc` config belong to `deploy`), so `deploy` cannot
-create directories below `/mnt/cryptdata/backups` (`root:postgres 0770`). The
-register playbook in the control repo provisions the work dir (`deploy:deploy
-0700`) and a traverse-only ACL for `deploy` on the parents; without that the run
-fails closed in `init` with a permission error.
+The runners marked "the runner user" run as `deploy` (FastDeploy's
+`sudo -u deploy`, no rule to root: their SSH key and `mc` config belong to
+`deploy`), so `deploy` cannot create directories below `/mnt/cryptdata/backups`
+(`root:postgres 0770`). The register playbook in the control repo provisions
+the work dir (`deploy:deploy 0700`) and a traverse-only ACL for `deploy` on the
+parents; without that the run fails closed in `init` with a permission error.
+Templates shared by several runners (django-chat/ggs/mastodon, marina
+staging/production) default to the first runner's directory; the register
+playbooks of the others set `<prefix>_work_dir` to their own directory.
 
 File modes in the homepage runners:
 
@@ -330,6 +340,14 @@ File modes in the homepage runners:
   carry the dump as `0600`). Locally it stays private inside the `0700` run dir;
 - media: umask `077` for backup and restore (rclone config with credentials and
   the manifest are `0600`; objects go S3 <-> MinIO without touching the disk).
+
+Deploy runners that copy a dump to staging for `pg_restore` as `postgres`
+(python-podcast production DB, python-podcast staging, homepage staging) chmod
+the extracted dump to `0644` right before the `scp`, like the homepage
+production DB restore, so an archive that carries the dump as `0600` still
+restores. The python-podcast media runner works like the homepage media
+runner: umask `077`, and its rclone config (S3 and MinIO credentials) is
+created `0600` with `O_EXCL`.
 
 The other runners keep the process umask. Their files are private because the
 run dir is `0700` below a `0700` work dir (root runners: `root:root`), and the

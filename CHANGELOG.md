@@ -53,6 +53,22 @@ variables of each runner.
   `echoport_backup_temp_dir` (default `/tmp/echoport-backup`, kept for the
   templates that do not include the work dir). A refused work dir is an `init`
   failure with `ECHOPORT_RESULT` success `false`.
+- Deploy runners (no sudo to root; the work dir is `deploy:deploy 0700` and
+  must be provisioned by the control repo's register playbook, like the
+  homepage runners): `django_chat_staging_db_backup.py.j2`
+  (`django_chat_staging_db_backup_*`; used by django-chat staging DB,
+  ggs-lennestrasse staging DB and mastodon production DB, which used
+  `/var/tmp/<runner>`), GoToSocial (`gotosocial_backup_*`),
+  `marina_staging_backup.py.j2` (`marina_staging_backup_*`; marina staging
+  and marina production), python-podcast media
+  (`python_podcast_media_backup_*`), python-podcast production DB
+  (`pp_prod_db_backup_*`), python-podcast staging (`pp_staging_backup_*`) and
+  homepage staging (`homepage_staging_backup_*`). A refused work dir is an
+  `init` failure before any SSH, `mc` or rclone call. The three runners whose
+  restore copies the dump to staging for `pg_restore` as `postgres` chmod it
+  to `0644` right before the `scp`. The python-podcast media runner sets
+  umask `077` and creates its rclone config `0600` with `O_EXCL` (it used to
+  write it with the process umask and chmod it afterwards).
 
 ### Tests
 
@@ -64,9 +80,13 @@ variables of each runner.
   without writing to its target, and that failing runs remove their run dir in
   the work dir. Paperless: `psql` gets the dump on stdin (`--file -`), no path
   and no staging copy, and an unreadable dump fails before `dropdb`.
-  `test_postfixadmin_echoport_backup`, `test_mail_db_echoport_backup` and the
-  generic runner tests in `test_minio_backup_accounts` put their run dirs in
-  the test tree instead of `echoport_backup_temp_dir`.
+  The staging restore runners upload a `0644` dump from the work dir even
+  when the archive carries it `0600`; the python-podcast media rclone config
+  is `0600` under umask `022`. `test_postfixadmin_echoport_backup`,
+  `test_mail_db_echoport_backup`, `test_django_chat_staging_db_backup`,
+  `test_gotosocial_echoport_backup`, the generic runner tests in
+  `test_minio_backup_accounts` and the GoToSocial guard test put their run
+  dirs in the test tree instead of `echoport_backup_temp_dir`.
 
 ## [2.71.0] - 2026-10-23
 
