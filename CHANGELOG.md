@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.72.0] - 2026-10-23
+
 ### Echoport runners work only on the external disk
 
 The Echoport runner templates listed below now include `_work_dir.py.j2`: per-run
