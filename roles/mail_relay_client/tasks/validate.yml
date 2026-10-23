@@ -4,3 +4,20 @@
     that:
       - not mail_relay_client_enabled or (mail_relay_client_relayhost | length > 0)
     fail_msg: "mail_relay_client_relayhost must be set when mail_relay_client_enabled=true"
+
+# Postfix appends myorigin to unqualified senders and recipients (root ->
+# root@<myorigin>). A bare host name such as "fractal" makes the smarthost
+# reject the sender with "450 4.1.8 Domain not found" and leaves the
+# recipient unroutable, so mail queues until it expires.
+- name: validate | Assert myorigin is a fully qualified domain
+  ansible.builtin.assert:
+    that:
+      - >-
+        not mail_relay_client_enabled
+        or (mail_relay_client_myorigin | string
+            is match('^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$'))
+    fail_msg: >-
+      mail_relay_client_myorigin must be a fully qualified mail domain that the
+      smarthost accepts as sender domain and routes for root (for example
+      "example.com"), got "{{ mail_relay_client_myorigin }}". The default is
+      ansible_fqdn, which is a bare host name on hosts without a DNS domain.

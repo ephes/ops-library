@@ -41,6 +41,18 @@
 - New `just test-nyxmon-storage-exporter` (part of `just test`) runs the
   existing exporter unit tests plus the NVMe cases.
 
+### Mail relay client refuses an unqualified origin
+
+- `mail_relay_client`: validation now fails when `mail_relay_client_myorigin`
+  is not a fully qualified domain (no dot, a leading/trailing dot, a numeric
+  top-level label, or a `$parameter` expression), before Postfix is changed.
+  The default (`ansible_fqdn`) is a bare host name on hosts without a DNS
+  domain; fractal sent as `root@fractal` and its smarthost rejected every
+  alert with `450 4.1.8 Domain not found`. Hosts whose `ansible_fqdn` is not
+  qualified must set `mail_relay_client_myorigin`. README documents the
+  sender/recipient domain requirement. New `just test-mail-relay-client`
+  (part of `just test`) runs the validation on localhost.
+
 ### Storage exporter: dataset quota headroom
 
 - `nyxmon_storage_exporter`: every dataset entry gains `quota_headroom_bytes`
