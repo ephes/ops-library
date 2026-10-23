@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Tests
+
+- `tests/test_python_security_floor.py`: the two resolver lifecycle tests that
+  install under the certifi constraint now assert certifi is at or above the
+  2026.10.19 floor instead of exactly 2026.10.19, so a newer certifi release
+  (2026.10.23) no longer breaks `just test-python-security-floor`. The floor
+  itself is unchanged; versions below it still fail.
+
 ## [2.70.0] - 2026-10-23
 
 ### UniFi Echoport runner works only on the external disk

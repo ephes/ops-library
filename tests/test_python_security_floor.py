@@ -35,6 +35,13 @@ G3 = "86A1ECBA089C4A8D3BBE2734C612BA341D813E043CF9E8A862CD5C57A36BBE6B"
 UV = shutil.which("uv")
 
 
+CERTIFI_FLOOR = "2026.10.19"
+
+
+def version_tuple(version):
+    return tuple(int(part) for part in version.split("."))
+
+
 def violations(report):
     return flt.python_security_report_violations(report, FLOORS, ROOTS, REQUIRES)
 
@@ -247,7 +254,8 @@ class LifecycleTests(unittest.TestCase):
     def test_constrained_install_upgrades_installed_certifi_without_adding_pip(self):
         venv = self.venv("upgrade", "certifi==2026.7.22")
         self.uv_pip("install", "-q", "--constraint", str(self.constraints), "requests", venv=venv)
-        self.assertEqual(self.installed(venv, "certifi"), "2026.10.19")
+        # The constraint is a floor: the resolver may pick any newer release.
+        self.assertGreaterEqual(version_tuple(self.installed(venv, "certifi")), version_tuple(CERTIFI_FLOOR))
         self.assertIsNone(self.installed(venv, "pip"))
         self.assertEqual(violations(self.inspect(venv)), [])
 
@@ -275,7 +283,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.inspect(venv)["packages"]["certifi"]["version"], "2023.11.17")
         subprocess.run([*pip, "install", "-r", str(requirements), "-c", str(self.constraints)], check=True)
         report = self.inspect(venv)
-        self.assertEqual(report["packages"]["certifi"]["version"], "2026.10.19")
+        self.assertGreaterEqual(version_tuple(report["packages"]["certifi"]["version"]), version_tuple(CERTIFI_FLOOR))
         # pip is only upgraded when it is requested; the verify step catches it,
         # including the distrusted roots in pip 23.2.1's vendored bundle.
         problems = violations(report)
