@@ -316,6 +316,10 @@ class RunnerWorkDirTest(unittest.TestCase):
                     mkdtemp.assert_not_called()
                     self.assertEqual(commands, [])
                     self.assert_failed(result, events, "not mounted")
+                    if not isinstance(result, Exception):
+                        # Reported as a failed step, not only a return code.
+                        self.assertTrue(any(e.get("state") == "failure" and "not mounted" in e.get("message", "")
+                                            for e in events), events)
                     self.assertFalse((self.mount / "backups").exists())
 
     def test_symlinked_work_dir_is_refused_without_fallback(self):

@@ -63,8 +63,10 @@ variables of each runner.
   and marina production), python-podcast media
   (`python_podcast_media_backup_*`), python-podcast production DB
   (`pp_prod_db_backup_*`), python-podcast staging (`pp_staging_backup_*`) and
-  homepage staging (`homepage_staging_backup_*`). A refused work dir is an
-  `init` failure before any SSH, `mc` or rclone call. The three runners whose
+  homepage staging (`homepage_staging_backup_*`). A refused work dir fails
+  the run before any SSH, `mc` or rclone call: as an `init` failure, or, in
+  the django-chat and mail DB templates, through their existing error step
+  ("Work directory check failed: ..."). The three runners whose
   restore copies the dump to staging for `pg_restore` as `postgres` chmod it
   to `0644` right before the `scp`. The python-podcast media runner sets
   umask `077` and creates its rclone config `0600` with `O_EXCL` (it used to

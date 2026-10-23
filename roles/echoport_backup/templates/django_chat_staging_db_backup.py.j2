@@ -325,7 +325,12 @@ def safe_extract_tarball(tarball_path: Path, extract_dir: Path) -> None:
 
 def work_directory(prefix: str) -> Path:
     # Fail closed: the run dir is created 0700 below WORK_DIR on WORK_MOUNT.
-    return create_run_dir(prefix)
+    # A refusal is reported by the flow's error handler, before any dump,
+    # download or remote command.
+    try:
+        return create_run_dir(prefix)
+    except Exception as exc:
+        raise RuntimeError(f"Work directory check failed: {exc}") from exc
 
 
 def backup_flow(cenv: Dict) -> int:
