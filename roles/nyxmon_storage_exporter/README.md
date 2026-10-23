@@ -529,8 +529,8 @@ just test-role nyxmon_storage_exporter
 
 ## Changelog
 
-- **Unreleased**: Add the derived dataset field `quota_headroom_bytes` (`quota_bytes - used_bytes`)
-- **Unreleased**: Split the NVMe critical-warning temperature bit out of `health_failed`; add `critical_warning_flags`, `temperature_threshold_exceeded`, `temperature_warning`, `temperature_critical`, the drive's WCTEMP/CCTEMP and lifetime over-temperature minutes
+- **ops-library 2.73.0** (2026-10-23): Add the derived dataset field `quota_headroom_bytes` (`quota_bytes - used_bytes`)
+- **ops-library 2.73.0** (2026-10-23): Split the NVMe critical-warning temperature bit out of `health_failed`; add `critical_warning_flags`, `temperature_threshold_exceeded`, `temperature_warning`, `temperature_critical`, the drive's WCTEMP/CCTEMP and lifetime over-temperature minutes
 - **1.1.0** (2026-09-06): Add read-only Time Machine sparsebundle metrics (`nyxmon_storage_exporter_timemachine_bundle_dirs`)
 - **1.0.0** (2025-12-14): Initial release
 

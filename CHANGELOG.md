@@ -2,24 +2,7 @@
 
 ## [Unreleased]
 
-### Mail backend: port-25 clients for local delivery only
-
-- `mail_backend_deploy`: new `mail_backend_local_delivery_clients` (default
-  `[]`, no change). Each entry is one host (`/32` or `/128`, canonical form,
-  no brackets) that may deliver on port 25 to the domains the backend is the
-  final destination for, without being in `mail_backend_mynetworks` (which
-  would also let it relay to outside domains through the edge relay). The
-  role writes `/etc/postfix/local_delivery_clients.cidr`, defines the
-  restriction class `local_delivery_only = permit_auth_destination, reject`
-  in `main.cf`, and sets the `smtp/inet` override to
-  `smtpd_relay_restrictions = permit_mynetworks, check_client_access
-  cidr:/etc/postfix/local_delivery_clients.cidr, reject`. Other recipients
-  get `Relay access denied`; sender, HELO, recipient and TLS requirements are
-  unchanged. Entries wider than one host or not in canonical form fail before
-  Postfix is changed. With an empty list `main.cf`/`master.cf` render as
-  before and the map is removed. README: "Port 25 Local-delivery Clients"
-  (also notes that rspamd needs the client in `mail_spam_local_addrs_extra`).
-  New `just test-mail-backend-local-delivery` (part of `just test`).
+## [2.73.0] - 2026-10-23
 
 ### NVMe temperature is not a disk failure
 
@@ -41,18 +24,6 @@
 - New `just test-nyxmon-storage-exporter` (part of `just test`) runs the
   existing exporter unit tests plus the NVMe cases.
 
-### Mail relay client refuses an unqualified origin
-
-- `mail_relay_client`: validation now fails when `mail_relay_client_myorigin`
-  is not a fully qualified domain (no dot, a leading/trailing dot, a numeric
-  top-level label, or a `$parameter` expression), before Postfix is changed.
-  The default (`ansible_fqdn`) is a bare host name on hosts without a DNS
-  domain; fractal sent as `root@fractal` and its smarthost rejected every
-  alert with `450 4.1.8 Domain not found`. Hosts whose `ansible_fqdn` is not
-  qualified must set `mail_relay_client_myorigin`. README documents the
-  sender/recipient domain requirement. New `just test-mail-relay-client`
-  (part of `just test`) runs the validation on localhost.
-
 ### Storage exporter: dataset quota headroom
 
 - `nyxmon_storage_exporter`: every dataset entry gains `quota_headroom_bytes`
@@ -64,6 +35,37 @@
   alone. Cached samples from the previous exporter get it derived from their
   cached `quota_bytes`/`used_bytes`. README documents the field and a rule
   example. Existing fields are unchanged.
+
+### Mail backend: port-25 clients for local delivery only
+
+- `mail_backend_deploy`: new `mail_backend_local_delivery_clients` (default
+  `[]`, no change). Each entry is one host (`/32` or `/128`, canonical form,
+  no brackets) that may deliver on port 25 to the domains the backend is the
+  final destination for, without being in `mail_backend_mynetworks` (which
+  would also let it relay to outside domains through the edge relay). The
+  role writes `/etc/postfix/local_delivery_clients.cidr`, defines the
+  restriction class `local_delivery_only = permit_auth_destination, reject`
+  in `main.cf`, and sets the `smtp/inet` override to
+  `smtpd_relay_restrictions = permit_mynetworks, check_client_access
+  cidr:/etc/postfix/local_delivery_clients.cidr, reject`. Other recipients
+  get `Relay access denied`; sender, HELO, recipient and TLS requirements are
+  unchanged. Entries wider than one host or not in canonical form fail before
+  Postfix is changed. With an empty list `main.cf`/`master.cf` render as
+  before and the map is removed. README: "Port 25 Local-delivery Clients"
+  (also notes that rspamd needs the client in `mail_spam_local_addrs_extra`).
+  New `just test-mail-backend-local-delivery` (part of `just test`).
+
+### Mail relay client refuses an unqualified origin
+
+- `mail_relay_client`: validation now fails when `mail_relay_client_myorigin`
+  is not a fully qualified domain (no dot, a leading/trailing dot, a numeric
+  top-level label, or a `$parameter` expression), before Postfix is changed.
+  The default (`ansible_fqdn`) is a bare host name on hosts without a DNS
+  domain; fractal sent as `root@fractal` and its smarthost rejected every
+  alert with `450 4.1.8 Domain not found`. Hosts whose `ansible_fqdn` is not
+  qualified must set `mail_relay_client_myorigin`. README documents the
+  sender/recipient domain requirement. New `just test-mail-relay-client`
+  (part of `just test`) runs the validation on localhost.
 
 ## [2.72.0] - 2026-10-23
 

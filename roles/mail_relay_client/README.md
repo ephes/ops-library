@@ -118,7 +118,7 @@ echo "Test" | mail -s "Test Subject" admin@example.com
 
 ## Changelog
 
-- **Unreleased**: Refuse an unqualified `mail_relay_client_myorigin`; document the sender/recipient domain requirement
+- **ops-library 2.73.0** (2026-10-23): Refuse an unqualified `mail_relay_client_myorigin`; document the sender/recipient domain requirement
 - **1.0.0** (2025-12-14): Initial release
 
 ## License
