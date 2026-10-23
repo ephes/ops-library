@@ -20,6 +20,9 @@
   refused `ALTER SCHEMA` commands through sshd. 0.2.0 refuses the runners'
   new command, so S9 pins 0.3.0 (tag `echoport-command-guard-v0.3.0`).
 - Rollout: deploy the guard on staging before re-registering the two runners.
+- `rust/` workspace: `tokio` 1.54.0 -> 1.54.1 in `Cargo.lock` (RUSTSEC-2026-0384,
+  1.54.0 yanked; used by `metrics-httpd` and `software-live`, whose released
+  binaries are unchanged until their next release), so `cargo deny` passes.
 
 ## [2.68.0] - 2026-10-22
 
