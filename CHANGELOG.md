@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### Echoport runners work only on the external disk
+
+All Echoport runner templates except `heis_production_backup.py.j2` and
+`villakunterbunt_staging_backup.py.j2` now include `_work_dir.py.j2`: per-run
+dirs move from `echoport_backup_temp_dir` or the runner's `*_temp_dir`
+(macmini: `/tmp/<runner>` or `/var/tmp/<runner>` on the internal root
+filesystem) to `<prefix>_work_dir` (default
+`/mnt/cryptdata/backups/tmp/<runner>`) on `<prefix>_work_mount` (default
+`/mnt/cryptdata`), with retention `<prefix>_work_retention_hours` (default
+24). Backup and restore fail closed when the mount is missing or wrong; there
+is no fallback to `/tmp`, `/` or the system temp dir any more (several runners
+used to fall back silently when the temp dir was missing or not writable), and
+no runner creates a temp dir before `main`. The old variables are ignored;
+`echoport_backup_temp_dir` stays only for the heis and villakunterbunt runners.
+The runners keep the process umask: run dirs are `0700` below a `0700` work
+dir, and archive member modes, and so the modes a restore writes into live
+paths, are unchanged. See the role README ("External work dir") for the
+variables of each runner.
+
+- Root runners (work dir `root:root 0700`, created by the runner on its first
+  run): delve (`delve_echoport_backup_*`), SnappyMail
+  (`snappymail_echoport_backup_*`), Vaultwarden
+  (`vaultwarden_echoport_backup_*`), PostfixAdmin
+  (`postfixadmin_echoport_backup_*`), Minecraft Java
+  (`minecraft_java_echoport_backup_*`), Home Assistant
+  (`homeassistant_backup_*`) and Graphyard (`graphyard_echoport_backup_*`).
+  Their path validation no longer lists the temp dir (the include checks the
+  work dir more strictly), so the control repo can drop the `/tmp/<runner>/`
+  entries from `*_allowed_roots`. The Graphyard restore free-space check
+  measures the work dir instead of the old temp dir. The Minecraft restore
+  creates its run dir after resolving the world target, so a failing check no
+  longer leaves an empty run dir behind.
+
+### Tests
+
+- New `tests/test_echoport_runner_work_dirs.py` (`just
+  test-echoport-runner-work-dirs`, part of `just test`): for every migrated
+  runner the rendered defaults and overrides, that the old temp dir variables
+  are ignored, that backup and restore refuse before any command and before
+  `mkdtemp` when the mount is missing, that a symlinked work dir is refused
+  without writing to its target, and that failing runs remove their run dir in
+  the work dir. `test_postfixadmin_echoport_backup` puts its run dirs in the
+  test tree instead of `echoport_backup_temp_dir`.
+
 ## [2.71.0] - 2026-10-23
 
 ### Homepage Echoport runners work only on the external disk

@@ -49,7 +49,6 @@ def render_runner(root: Path) -> types.ModuleType:
         "echoport_backup_mc_install_path": "/usr/local/bin/mc",
         "echoport_backup_minio_alias": "minio",
         "echoport_backup_default_bucket": "backups",
-        "echoport_backup_temp_dir": str(root / "tmp"),
         "postfixadmin_echoport_backup_install_path": str(root / "opt/postfixadmin"),
         "postfixadmin_echoport_backup_config_file": str(root / "opt/postfixadmin/config.local.php"),
         "postfixadmin_echoport_backup_nginx_site": str(root / "etc/nginx/postfixadmin"),
@@ -132,11 +131,17 @@ class PostfixAdminRunnerTest(unittest.TestCase):
             self.uploaded.write_bytes(Path(args[2]).read_bytes())
         return subprocess.CompletedProcess(args, 0, "", "")
 
+    def fake_run_dir(self, prefix: str) -> Path:
+        # The external work dir check (_work_dir.py.j2) is covered by
+        # test_echoport_runner_work_dirs; here run dirs go to the test tree.
+        return Path(tempfile.mkdtemp(prefix=prefix, dir=self.root / "tmp"))
+
     def run_backup(self, db: FakeDb) -> tuple[int, list[dict]]:
         events: list[dict] = []
         with mock.patch.object(self.runner, "run_psql", db.run_psql), \
                 mock.patch.object(self.runner, "run_cmd", self.fake_run_cmd), \
                 mock.patch.object(self.runner, "ensure_binaries", lambda: None), \
+                mock.patch.object(self.runner, "create_run_dir", self.fake_run_dir), \
                 mock.patch.object(self.runner, "_emit", events.append):
             rc = self.runner.backup_flow({"ECHOPORT_KEY_PREFIX": "postfixadmin/test"})
         return rc, events

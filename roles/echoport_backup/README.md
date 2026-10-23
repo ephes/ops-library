@@ -270,12 +270,13 @@ host's key is pinned; the new forms also work unpinned.
 
 ## External work dir (`_work_dir.py.j2`)
 
-`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. It is
-included by `unifi_backup.py.j2`, `homepage_production_db_backup.py.j2` and
-`homepage_media_backup.py.j2`; other runners can adopt it the same way (see
-the header of the include for the constants a template defines first). Runners
-that include it do not read `echoport_backup_temp_dir` or their old
-`*_temp_dir` variable and never fall back to `/tmp`, `/` or the system temp dir.
+`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. Every
+Echoport runner template includes it except `heis_production_backup.py.j2` and
+`villakunterbunt_staging_backup.py.j2`, which still use
+`echoport_backup_temp_dir` (see the header of the include for the constants a
+template defines first). Runners that include it do not read
+`echoport_backup_temp_dir` or their old `*_temp_dir` variable and never fall
+back to `/tmp`, `/` or the system temp dir.
 
 Before any other work (for the homepage DB runner: before `pg_dump` on
 production, before the MinIO download and before staging is touched), a run
@@ -299,6 +300,13 @@ symlinks; removal failures are reported in `init` and do not stop the run.
 | UniFi | `unifi_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/unifi-backup`), `unifi_echoport_backup_work_mount` (`/mnt/cryptdata`), `unifi_echoport_backup_work_retention_hours` (`24`) | root (runs via `sudo -n`) | `unifi_backup_`, `unifi_restore_` |
 | homepage production DB | `homepage_prod_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-production-db-backup`), `homepage_prod_db_backup_work_mount` (`/mnt/cryptdata`), `homepage_prod_db_backup_work_retention_hours` (`24`) | the runner user (`deploy`) | `homepage-backup-`, `homepage-restore-` |
 | homepage media | `homepage_media_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-media-backup`), `homepage_media_backup_work_mount` (`/mnt/cryptdata`), `homepage_media_backup_work_retention_hours` (`24`) | the runner user (`deploy`) | `homepage-media-` |
+| delve | `delve_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/delve-backup`), `delve_echoport_backup_work_mount`, `delve_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `delve_backup_`, `delve_restore_` |
+| SnappyMail | `snappymail_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/snappymail-backup`), `snappymail_echoport_backup_work_mount`, `snappymail_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `snappymail_backup_`, `snappymail_restore_` |
+| Vaultwarden | `vaultwarden_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/vaultwarden-backup`), `vaultwarden_echoport_backup_work_mount`, `vaultwarden_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `vaultwarden_backup_`, `vaultwarden_restore_` |
+| PostfixAdmin | `postfixadmin_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/postfixadmin-backup`), `postfixadmin_echoport_backup_work_mount`, `postfixadmin_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `postfixadmin_backup_`, `postfixadmin_restore_` |
+| Minecraft Java | `minecraft_java_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/minecraft-java-backup`), `minecraft_java_echoport_backup_work_mount`, `minecraft_java_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `minecraft_backup_`, `minecraft_restore_` |
+| Home Assistant | `homeassistant_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homeassistant-backup`), `homeassistant_backup_work_mount`, `homeassistant_backup_work_retention_hours` | root (runs via `sudo -n`) | `ha-backup-`, `ha-restore-` |
+| Graphyard | `graphyard_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/graphyard-backup`), `graphyard_echoport_backup_work_mount`, `graphyard_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `graphyard-backup-`, `graphyard-restore-` |
 
 The homepage runners run as `deploy` (FastDeploy's `sudo -u deploy`, no rule to
 root: their SSH key and `mc` config belong to `deploy`), so `deploy` cannot
@@ -318,6 +326,20 @@ File modes in the homepage runners:
   carry the dump as `0600`). Locally it stays private inside the `0700` run dir;
 - media: umask `077` for backup and restore (rclone config with credentials and
   the manifest are `0600`; objects go S3 <-> MinIO without touching the disk).
+
+The other runners keep the process umask. Their files are private because the
+run dir is `0700` below a `0700` work dir (root runners: `root:root`), and the
+archives keep the modes they had before, so a restore puts files back into
+live paths with the same modes as before the move. Where a runner already set
+modes explicitly (for example `0600` for credentials or a restored database),
+that is unchanged.
+
+Root runners (they re-run themselves through `sudo -n`) create their work dir
+`root:root 0700` on the first run; `/mnt/cryptdata/backups/tmp` must exist
+(the control repo does not provision anything for them). A missing mount fails
+the run before any command: for runners that validate their configuration
+first, after that validation and before the first write. A free-space check
+that looked at the old temp dir (Graphyard restore) now measures the work dir.
 
 ## UniFi Template Notes
 

@@ -17,7 +17,6 @@ import socket
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,7 +28,15 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ minecraft_java_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/minecraft-java-backup') }}"
+WORK_MOUNT = "{{ minecraft_java_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ minecraft_java_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("minecraft_backup_", "minecraft_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 # Minecraft-specific configuration
 SERVICE_NAME = "{{ minecraft_java_echoport_backup_service_name }}"
@@ -176,6 +183,9 @@ def normalize_root(root: str) -> str:
     return normalized
 
 
+{% include '_work_dir.py.j2' %}
+
+
 def path_in_allowed_roots(path: str) -> bool:
     if not path:
         return False
@@ -193,7 +203,6 @@ def validate_config_paths() -> None:
         SERVER_PROPERTIES,
         SYSTEMD_UNIT,
         ENV_FILE,
-        TEMP_DIR,
     ]
     for cfg_path in configured_paths:
         if cfg_path and not path_in_allowed_roots(cfg_path):
@@ -566,8 +575,7 @@ def backup_flow(cenv: Dict) -> int:
     ensure_binaries()
     emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
 
-    parent = TEMP_DIR if Path(TEMP_DIR).exists() else None
-    work_dir = Path(tempfile.mkdtemp(prefix="minecraft_backup_", dir=parent))
+    work_dir = create_run_dir("minecraft_backup_")
     saves_disabled = False
 
     try:
@@ -690,13 +698,14 @@ def restore_flow(cenv: Dict) -> int:
     ensure_binaries()
     emit_step("init", "success", f"Configuration loaded for {target_name} restore {restore_id}")
 
-    parent = TEMP_DIR if Path(TEMP_DIR).exists() else None
-    work_dir = Path(tempfile.mkdtemp(prefix="minecraft_restore_", dir=parent))
+    world_name = DEFAULT_WORLD_NAME
+    world_target = resolve_world_target(world_name)
+    # Created after the last check outside the try below, so a failing check
+    # cannot leave the run dir behind.
+    work_dir = create_run_dir("minecraft_restore_")
     service_stopped = False
     destructive_started = False
     safety_snapshot_dir = work_dir / "safety"
-    world_name = DEFAULT_WORLD_NAME
-    world_target = resolve_world_target(world_name)
 
     try:
         tarball_path = work_dir / "backup.tar.gz"
@@ -874,8 +883,6 @@ if __name__ == "__main__":
             stderr=sys.stderr,
         )
         sys.exit(result.returncode)
-
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())

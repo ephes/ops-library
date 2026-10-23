@@ -24,7 +24,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +35,15 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ postfixadmin_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/postfixadmin-backup') }}"
+WORK_MOUNT = "{{ postfixadmin_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ postfixadmin_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("postfixadmin_backup_", "postfixadmin_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 # PostfixAdmin-specific configuration
 INSTALL_PATH = "{{ postfixadmin_echoport_backup_install_path }}"
@@ -185,6 +192,9 @@ def normalize_root(root: str) -> str:
     return normalized
 
 
+{% include '_work_dir.py.j2' %}
+
+
 def path_in_allowed_roots(path: str) -> bool:
     if not path:
         return False
@@ -243,7 +253,6 @@ def validate_config_paths(action: str = "backup") -> None:
         TRAEFIK_CONFIG,
         str(pool_file_for_service(php_service)),
         DB_CREDENTIALS_FILE,
-        TEMP_DIR,
     ]
     for cfg_path in configured_paths:
         if cfg_path and not path_in_allowed_roots(cfg_path):
@@ -716,8 +725,7 @@ def backup_flow(cenv: Dict) -> int:
     php_service = detect_php_service()
     emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
 
-    parent = TEMP_DIR if Path(TEMP_DIR).exists() else None
-    work_dir = Path(tempfile.mkdtemp(prefix="postfixadmin_backup_", dir=parent))
+    work_dir = create_run_dir("postfixadmin_backup_")
 
     try:
         payload = work_dir / "payload"
@@ -844,8 +852,7 @@ def restore_flow(cenv: Dict) -> int:
     php_service = detect_php_service()
     emit_step("init", "success", f"Configuration loaded for {target_name} restore {restore_id}")
 
-    parent = TEMP_DIR if Path(TEMP_DIR).exists() else None
-    work_dir = Path(tempfile.mkdtemp(prefix="postfixadmin_restore_", dir=parent))
+    work_dir = create_run_dir("postfixadmin_restore_")
     safety_snapshot_dir = work_dir / "safety"
 
     services_stopped = {"nginx": False, "php": False}
@@ -1006,8 +1013,6 @@ if __name__ == "__main__":
             stderr=sys.stderr,
         )
         sys.exit(result.returncode)
-
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())
