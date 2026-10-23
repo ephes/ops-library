@@ -166,6 +166,85 @@ def test_zfs_dataset_stats_reports_snapshot_and_quota_bytes(tmp_path: Path) -> N
     assert payload["refquota_bytes"] == 6597069766656
     assert payload["quota_bytes"] is None
     assert payload["reservation_bytes"] is None
+    # No quota: no quota headroom, even though refquota is set.
+    assert payload["quota_headroom_bytes"] is None
+
+
+def _dataset_run_factory(namespace: dict[str, Any], values: dict[str, str]) -> Any:
+    def fake_run(argv: list[str]) -> Any:
+        return namespace["subprocess"].CompletedProcess(
+            args=argv,
+            returncode=0,
+            stdout="".join(f"{key}\t{value}\n" for key, value in values.items()),
+            stderr="",
+        )
+
+    return fake_run
+
+
+# fractal fast/timemachine on 2026-10-23: refquota 5.75 TiB, quota 6400 GiB.
+_TIMEMACHINE_AT_QUOTA_VALUES = {
+    "used": "4656140165120",
+    "available": "1726135214080",
+    "referenced": "4596056645632",
+    "usedbysnapshots": "60083519488",
+    "usedbydataset": "4596056645632",
+    "usedbychildren": "0",
+    "usedbyrefreservation": "0",
+    "quota": "6871947673600",
+    "refquota": "6322191859712",
+    "reservation": "none",
+    "refreservation": "none",
+}
+
+
+def test_zfs_dataset_stats_reports_quota_headroom(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    namespace["_run"] = _dataset_run_factory(namespace, _TIMEMACHINE_AT_QUOTA_VALUES)
+
+    payload = namespace["_zfs_dataset_stats"]("fast/timemachine")
+
+    assert payload["ok"] is True
+    assert payload["quota_bytes"] == 6871947673600
+    assert payload["quota_headroom_bytes"] == 6871947673600 - 4656140165120
+
+
+def test_quota_headroom_is_not_available_bytes_at_refquota(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    # Client data at refquota (5.75 TiB) plus 300 GiB of snapshots: available
+    # follows refquota (0), the quota still has 212 GiB.
+    values = dict(
+        _TIMEMACHINE_AT_QUOTA_VALUES,
+        used=str(6322191859712 + 300 * 2**30),
+        referenced="6322191859712",
+        usedbydataset="6322191859712",
+        usedbysnapshots=str(300 * 2**30),
+        available="0",
+    )
+    namespace["_run"] = _dataset_run_factory(namespace, values)
+
+    payload = namespace["_zfs_dataset_stats"]("fast/timemachine")
+
+    assert payload["available_bytes"] == 0
+    assert payload["quota_headroom_bytes"] == 212 * 2**30
+
+
+def test_quota_headroom_is_unknown_without_used_or_on_error(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    headroom = namespace["_quota_headroom_bytes"]
+    assert headroom({"quota_bytes": 10, "used_bytes": 4}) == 6
+    assert headroom({"quota_bytes": 10, "used_bytes": 12}) == -2
+    assert headroom({"quota_bytes": None, "used_bytes": 4}) is None
+    assert headroom({"quota_bytes": 10, "used_bytes": None}) is None
+    assert headroom({"quota_bytes": True, "used_bytes": 4}) is None
+    assert namespace["_unknown_dataset_payload"]("fast/x")["quota_headroom_bytes"] is None
+
+    namespace["_run"] = lambda argv: namespace["subprocess"].CompletedProcess(
+        args=argv, returncode=1, stdout="", stderr="dataset does not exist"
+    )
+    failed = namespace["_zfs_dataset_stats"]("fast/missing")
+    assert failed["ok"] is False
+    assert failed["quota_headroom_bytes"] is None
 
 
 def test_zfs_dataset_stats_preserves_command_error(tmp_path: Path) -> None:
@@ -449,6 +528,250 @@ def test_smartctl_observed_failure_survives_unusable_exit_status(
     assert payload["smartctl_exit_status"] == returncode
 
 
+def _nvme_run_factory(
+    namespace: dict[str, Any],
+    smart_log: dict[str, Any] | str,
+    id_ctrl: dict[str, Any] | str | None = None,
+    id_ctrl_returncode: int = 0,
+) -> Any:
+    def fake_run(argv: list[str]) -> Any:
+        completed = namespace["subprocess"].CompletedProcess
+        if argv[:2] == ["nvme", "smart-log"]:
+            stdout = smart_log if isinstance(smart_log, str) else json.dumps(smart_log)
+            return completed(args=argv, returncode=0, stdout=stdout, stderr="")
+        if argv[:2] == ["nvme", "id-ctrl"]:
+            if id_ctrl is None:
+                return completed(
+                    args=argv, returncode=id_ctrl_returncode or 1, stdout="", stderr="x"
+                )
+            stdout = id_ctrl if isinstance(id_ctrl, str) else json.dumps(id_ctrl)
+            return completed(
+                args=argv, returncode=id_ctrl_returncode, stdout=stdout, stderr=""
+            )
+        raise AssertionError(f"unexpected command: {argv}")
+
+    return fake_run
+
+
+# WD_BLACK SN850X: WCTEMP 363 K (90 C), CCTEMP 367 K (94 C).
+_SN850X_ID_CTRL = {"wctemp": 363, "cctemp": 367}
+
+
+def test_nvme_temperature_bit_is_not_a_health_failure(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    namespace["_run"] = _nvme_run_factory(
+        namespace,
+        {
+            "critical_warning": 0x02,
+            "temperature": 383,
+            "warning_temp_time": 43,
+            "critical_comp_time": 0,
+        },
+        _SN850X_ID_CTRL,
+    )
+
+    payload = namespace["_nvme_smart"]("/dev/nvme1n1")
+
+    assert payload["critical_warning"] == 2
+    assert payload["critical_warning_flags"] == ["temperature"]
+    assert payload["health_known"] is True
+    assert payload["health_failed"] is False
+    assert payload["ok"] is True
+    assert payload["temp_c"] == 109.9
+    assert payload["warning_temp_c"] == 89.9
+    assert payload["critical_temp_c"] == 93.9
+    assert payload["temperature_threshold_exceeded"] is True
+    assert payload["temperature_warning"] is True
+    assert payload["temperature_critical"] is True
+    assert payload["warning_temp_time_minutes"] == 43
+    assert payload["critical_comp_time_minutes"] == 0
+
+
+@pytest.mark.parametrize(
+    ("crit", "flags"),
+    [
+        (0x01, ["available_spare_low"]),
+        (0x04, ["reliability_degraded"]),
+        (0x08, ["read_only"]),
+        (0x10, ["volatile_backup_failed"]),
+        (0x20, ["pmr_read_only"]),
+        (0x40, ["reserved_bit_6"]),
+        (0x80, ["reserved_bit_7"]),
+        (0x06, ["temperature", "reliability_degraded"]),
+    ],
+)
+def test_nvme_non_temperature_bits_are_health_failures(
+    tmp_path: Path, crit: int, flags: list[str]
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    namespace["_run"] = _nvme_run_factory(
+        namespace, {"critical_warning": crit, "temperature": 310}, _SN850X_ID_CTRL
+    )
+
+    payload = namespace["_nvme_smart"]("/dev/nvme1n1")
+
+    assert payload["critical_warning_flags"] == flags
+    assert payload["health_failed"] is True
+    assert payload["ok"] is False
+    assert payload["temperature_threshold_exceeded"] is bool(crit & 0x02)
+
+
+def test_nvme_temperature_levels_follow_drive_thresholds(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    fields = namespace["_nvme_critical_warning_fields"]
+
+    cool = fields(0, 31.9, 89.9, 93.9)
+    assert cool["temperature_warning"] is False
+    assert cool["temperature_critical"] is False
+
+    warm = fields(0, 90.0, 89.9, 93.9)
+    assert warm["temperature_warning"] is True
+    assert warm["temperature_critical"] is False
+    assert warm["health_failed"] is False
+
+    unknown_temp = fields(0, None, 89.9, 93.9)
+    assert unknown_temp["temperature_warning"] is False
+    assert unknown_temp["temperature_critical"] is False
+
+
+def test_nvme_missing_thresholds_keep_health_and_use_drive_flag(
+    tmp_path: Path,
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    namespace["_run"] = _nvme_run_factory(
+        namespace, {"critical_warning": 0x02, "temperature": 383}, None
+    )
+
+    payload = namespace["_nvme_smart"]("/dev/nvme1n1")
+
+    assert payload["health_known"] is True
+    assert payload["health_failed"] is False
+    assert "error" not in payload
+    assert payload["temperature_thresholds_error"] == "nvme id-ctrl failed"
+    assert payload["warning_temp_c"] is None
+    assert payload["critical_temp_c"] is None
+    assert payload["temperature_warning"] is True
+    assert payload["temperature_critical"] is False
+
+
+def test_nvme_zero_thresholds_mean_not_reported(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    namespace["_run"] = _nvme_run_factory(
+        namespace,
+        {"critical_warning": 0, "temperature": 0},
+        {"wctemp": 0, "cctemp": 0},
+    )
+
+    payload = namespace["_nvme_smart"]("/dev/nvme1n1")
+
+    assert payload["temp_c"] is None
+    assert payload["warning_temp_c"] is None
+    assert payload["critical_temp_c"] is None
+    assert payload["temperature_warning"] is False
+    assert payload["temperature_critical"] is False
+    assert payload["health_failed"] is False
+
+
+def test_nvme_smart_log_failure_is_unknown_with_stable_schema(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    namespace["_run"] = lambda argv: namespace["subprocess"].CompletedProcess(
+        args=argv, returncode=1, stdout="", stderr="permission denied"
+    )
+
+    payload = namespace["_nvme_smart"]("/dev/nvme1n1")
+
+    assert payload["health_known"] is False
+    assert payload["health_failed"] is False
+    assert payload["error"] == "permission denied"
+    assert payload["temperature_warning"] is False
+    assert payload["temperature_critical"] is False
+    assert payload["critical_warning_flags"] == []
+
+
+def test_cached_nvme_sample_from_old_schema_rederives_health(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    # Sample cached by the previous exporter during a heat trip: it recorded
+    # health_failed from critical_warning != 0.
+    probe_cache = {
+        "disks": {
+            "fast-nvme": {
+                "ts": 1_700_000_000,
+                "sample": {
+                    "device": "/dev/nvme1n1",
+                    "ok": False,
+                    "health_known": True,
+                    "health_failed": True,
+                    "critical_warning": 2,
+                    "temp_c": 109.9,
+                },
+            }
+        }
+    }
+
+    payload = namespace["_cached_disk_payload"](
+        "fast-nvme", "/dev/nvme1n1", probe_cache, 1_700_000_100, "nvme"
+    )
+
+    assert payload is not None
+    assert payload["health_failed"] is False
+    assert payload["ok"] is True
+    assert payload["critical_warning_flags"] == ["temperature"]
+    assert payload["temperature_threshold_exceeded"] is True
+    assert payload["temperature_warning"] is True
+    assert payload["temperature_critical"] is False
+    assert payload["warning_temp_c"] is None
+    assert payload["cached"] is True
+
+
+def test_main_reports_unknown_quiet_nvme_with_temperature_schema(
+    tmp_path: Path, capsys: Any
+) -> None:
+    namespace = _load_exporter_namespace(
+        tmp_path,
+        disks=[{"name": "fast-nvme", "device": "/dev/nvme1n1", "type": "nvme"}],
+    )
+    namespace["QUIET_SKIP_DISK_TYPES"] = ["nvme"]
+    namespace["_in_quiet_hours"] = lambda: True
+    namespace["_zpool_list"] = lambda _pools, _skip: {}
+    namespace["_nvme_smart"] = lambda _device: (_ for _ in ()).throw(
+        AssertionError("quiet-hours NVMe probe must not run")
+    )
+    namespace["_run_quiet_hours_spindown"] = lambda _quiet: {"enabled": False}
+    namespace["_edac_status"] = lambda: {"loaded": True, "ce": 0, "ue": 0}
+
+    assert namespace["main"]() == 0
+    disk = json.loads(capsys.readouterr().out)["disks_by_name"]["fast-nvme"]
+
+    assert disk["health_known"] is False
+    assert disk["health_failed"] is False
+    assert disk["temperature_warning"] is False
+    assert disk["temperature_critical"] is False
+    assert disk["skipped"] is True
+
+
+def test_main_exports_nvme_temperature_signal(tmp_path: Path, capsys: Any) -> None:
+    namespace = _load_exporter_namespace(
+        tmp_path,
+        disks=[{"name": "fast-nvme", "device": "/dev/nvme1n1", "type": "nvme"}],
+    )
+    namespace["_zpool_list"] = lambda _pools, _skip: {}
+    namespace["_run_quiet_hours_spindown"] = lambda _quiet: {"enabled": False}
+    namespace["_edac_status"] = lambda: {"loaded": True, "ce": 0, "ue": 0}
+    namespace["_run"] = _nvme_run_factory(
+        namespace, {"critical_warning": 0x02, "temperature": 383}, _SN850X_ID_CTRL
+    )
+
+    assert namespace["main"]() == 0
+    disk = json.loads(capsys.readouterr().out)["disks_by_name"]["fast-nvme"]
+
+    assert disk["type"] == "nvme"
+    assert disk["health_failed"] is False
+    assert disk["temperature_warning"] is True
+    assert disk["temperature_critical"] is True
+    cache = json.loads((tmp_path / "pool-cache.json").read_text(encoding="utf-8"))
+    assert cache["disks"]["fast-nvme"]["sample"]["critical_temp_c"] == 93.9
+
+
 def test_observed_smart_failure_with_probe_error_remains_cacheable(tmp_path: Path) -> None:
     namespace = _load_exporter_namespace(tmp_path)
 
@@ -492,6 +815,34 @@ def test_cached_dataset_payload_backfills_new_schema_keys(tmp_path: Path) -> Non
     assert payload["metrics_known"] is True
     assert payload["available_bytes"] == 2048
     assert payload["used_by_snapshots_bytes"] is None
+    assert payload["quota_headroom_bytes"] is None
+
+
+def test_cached_dataset_payload_derives_quota_headroom_for_old_samples(
+    tmp_path: Path,
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    payload = namespace["_cached_dataset_payload"](
+        "timemachine",
+        "fast/timemachine",
+        {
+            "datasets": {
+                "timemachine": {
+                    "ts": 100,
+                    "sample": {
+                        "dataset": "fast/timemachine",
+                        "ok": True,
+                        "metrics_known": True,
+                        "quota_bytes": 1000,
+                        "used_bytes": 700,
+                    },
+                }
+            }
+        },
+        101,
+    )
+
+    assert payload["quota_headroom_bytes"] == 300
 
 
 def test_cached_payloads_reject_retargeted_identity(tmp_path: Path) -> None:

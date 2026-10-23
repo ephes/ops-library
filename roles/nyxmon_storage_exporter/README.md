@@ -201,7 +201,8 @@ and adds the same cache metadata, so stable SMART-health alerts remain evaluable
 without spinning up a sleeping disk. `health_known` distinguishes an observed or
 cached result from a quiet-hours gap, while `health_failed` becomes true only for
 an observed current SMART/NVMe failure (smartctl current-failure bits, an
-explicit failed health line, or a nonzero NVMe critical warning). Historical
+explicit failed health line, or an NVMe critical-warning bit other than the
+temperature bit; see [NVMe temperature signal](#nvme-temperature-signal)). Historical
 attribute, error-log, and self-test records (bits 5-7) are exposed separately as
 `smartctl_historical_failure_bits` and do not create a permanent critical state.
 Until the first active-hours sample exists, or once
@@ -261,6 +262,33 @@ a bundle that disappears set `timemachine_bundle_scan.ok` to `false` or drop
 the bundle key, so pair every per-bundle numeric rule with a
 `metrics_known == true` rule.
 
+### NVMe Temperature Signal
+
+The NVMe SMART / Health log's `critical_warning` byte mixes damage and heat.
+Bit 1 means the composite temperature crossed the drive's over-temperature
+threshold. A drive that hits it under a long scrub is hot, not broken, so the
+exporter splits the byte:
+
+| Field | Meaning |
+|-------|---------|
+| `critical_warning` | Raw byte, unchanged |
+| `critical_warning_flags` | Labels of the set bits: `available_spare_low` (0), `temperature` (1), `reliability_degraded` (2), `read_only` (3), `volatile_backup_failed` (4), `pmr_read_only` (5), `reserved_bit_6`/`reserved_bit_7` |
+| `health_failed` / `ok` | Any bit **except** bit 1 is set (reserved bits fail closed). A heat trip alone no longer sets `health_failed` |
+| `temperature_threshold_exceeded` | Bit 1 as reported by the drive |
+| `warning_temp_c` / `critical_temp_c` | The drive's own WCTEMP / CCTEMP from `nvme id-ctrl`, or `null` when not reported |
+| `temperature_warning` | Bit 1 is set, or `temp_c >= warning_temp_c` |
+| `temperature_critical` | `temp_c >= critical_temp_c` |
+| `warning_temp_time_minutes` / `critical_comp_time_minutes` | Lifetime minutes above WCTEMP / CCTEMP (context only; these counters only grow) |
+
+These keys are present on every NVMe entry, also when the probe failed or the
+disk was skipped, with `false`/`null`/`[]` defaults. A failing `nvme id-ctrl`
+is recorded as `temperature_thresholds_error` and leaves the health fields
+alone; `temperature_warning` then still follows bit 1. Samples cached by an
+older exporter are re-derived from their raw `critical_warning` byte, so a
+cached heat trip is never replayed as `health_failed`.
+
+SATA/SAS disks (smartctl) do not carry these keys.
+
 ## Nyxmon Threshold Configuration
 
 ### Recommended: Use `disks_by_name` for Stable JSONPaths
@@ -273,6 +301,8 @@ The output includes a `disks_by_name` object keyed by disk name, which provides 
 | `$.disks_by_name.boot-nvme.health_known` | `==` | `true` | warning | boot-nvme health evidence is fresh |
 | `$.disks_by_name.fast-nvme.health_failed` | `==` | `false` | critical | no observed fast-nvme health failure |
 | `$.disks_by_name.fast-nvme.health_known` | `==` | `true` | warning | fast-nvme health evidence is fresh |
+| `$.disks_by_name.fast-nvme.temperature_warning` | `==` | `false` | warning | fast-nvme below its WCTEMP and over-temperature flag clear |
+| `$.disks_by_name.fast-nvme.temperature_critical` | `==` | `false` | critical | fast-nvme below its CCTEMP |
 | `$.disks_by_name.tank-hdd-1.health_failed` | `==` | `false` | critical | no observed tank-hdd-1 SMART failure |
 | `$.disks_by_name.tank-hdd-1.health_known` | `==` | `true` | warning | tank-hdd-1 health evidence is fresh |
 | `$.disks_by_name.tank-hdd-2.health_failed` | `==` | `false` | critical | no observed tank-hdd-2 SMART failure |
@@ -308,8 +338,20 @@ different controller has incomplete counter coverage.
 Each dataset entry exposes `used_bytes`, `available_bytes`, `referenced_bytes`,
 `used_by_snapshots_bytes`, `used_by_dataset_bytes`, `used_by_children_bytes`,
 `used_by_refreservation_bytes`, `quota_bytes`, `refquota_bytes`,
-`reservation_bytes`, and `refreservation_bytes`. These keys remain present with
-`null` values when evidence is unavailable.
+`reservation_bytes`, `refreservation_bytes`, and the derived
+`quota_headroom_bytes`. These keys remain present with `null` values when
+evidence is unavailable.
+
+`quota_headroom_bytes` is `quota_bytes - used_bytes` from the same sample (data,
+snapshots and children against `quota`), or `null` when the dataset has no
+`quota`. It is not clamped, so a negative value means `used` already exceeds the
+quota. Use it instead of `available_bytes` for a dataset that runs at its
+`refquota` on purpose (a Time Machine target): `available_bytes` is the minimum
+of every limit and stays near zero there, while the quota headroom shows how
+much room snapshots still have before writes, including the client's own
+deletes, fail. Rule example: `$.zfs_datasets_by_name.timemachine.quota_headroom_bytes`
+`>` `274877906944` (256 GiB). A cached sample from an older exporter gets the
+field derived from its cached `quota_bytes`/`used_bytes`.
 
 During an active or paused scrub, `last_scrub_age_days` is calculated from the
 running scrub's start timestamp; after completion, it is calculated from the
@@ -334,7 +376,7 @@ The script outputs JSON with disk temperatures, health status, pool information,
 {
   "disks": [
     {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true, "health_known": true, "health_failed": false},
-    {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true, "health_known": true, "health_failed": false}
+    {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true, "health_known": true, "health_failed": false, "critical_warning": 0, "critical_warning_flags": [], "temperature_threshold_exceeded": false, "temperature_warning": false, "temperature_critical": false, "warning_temp_c": 81.9, "critical_temp_c": 84.9, "warning_temp_time_minutes": 0, "critical_comp_time_minutes": 0}
   ],
   "disks_by_name": {
     "tank-hdd-1": {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true, "health_known": true, "health_failed": false},
@@ -394,6 +436,7 @@ The script outputs JSON with disk temperatures, health status, pool information,
       "used_by_snapshots_bytes": 754840371200,
       "refquota_bytes": 6597069766656,
       "quota_bytes": null,
+      "quota_headroom_bytes": null,
       "metrics_known": true,
       "ok": true
     }
@@ -486,6 +529,8 @@ just test-role nyxmon_storage_exporter
 
 ## Changelog
 
+- **Unreleased**: Add the derived dataset field `quota_headroom_bytes` (`quota_bytes - used_bytes`)
+- **Unreleased**: Split the NVMe critical-warning temperature bit out of `health_failed`; add `critical_warning_flags`, `temperature_threshold_exceeded`, `temperature_warning`, `temperature_critical`, the drive's WCTEMP/CCTEMP and lifetime over-temperature minutes
 - **1.1.0** (2026-09-06): Add read-only Time Machine sparsebundle metrics (`nyxmon_storage_exporter_timemachine_bundle_dirs`)
 - **1.0.0** (2025-12-14): Initial release
 

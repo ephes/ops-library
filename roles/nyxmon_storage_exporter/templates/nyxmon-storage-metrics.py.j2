@@ -38,6 +38,19 @@ POOL_CAPACITY_THRESHOLDS = {
     },
 {% endfor %}
 }
+# Critical Warning byte of the NVMe SMART / Health Information log page
+# (NVMe Base Specification 2.x). Bit 1 is a temperature condition, not media
+# or controller damage, so it is reported separately from health_failed. Every
+# other set bit, including the reserved bits 6-7, counts as a health failure.
+NVME_CRITICAL_WARNING_FLAGS = {
+    0: "available_spare_low",
+    1: "temperature",
+    2: "reliability_degraded",
+    3: "read_only",
+    4: "volatile_backup_failed",
+    5: "pmr_read_only",
+}
+NVME_CRITICAL_WARNING_TEMPERATURE_MASK = 0x02
 ZFS_DATASET_PROPERTIES = {
     "used": "used_bytes",
     "available": "available_bytes",
@@ -292,22 +305,38 @@ def _apply_pool_capacity_policy(payload: dict[str, Any], name: str) -> None:
 
 
 def _cached_disk_payload(
-    name: str, device: str, probe_cache: dict[str, Any], now_ts: int
+    name: str,
+    device: str,
+    probe_cache: dict[str, Any],
+    now_ts: int,
+    disk_type: str | None = None,
 ) -> dict[str, Any] | None:
     payload = _cached_probe_payload("disks", name, probe_cache, now_ts)
     if payload is None or payload.get("device") != device:
         return None
-    normalized = _unknown_disk_payload(device)
+    normalized = _unknown_disk_payload(device, disk_type)
     normalized.update(payload)
     if "health_known" not in payload:
         normalized["health_known"] = isinstance(payload.get("ok"), bool)
     if "health_failed" not in payload:
         normalized["health_failed"] = payload.get("ok") is False
+    crit = payload.get("critical_warning")
+    if isinstance(crit, int) and not isinstance(crit, bool):
+        # Re-derive from the raw byte so a sample cached before the temperature
+        # split cannot replay a heat trip as health_failed.
+        normalized.update(
+            _nvme_critical_warning_fields(
+                crit,
+                normalized.get("temp_c"),
+                normalized.get("warning_temp_c"),
+                normalized.get("critical_temp_c"),
+            )
+        )
     return normalized
 
 
-def _unknown_disk_payload(device: str) -> dict[str, Any]:
-    return {
+def _unknown_disk_payload(device: str, disk_type: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "device": device,
         "temp_c": None,
         "ok": None,
@@ -317,6 +346,20 @@ def _unknown_disk_payload(device: str) -> dict[str, Any]:
         "cache_timestamp": None,
         "cache_age_seconds": None,
     }
+    if disk_type == "nvme":
+        payload.update(
+            {
+                "critical_warning_flags": [],
+                "temperature_threshold_exceeded": False,
+                "temperature_warning": False,
+                "temperature_critical": False,
+                "warning_temp_c": None,
+                "critical_temp_c": None,
+                "warning_temp_time_minutes": None,
+                "critical_comp_time_minutes": None,
+            }
+        )
+    return payload
 
 
 def _cached_dataset_payload(
@@ -329,6 +372,9 @@ def _cached_dataset_payload(
     normalized.update(payload)
     if "metrics_known" not in payload:
         normalized["metrics_known"] = payload.get("ok") is True
+    if "quota_headroom_bytes" not in payload:
+        # Sample cached by an exporter that predates the derived field.
+        normalized["quota_headroom_bytes"] = _quota_headroom_bytes(normalized)
     return normalized
 
 
@@ -353,7 +399,24 @@ def _unknown_dataset_payload(dataset: str) -> dict[str, Any]:
         "cache_timestamp": None,
         "cache_age_seconds": None,
         **{output_name: None for output_name in ZFS_DATASET_PROPERTIES.values()},
+        "quota_headroom_bytes": None,
     }
+
+
+def _quota_headroom_bytes(payload: dict[str, Any]) -> int | None:
+    """Bytes left under `quota` (data plus snapshots and children), or None.
+
+    `available_bytes` is the minimum of every limit (refquota, quota, pool
+    free), so a dataset that sits at its refquota by design reports almost
+    nothing available even when its quota still has room. This is the quota
+    limit on its own. It is not clamped: a negative value means `used` already
+    exceeds `quota`.
+    """
+    quota = payload.get("quota_bytes")
+    used = payload.get("used_bytes")
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in (quota, used)):
+        return None
+    return quota - used
 
 
 def _cached_timemachine_bundle_payload(
@@ -655,9 +718,73 @@ def _smartctl_health(device: str) -> dict[str, Any]:
     return payload
 
 
+def _kelvin_to_celsius(value: Any) -> float | None:
+    # NVMe reports temperatures in Kelvin; 0 means "not reported".
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return round(float(value) - 273.15, 1)
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _nvme_critical_warning_fields(
+    crit: int,
+    temp_c: Any,
+    warning_temp_c: Any,
+    critical_temp_c: Any,
+) -> dict[str, Any]:
+    """Split the Critical Warning byte into health and temperature signals."""
+    flags = [
+        NVME_CRITICAL_WARNING_FLAGS.get(bit, f"reserved_bit_{bit}")
+        for bit in range(8)
+        if crit & (1 << bit)
+    ]
+    health_failed = (crit & ~NVME_CRITICAL_WARNING_TEMPERATURE_MASK & 0xFF) != 0
+    threshold_exceeded = bool(crit & NVME_CRITICAL_WARNING_TEMPERATURE_MASK)
+    temp_known = isinstance(temp_c, (int, float)) and not isinstance(temp_c, bool)
+
+    def _reached(limit: Any) -> bool:
+        return (
+            temp_known
+            and isinstance(limit, (int, float))
+            and not isinstance(limit, bool)
+            and float(temp_c) >= float(limit)
+        )
+
+    return {
+        "critical_warning_flags": flags,
+        "health_failed": health_failed,
+        "ok": not health_failed,
+        "temperature_threshold_exceeded": threshold_exceeded,
+        "temperature_warning": threshold_exceeded or _reached(warning_temp_c),
+        "temperature_critical": _reached(critical_temp_c),
+    }
+
+
+def _nvme_temperature_thresholds(device: str) -> dict[str, Any]:
+    """Read the drive's own WCTEMP/CCTEMP. Missing values never fail health."""
+    out = _run(["nvme", "id-ctrl", "-o", "json", device])
+    if out.returncode != 0:
+        return {"temperature_thresholds_error": "nvme id-ctrl failed"}
+    try:
+        data = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return {"temperature_thresholds_error": "nvme id-ctrl returned non-JSON output"}
+    if not isinstance(data, dict):
+        return {"temperature_thresholds_error": "nvme id-ctrl returned non-object JSON"}
+    return {
+        "warning_temp_c": _kelvin_to_celsius(data.get("wctemp")),
+        "critical_temp_c": _kelvin_to_celsius(data.get("cctemp")),
+    }
+
+
 def _nvme_smart(device: str) -> dict[str, Any]:
     out = _run(["nvme", "smart-log", "-o", "json", device])
-    payload = _unknown_disk_payload(device)
+    payload = _unknown_disk_payload(device, "nvme")
     if out.returncode != 0:
         payload["error"] = out.stderr.strip() or out.stdout.strip() or "nvme smart-log failed"
         return payload
@@ -666,15 +793,26 @@ def _nvme_smart(device: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         payload["error"] = "nvme smart-log returned non-JSON output"
         return payload
+    if not isinstance(data, dict):
+        payload["error"] = "nvme smart-log returned non-object JSON"
+        return payload
 
     crit = int(data.get("critical_warning", 0))
-    payload["ok"] = crit == 0
     payload["health_known"] = True
-    payload["health_failed"] = not payload["ok"]
-    temp_k = data.get("temperature")
-    if isinstance(temp_k, (int, float)):
-        payload["temp_c"] = round(float(temp_k) - 273.15, 1)
+    payload["temp_c"] = _kelvin_to_celsius(data.get("temperature"))
     payload["critical_warning"] = crit
+    # Cumulative lifetime minutes above WCTEMP / CCTEMP, for context only.
+    payload["warning_temp_time_minutes"] = _optional_int(data.get("warning_temp_time"))
+    payload["critical_comp_time_minutes"] = _optional_int(data.get("critical_comp_time"))
+    payload.update(_nvme_temperature_thresholds(device))
+    payload.update(
+        _nvme_critical_warning_fields(
+            crit,
+            payload["temp_c"],
+            payload.get("warning_temp_c"),
+            payload.get("critical_temp_c"),
+        )
+    )
     return payload
 
 
@@ -820,6 +958,7 @@ def _zfs_dataset_stats(dataset: str) -> dict[str, Any]:
             payload["error"] = f"ZFS property {property_name} was not numeric: {raw}"
             return payload
 
+    payload["quota_headroom_bytes"] = _quota_headroom_bytes(payload)
     payload["ok"] = True
     payload["metrics_known"] = True
     return payload
@@ -1003,7 +1142,7 @@ def main() -> int:
             continue
         if quiet and dtype in skip_disk_types:
             cached_payload = (
-                _cached_disk_payload(str(name), device, probe_cache, now_ts)
+                _cached_disk_payload(str(name), device, probe_cache, now_ts, dtype)
                 if name
                 else None
             )
@@ -1011,7 +1150,7 @@ def main() -> int:
                 cached_payload
                 if cached_payload is not None
                 else {
-                    **_unknown_disk_payload(device),
+                    **_unknown_disk_payload(device, dtype),
                     "skipped": True,
                     "reason": "quiet_hours",
                 }

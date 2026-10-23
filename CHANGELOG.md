@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### NVMe temperature is not a disk failure
+
+- `nyxmon_storage_exporter`: `health_failed`/`ok` for NVMe disks now ignore
+  `critical_warning` bit 1 (temperature above the over-temperature threshold);
+  bits 0 and 2-7 (spare, reliability, read-only, volatile backup, PMR,
+  reserved) still fail health. New NVMe fields: `critical_warning_flags`
+  (labelled set bits), `temperature_threshold_exceeded` (bit 1),
+  `warning_temp_c`/`critical_temp_c` (the drive's WCTEMP/CCTEMP from
+  `nvme id-ctrl`), `temperature_warning` (bit 1 or `temp_c >= warning_temp_c`),
+  `temperature_critical` (`temp_c >= critical_temp_c`), and the lifetime
+  counters `warning_temp_time_minutes`/`critical_comp_time_minutes`. They are
+  present on every NVMe entry, also when the probe failed or the disk was
+  skipped. `critical_warning` and `temp_c` are unchanged. Cached samples from
+  the previous exporter are re-derived from their raw byte. A failing
+  `nvme id-ctrl` only sets `temperature_thresholds_error`.
+- Consumers alerting on `health_failed` stop paging on heat; add rules on
+  `temperature_warning`/`temperature_critical` to keep a heat alert.
+- New `just test-nyxmon-storage-exporter` (part of `just test`) runs the
+  existing exporter unit tests plus the NVMe cases.
+
+### Storage exporter: dataset quota headroom
+
+- `nyxmon_storage_exporter`: every dataset entry gains `quota_headroom_bytes`
+  (`quota_bytes - used_bytes` from the same `zfs get` sample, unclamped;
+  `null` without a `quota` or when the probe failed). `available_bytes` is the
+  minimum of every limit, so a Time Machine dataset that sits at its
+  `refquota` by design shows almost nothing available even while its `quota`
+  (data plus snapshots) still has room; this field measures the quota limit
+  alone. Cached samples from the previous exporter get it derived from their
+  cached `quota_bytes`/`used_bytes`. README documents the field and a rule
+  example. Existing fields are unchanged.
+
 ## [2.72.0] - 2026-10-23
 
 ### Echoport runners work only on the external disk
