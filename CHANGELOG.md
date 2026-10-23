@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.70.0] - 2026-10-23
+
+### UniFi Echoport runner works only on the external disk
+
+- `echoport_backup` UniFi runner (`unifi_backup.py.j2`): per-run work dirs
+  move from `echoport_backup_temp_dir` (macmini: `/tmp/unifi-backup` on the
+  internal root filesystem) to `unifi_echoport_backup_work_dir` (default
+  `/mnt/cryptdata/backups/tmp/unifi-backup`) on
+  `unifi_echoport_backup_work_mount` (default `/mnt/cryptdata`). Backup and
+  restore fail closed before any work when the mount is missing, is `/`, is on
+  the root device, or a path component is a symlink or on another device;
+  there is no fallback to `/tmp` or the system temp dir, and the runner no
+  longer creates a temp dir before `main`. Work dir root-owned `0700`, run dirs
+  `0700`, runner-created backup files `0600`; run dirs are removed in `finally`
+  and leftovers older than `unifi_echoport_backup_work_retention_hours`
+  (default 24) are pruned at the start of a run without following symlinks.
+
 ## [2.69.0] - 2026-10-23
 
 ### Staging refresh keeps the public schema owner

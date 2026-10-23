@@ -268,6 +268,43 @@ only the commands these templates send are accepted, so:
 The register playbooks must re-run (so macmini gets these versions) before a
 host's key is pinned; the new forms also work unpinned.
 
+## UniFi Template Notes
+
+The UniFi runner (`unifi_backup.py.j2`) keeps its per-run work dirs (MongoDB
+dump, staging copies of data/config, the archive, the restore download and
+extraction, the pre-restore safety snapshot) on the external encrypted disk
+only. It does not read `echoport_backup_temp_dir`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `unifi_echoport_backup_work_dir` | `/mnt/cryptdata/backups/tmp/unifi-backup` | Parent of the per-run dirs; must be below the work mount |
+| `unifi_echoport_backup_work_mount` | `/mnt/cryptdata` | Mount point the work dir must live on |
+| `unifi_echoport_backup_work_retention_hours` | `24` | Leftover run dirs older than this are removed at the start of a run (minimum 1) |
+
+Before any other work, backup and restore check (fail closed, no fallback to
+`/tmp` or `/`):
+
+- the work mount is a normalized absolute path, not `/`, not a symlink, a mount
+  point (`os.path.ismount`) and on a different device than `/`;
+- every component from the mount down to the work dir is a plain directory (no
+  symlink) on the mount's device (`st_dev`); missing components are created
+  root-owned `0700`;
+- the work dir is owned by root and is forced to `0700`.
+
+Each run creates a fresh `unifi_backup_*`/`unifi_restore_*` dir (`mkdtemp`,
+`0700`) and removes it in `finally`, on success and on failure. The backup runs
+with umask `077`, so runner-created files (dumps, manifests, archive) are
+`0600`; the restore keeps the system umask because it writes into live service
+paths, and chmods the downloaded archive to `0600`. At the start of each run,
+direct children of the work dir named `unifi_backup_*`/`unifi_restore_*` that
+are real directories on the mount and older than the retention window are
+removed; symlinks and other entries are left alone and `shutil.rmtree` does not
+follow symlinks inside a tree. Removal failures are reported in the `init` step
+and do not stop the run.
+
+The work dir is not one of `unifi_echoport_backup_allowed_roots`; a
+`/tmp/unifi-backup/` entry left in that list is unused.
+
 ## FastDeploy runner restores
 
 The FastDeploy runner (`fastdeploy_backup.py.j2`) does not restore the
