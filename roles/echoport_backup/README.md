@@ -268,12 +268,65 @@ only the commands these templates send are accepted, so:
 The register playbooks must re-run (so macmini gets these versions) before a
 host's key is pinned; the new forms also work unpinned.
 
+## External work dir (`_work_dir.py.j2`)
+
+`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. It is
+included by `unifi_backup.py.j2`, `homepage_production_db_backup.py.j2` and
+`homepage_media_backup.py.j2`; other runners can adopt it the same way (see
+the header of the include for the constants a template defines first). Runners
+that include it do not read `echoport_backup_temp_dir` or their old
+`*_temp_dir` variable and never fall back to `/tmp`, `/` or the system temp dir.
+
+Before any other work (for the homepage DB runner: before `pg_dump` on
+production, before the MinIO download and before staging is touched), a run
+checks that:
+
+- the work mount is a normalized absolute path, not `/`, not a symlink, a mount
+  point (`os.path.ismount`) and on a different device than `/`;
+- every component from the mount down to the work dir is a plain directory (no
+  symlink) on the mount's device; missing components are created `0700`;
+- the work dir is owned by the runner's expected owner (`WORK_OWNER_UID`) and is
+  forced to `0700`.
+
+Each run then gets a fresh `mkdtemp` dir (`0700`) below the work dir, which is
+removed in `finally` on success and on failure. Leftover run dirs (direct
+children with the runner's prefixes, real directories on the mount, older than
+the retention window) are pruned at the start of a run without following
+symlinks; removal failures are reported in `init` and do not stop the run.
+
+| Runner | Variables (default) | Owner | Run dir prefixes |
+|--------|---------------------|-------|------------------|
+| UniFi | `unifi_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/unifi-backup`), `unifi_echoport_backup_work_mount` (`/mnt/cryptdata`), `unifi_echoport_backup_work_retention_hours` (`24`) | root (runs via `sudo -n`) | `unifi_backup_`, `unifi_restore_` |
+| homepage production DB | `homepage_prod_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-production-db-backup`), `homepage_prod_db_backup_work_mount` (`/mnt/cryptdata`), `homepage_prod_db_backup_work_retention_hours` (`24`) | the runner user (`deploy`) | `homepage-backup-`, `homepage-restore-` |
+| homepage media | `homepage_media_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-media-backup`), `homepage_media_backup_work_mount` (`/mnt/cryptdata`), `homepage_media_backup_work_retention_hours` (`24`) | the runner user (`deploy`) | `homepage-media-` |
+
+The homepage runners run as `deploy` (FastDeploy's `sudo -u deploy`, no rule to
+root: their SSH key and `mc` config belong to `deploy`), so `deploy` cannot
+create directories below `/mnt/cryptdata/backups` (`root:postgres 0770`). The
+register playbook in the control repo provisions the work dir (`deploy:deploy
+0700`) and a traverse-only ACL for `deploy` on the parents; without that the run
+fails closed in `init` with a permission error.
+
+File modes in the homepage runners:
+
+- production DB backup: umask `077`, so the dump, manifest and archive are
+  `0600`;
+- production DB restore: the system umask is kept; the downloaded archive is
+  chmodded to `0600`, and the extracted dump to `0644` right before it is copied
+  to staging, because classic `scp` creates the remote file with the local mode
+  and `pg_restore` reads it there as `postgres` (archives made under umask `077`
+  carry the dump as `0600`). Locally it stays private inside the `0700` run dir;
+- media: umask `077` for backup and restore (rclone config with credentials and
+  the manifest are `0600`; objects go S3 <-> MinIO without touching the disk).
+
 ## UniFi Template Notes
 
 The UniFi runner (`unifi_backup.py.j2`) keeps its per-run work dirs (MongoDB
 dump, staging copies of data/config, the archive, the restore download and
 extraction, the pre-restore safety snapshot) on the external encrypted disk
 only. It does not read `echoport_backup_temp_dir`.
+The checks below come from the shared include described in
+[External work dir](#external-work-dir-_work_dirpyj2).
 
 | Variable | Default | Description |
 |----------|---------|-------------|

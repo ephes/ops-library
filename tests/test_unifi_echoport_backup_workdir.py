@@ -17,14 +17,15 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from jinja2 import ChainableUndefined, Environment
+from jinja2 import ChainableUndefined, Environment, FileSystemLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "roles/echoport_backup/templates/unifi_backup.py.j2"
 
 
 def render(**variables) -> str:
-    return Environment(undefined=ChainableUndefined).from_string(TEMPLATE.read_text()).render(**variables)
+    env = Environment(loader=FileSystemLoader(TEMPLATE.parent), undefined=ChainableUndefined)
+    return env.get_template(TEMPLATE.name).render(**variables)
 
 
 def load_runner(**variables) -> types.ModuleType:

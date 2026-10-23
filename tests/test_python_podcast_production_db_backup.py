@@ -138,6 +138,13 @@ class FakeRemote:
             return subprocess.CompletedProcess(args, 0, "", "")
         return subprocess.CompletedProcess(args, 0, "", "")  # mc stat
 
+    def work_dir_patch(self, runner: types.ModuleType) -> tuple:
+        if hasattr(runner, "TEMP_DIR"):
+            return "TEMP_DIR", str(self.work)
+        # Runners on the shared external work dir (_work_dir.py.j2); the mount
+        # check is covered by test_homepage_echoport_backup_workdir.
+        return "create_run_dir", lambda prefix: Path(tempfile.mkdtemp(prefix=prefix, dir=self.work))
+
     @contextlib.contextmanager
     def installed(self, runner: types.ModuleType):
         with (
@@ -145,7 +152,7 @@ class FakeRemote:
             mock.patch.object(runner, "scp_from_remote", side_effect=self.scp_from_remote),
             mock.patch.object(runner, "scp_to_remote", side_effect=self.scp_to_remote),
             mock.patch.object(runner.subprocess, "run", side_effect=self.run),
-            mock.patch.object(runner, "TEMP_DIR", str(self.work)),
+            mock.patch.object(runner, *self.work_dir_patch(runner)),
             contextlib.redirect_stdout(io.StringIO()) as out,
             contextlib.redirect_stderr(io.StringIO()),
         ):

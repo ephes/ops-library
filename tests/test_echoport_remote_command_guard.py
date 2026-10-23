@@ -1055,8 +1055,16 @@ class RecordingHosts:
             mock.patch.object(runner, "scp_from_remote", side_effect=self.scp_from_remote),
             mock.patch.object(runner, "scp_to_remote", side_effect=self.scp_to_remote),
             mock.patch.object(runner.subprocess, "run", side_effect=self.run),
-            mock.patch.object(runner, "TEMP_DIR", str(self.work)),
         ]
+        if hasattr(runner, "TEMP_DIR"):
+            patches.append(mock.patch.object(runner, "TEMP_DIR", str(self.work)))
+        else:
+            # Runners on the shared external work dir (_work_dir.py.j2); the
+            # mount check itself is covered by test_homepage_echoport_backup_workdir.
+            patches.append(mock.patch.object(
+                runner, "create_run_dir",
+                side_effect=lambda prefix: Path(tempfile.mkdtemp(prefix=prefix, dir=self.work)),
+            ))
         with contextlib.ExitStack() as stack:
             for patch in patches:
                 stack.enter_context(patch)

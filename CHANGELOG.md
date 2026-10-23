@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [2.71.0] - 2026-10-23
+
+### Homepage Echoport runners work only on the external disk
+
+- `echoport_backup`: new shared include `templates/_work_dir.py.j2` with the
+  fail-closed work dir logic introduced for UniFi in 2.70.0 (mount check, no
+  fallback to `/tmp` or `/`, `0700` dirs, per-run dir removed in `finally`,
+  retention of leftover run dirs without following symlinks). The UniFi runner
+  now includes it; its rendered behaviour is unchanged (a new
+  `WORK_OWNER_LABEL = "root"` constant names the owner in the same error
+  messages as before; comments differ).
+- `homepage_production_db_backup.py.j2` and `homepage_media_backup.py.j2` use
+  it: per-run dirs move from `echoport_backup_temp_dir` /
+  `homepage_media_backup_temp_dir` (macmini: `/tmp/homepage-production-db-backup`,
+  `/tmp/homepage-media-backup` on the internal root filesystem) to
+  `homepage_prod_db_backup_work_dir` (default
+  `/mnt/cryptdata/backups/tmp/homepage-production-db-backup`) and
+  `homepage_media_backup_work_dir` (default
+  `/mnt/cryptdata/backups/tmp/homepage-media-backup`) on `*_work_mount`
+  (default `/mnt/cryptdata`), retention `*_work_retention_hours` (default 24).
+  Backup and restore (including the nightly staging restore) fail closed
+  before any work; the runners no longer create a temp dir before `main`.
+  Both run as `deploy`, so the work dir must be owned by the runner's
+  effective uid; the control repo's register playbooks must provision it
+  (`deploy:deploy 0700`, traverse-only ACL for `deploy` on the parents) before
+  these runners are registered. Backup files are `0600` (umask `077`); the DB
+  restore chmods the download to `0600` and the extracted dump to `0644` just
+  before the `scp` to staging, where `pg_restore` reads it as `postgres`.
+  The `ALTER SCHEMA public OWNER` step from 2.69.0 is unchanged.
+
 ### Tests
 
 - `tests/test_python_security_floor.py`: the two resolver lifecycle tests that
