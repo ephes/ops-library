@@ -35,7 +35,6 @@ def load_runner(tmp: Path) -> types.ModuleType:
     env.filters["bool"] = to_bool
     defaults = yaml.safe_load((BACKUP_ROLE / "defaults" / "main.yml").read_text())
     defaults["echoport_backup_allowed_roots"] = [str(tmp)]
-    defaults["echoport_backup_temp_dir"] = str(tmp / "work")
     source = env.get_template("backup.py.j2").render(**defaults)
     module = types.ModuleType("echoport_generic_runner")
     exec(compile(source, "backup.py", "exec"), module.__dict__)  # noqa: S102

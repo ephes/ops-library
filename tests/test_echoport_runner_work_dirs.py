@@ -60,6 +60,7 @@ PRECHECKS = (
     "require_commands",
     "validate_ssh_identifiers",
     "validate_identifiers",
+    "mc_alias_configured",  # generic runner: `mc alias list` before the run dir
 )
 
 
@@ -105,6 +106,9 @@ RUNNERS = (
            ("mail_db_echoport_backup_temp_dir",), ("mail_db_backup_", "mail_db_restore_"),
            {"mail_db_echoport_backup_db_name": "mail", "mail_db_echoport_backup_restore_db_prefix": "mail_restore",
             "mail_db_echoport_backup_postgres_os_user": "postgres"}),
+    # Batch C: the generic runner (17 targets), entry points take (config, context, cenv).
+    Runner("backup.py.j2", "echoport_backup", "echoport-backup", True, "main_backup", "main_restore",
+           (), ("echoport_", "echoport_restore_")),
 )
 
 RESTORE_ENV = {
@@ -231,7 +235,7 @@ class RunnerWorkDirTest(unittest.TestCase):
         )
         for name in PRECHECKS:
             if hasattr(runner, name):
-                setattr(runner, name, lambda *a, **kw: {})
+                setattr(runner, name, lambda *a, _name=name, **kw: _name == "mc_alias_configured" or {})
         return runner, work, events, commands
 
     def call(self, runner, entry: str, env: dict):
@@ -239,6 +243,8 @@ class RunnerWorkDirTest(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             try:
+                if entry.startswith("main_"):
+                    return getattr(runner, entry)(None, {"env": dict(env)}, dict(env)), out.getvalue()
                 return getattr(runner, entry)(dict(env)), out.getvalue()
             except Exception as exc:  # noqa: BLE001 - the runner's __main__ reports it
                 return exc, out.getvalue()

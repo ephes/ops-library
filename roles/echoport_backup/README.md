@@ -310,6 +310,7 @@ symlinks; removal failures are reported in `init` and do not stop the run.
 | Echoport self (`echoport_backup.py.j2`) | `echoport_self_backup_work_dir` (`/mnt/cryptdata/backups/tmp/echoport-self-backup`), `echoport_self_backup_work_mount`, `echoport_self_backup_work_retention_hours` | root (runs via `sudo -n`) | `echoport-self-backup-`, `echoport-self-restore-` |
 | Paperless | `paperless_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/paperless-backup`), `paperless_echoport_backup_work_mount`, `paperless_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `paperless-backup-`, `paperless-restore-` |
 | mail DB | `mail_db_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/mail-db-backup`), `mail_db_echoport_backup_work_mount`, `mail_db_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `mail_db_backup_`, `mail_db_restore_` |
+| generic (`backup.py.j2`, all SQLite/file targets) | role defaults `echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/echoport-backup`), `echoport_backup_work_mount` (`/mnt/cryptdata`), `echoport_backup_work_retention_hours` (`24`) | root (runs via `sudo -n`) | `echoport_`, `echoport_restore_` |
 
 The homepage runners run as `deploy` (FastDeploy's `sudo -u deploy`, no rule to
 root: their SSH key and `mc` config belong to `deploy`), so `deploy` cannot
@@ -344,6 +345,13 @@ the run before any command: for runners that validate their configuration
 first, after that validation and before the first write. Free-space checks
 that looked at the old temp dir (Graphyard, FastDeploy, Echoport self and
 Paperless restores) now measure the work dir.
+
+The generic runner serves every SQLite/file target through one work dir, so a
+missing mount fails all of its targets at once. It reports the refusal as an
+`init` failure with `ECHOPORT_RESULT` success `false` (backup and restore),
+after the path and MinIO alias checks and before anything is copied,
+downloaded or stopped. `echoport_backup_temp_dir` stays in the role defaults
+only for the templates that do not include the work dir yet.
 
 The FastDeploy template serves two runners; the weeknotes-home register
 playbook sets `fastdeploy_echoport_backup_work_dir` to its own directory.

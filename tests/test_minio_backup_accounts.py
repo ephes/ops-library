@@ -265,12 +265,20 @@ class GenericRunnerAliasTests(unittest.TestCase):
         defaults["echoport_backup_minio_require_prefix_alias"] = require
         defaults["echoport_backup_mc_install_path"] = str(self.mc)
         defaults["echoport_backup_allowed_roots"] = [str(self.data)]
-        defaults["echoport_backup_temp_dir"] = str(self.tmp / "work")
         return env.get_template("backup.py.j2").render(**defaults)
 
     def load(self, aliases: dict, require: bool = False) -> types.ModuleType:
         module = types.ModuleType("echoport_generic_runner")
         exec(compile(self.render(aliases, require), "backup.py", "exec"), module.__dict__)  # noqa: S102
+        # The external work dir check (_work_dir.py.j2) is covered by
+        # test_echoport_runner_work_dirs; here run dirs go to the test tree.
+        work = self.tmp / "work"
+
+        def create_run_dir(prefix: str) -> Path:
+            work.mkdir(exist_ok=True)
+            return Path(tempfile.mkdtemp(prefix=prefix, dir=work))
+
+        module.create_run_dir = create_run_dir
         return module
 
     def run_action(self, module, known_aliases: list[str], cenv: dict) -> tuple[int, str, str]:

@@ -48,7 +48,17 @@ echoport_backup_mc_version: "RELEASE.2025-08-13T08-35-41Z"
 echoport_backup_mc_checksum: "sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
 echoport_backup_mc_download_url: "https://github.com/minio/mc/releases/download/{{ echoport_backup_mc_version }}/mc.linux-amd64.{{ echoport_backup_mc_version }}"
 
-# Temporary directory for backup operations
+# Per-run work dirs of the generic runner (backup.py.j2), on the external
+# encrypted disk only: the runner refuses to run when the mount is missing and
+# never falls back to /tmp (templates/_work_dir.py.j2). Created root:root 0700
+# by the runner on its first run.
+echoport_backup_work_dir: "/mnt/cryptdata/backups/tmp/echoport-backup"
+echoport_backup_work_mount: "/mnt/cryptdata"
+echoport_backup_work_retention_hours: 24
+
+# Temp dir of the runner templates that do not include _work_dir.py.j2 yet
+# (heis_production_backup.py.j2, villakunterbunt_staging_backup.py.j2). The
+# generic runner and the other templates ignore it.
 echoport_backup_temp_dir: "/tmp/echoport-backup"
 
 # Security: Allowed backup path roots (defense-in-depth)

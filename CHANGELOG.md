@@ -46,6 +46,13 @@ variables of each runner.
   database and feeds it to `psql --file -` on stdin, because `postgres` cannot
   traverse the root-only run dir. `pg_dump` (stdout) and `pg_restore` (stdin)
   already worked that way in the other runners.
+- The generic runner (`backup.py.j2`, all SQLite/file targets): new role
+  defaults `echoport_backup_work_dir`
+  (`/mnt/cryptdata/backups/tmp/echoport-backup`), `echoport_backup_work_mount`
+  and `echoport_backup_work_retention_hours`; it no longer reads
+  `echoport_backup_temp_dir` (default `/tmp/echoport-backup`, kept for the
+  templates that do not include the work dir). A refused work dir is an `init`
+  failure with `ECHOPORT_RESULT` success `false`.
 
 ### Tests
 
@@ -57,8 +64,9 @@ variables of each runner.
   without writing to its target, and that failing runs remove their run dir in
   the work dir. Paperless: `psql` gets the dump on stdin (`--file -`), no path
   and no staging copy, and an unreadable dump fails before `dropdb`.
-  `test_postfixadmin_echoport_backup` and `test_mail_db_echoport_backup` put
-  their run dirs in the test tree instead of `echoport_backup_temp_dir`.
+  `test_postfixadmin_echoport_backup`, `test_mail_db_echoport_backup` and the
+  generic runner tests in `test_minio_backup_accounts` put their run dirs in
+  the test tree instead of `echoport_backup_temp_dir`.
 
 ## [2.71.0] - 2026-10-23
 
