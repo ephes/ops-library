@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +27,15 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ snappymail_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/snappymail-backup') }}"
+WORK_MOUNT = "{{ snappymail_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ snappymail_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("snappymail_backup_", "snappymail_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 # SnappyMail-specific configuration
 DATA_DIR = "{{ snappymail_echoport_backup_data_dir }}"
@@ -152,6 +159,9 @@ def normalize_root(root: str) -> str:
     return normalized
 
 
+{% include '_work_dir.py.j2' %}
+
+
 def path_in_allowed_roots(path: str) -> bool:
     if not path:
         return False
@@ -164,7 +174,7 @@ def path_in_allowed_roots(path: str) -> bool:
 
 
 def validate_config_paths() -> None:
-    configured_paths = [DATA_DIR, APP_DIR, NGINX_SITE, TRAEFIK_CONFIG, PHP_ROOT, TEMP_DIR]
+    configured_paths = [DATA_DIR, APP_DIR, NGINX_SITE, TRAEFIK_CONFIG, PHP_ROOT]
     for cfg_path in configured_paths:
         if cfg_path and not path_in_allowed_roots(cfg_path):
             raise ValueError(f"Configured path outside allowed roots: {cfg_path}")
@@ -482,8 +492,7 @@ def backup_flow(cenv: Dict) -> int:
     php_service = detect_php_service()
     emit_step("init", "success", f"Configuration loaded for {target_name} run {run_id}")
 
-    parent = TEMP_DIR if Path(TEMP_DIR).exists() else None
-    work_dir = Path(tempfile.mkdtemp(prefix="snappymail_backup_", dir=parent))
+    work_dir = create_run_dir("snappymail_backup_")
 
     try:
         payload = work_dir / "payload"
@@ -570,8 +579,7 @@ def restore_flow(cenv: Dict) -> int:
     php_service = detect_php_service()
     emit_step("init", "success", f"Configuration loaded for {target_name} restore {restore_id}")
 
-    parent = TEMP_DIR if Path(TEMP_DIR).exists() else None
-    work_dir = Path(tempfile.mkdtemp(prefix="snappymail_restore_", dir=parent))
+    work_dir = create_run_dir("snappymail_restore_")
     services_stopped = {"nginx": False, "php": False}
     destructive_started = False
     rollback_executed = False
@@ -732,8 +740,6 @@ if __name__ == "__main__":
             stderr=sys.stderr,
         )
         sys.exit(result.returncode)
-
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())

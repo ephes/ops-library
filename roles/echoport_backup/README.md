@@ -270,12 +270,12 @@ host's key is pinned; the new forms also work unpinned.
 
 ## External work dir (`_work_dir.py.j2`)
 
-`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. It is
-included by `unifi_backup.py.j2`, `homepage_production_db_backup.py.j2` and
-`homepage_media_backup.py.j2`; other runners can adopt it the same way (see
-the header of the include for the constants a template defines first). Runners
-that include it do not read `echoport_backup_temp_dir` or their old
-`*_temp_dir` variable and never fall back to `/tmp`, `/` or the system temp dir.
+`templates/_work_dir.py.j2` is the shared fail-closed work dir logic. The
+runners in the table below include it (see the header of the include for the
+constants a template defines first); templates not in the table still use
+`echoport_backup_temp_dir`. Runners that include it do not read
+`echoport_backup_temp_dir` or their old `*_temp_dir` variable and never fall
+back to `/tmp`, `/` or the system temp dir.
 
 Before any other work (for the homepage DB runner: before `pg_dump` on
 production, before the MinIO download and before staging is touched), a run
@@ -299,13 +299,35 @@ symlinks; removal failures are reported in `init` and do not stop the run.
 | UniFi | `unifi_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/unifi-backup`), `unifi_echoport_backup_work_mount` (`/mnt/cryptdata`), `unifi_echoport_backup_work_retention_hours` (`24`) | root (runs via `sudo -n`) | `unifi_backup_`, `unifi_restore_` |
 | homepage production DB | `homepage_prod_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-production-db-backup`), `homepage_prod_db_backup_work_mount` (`/mnt/cryptdata`), `homepage_prod_db_backup_work_retention_hours` (`24`) | the runner user (`deploy`) | `homepage-backup-`, `homepage-restore-` |
 | homepage media | `homepage_media_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-media-backup`), `homepage_media_backup_work_mount` (`/mnt/cryptdata`), `homepage_media_backup_work_retention_hours` (`24`) | the runner user (`deploy`) | `homepage-media-` |
+| delve | `delve_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/delve-backup`), `delve_echoport_backup_work_mount`, `delve_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `delve_backup_`, `delve_restore_` |
+| SnappyMail | `snappymail_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/snappymail-backup`), `snappymail_echoport_backup_work_mount`, `snappymail_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `snappymail_backup_`, `snappymail_restore_` |
+| Vaultwarden | `vaultwarden_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/vaultwarden-backup`), `vaultwarden_echoport_backup_work_mount`, `vaultwarden_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `vaultwarden_backup_`, `vaultwarden_restore_` |
+| PostfixAdmin | `postfixadmin_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/postfixadmin-backup`), `postfixadmin_echoport_backup_work_mount`, `postfixadmin_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `postfixadmin_backup_`, `postfixadmin_restore_` |
+| Minecraft Java | `minecraft_java_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/minecraft-java-backup`), `minecraft_java_echoport_backup_work_mount`, `minecraft_java_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `minecraft_backup_`, `minecraft_restore_` |
+| Home Assistant | `homeassistant_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homeassistant-backup`), `homeassistant_backup_work_mount`, `homeassistant_backup_work_retention_hours` | root (runs via `sudo -n`) | `ha-backup-`, `ha-restore-` |
+| Graphyard | `graphyard_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/graphyard-backup`), `graphyard_echoport_backup_work_mount`, `graphyard_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `graphyard-backup-`, `graphyard-restore-` |
+| FastDeploy, weeknotes-home (`fastdeploy_backup.py.j2`) | `fastdeploy_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/fastdeploy-backup`), `fastdeploy_echoport_backup_work_mount`, `fastdeploy_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `fd-backup-`, `fd-restore-` |
+| Echoport self (`echoport_backup.py.j2`) | `echoport_self_backup_work_dir` (`/mnt/cryptdata/backups/tmp/echoport-self-backup`), `echoport_self_backup_work_mount`, `echoport_self_backup_work_retention_hours` | root (runs via `sudo -n`) | `echoport-self-backup-`, `echoport-self-restore-` |
+| Paperless | `paperless_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/paperless-backup`), `paperless_echoport_backup_work_mount`, `paperless_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `paperless-backup-`, `paperless-restore-` |
+| mail DB | `mail_db_echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/mail-db-backup`), `mail_db_echoport_backup_work_mount`, `mail_db_echoport_backup_work_retention_hours` | root (runs via `sudo -n`) | `mail_db_backup_`, `mail_db_restore_` |
+| generic (`backup.py.j2`, all SQLite/file targets) | role defaults `echoport_backup_work_dir` (`/mnt/cryptdata/backups/tmp/echoport-backup`), `echoport_backup_work_mount` (`/mnt/cryptdata`), `echoport_backup_work_retention_hours` (`24`) | root (runs via `sudo -n`) | `echoport_`, `echoport_restore_` |
+| django-chat staging DB, ggs-lennestrasse staging DB, mastodon production DB (`django_chat_staging_db_backup.py.j2`) | `django_chat_staging_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/django-chat-staging-db-backup`), `django_chat_staging_db_backup_work_mount`, `django_chat_staging_db_backup_work_retention_hours` | the runner user (`deploy`) | `django_chat_db_backup_`, `django_chat_db_restore_` |
+| GoToSocial | `gotosocial_backup_work_dir` (`/mnt/cryptdata/backups/tmp/gotosocial-backup`), `gotosocial_backup_work_mount`, `gotosocial_backup_work_retention_hours` | the runner user (`deploy`) | `gotosocial-backup-`, `gotosocial-restore-` |
+| marina staging, marina production (`marina_staging_backup.py.j2`) | `marina_staging_backup_work_dir` (`/mnt/cryptdata/backups/tmp/marina-staging-backup`), `marina_staging_backup_work_mount`, `marina_staging_backup_work_retention_hours` | the runner user (`deploy`) | `marina-backup-`, `marina-restore-` |
+| python-podcast media | `python_podcast_media_backup_work_dir` (`/mnt/cryptdata/backups/tmp/python-podcast-media-backup`), `python_podcast_media_backup_work_mount`, `python_podcast_media_backup_work_retention_hours` | the runner user (`deploy`) | `python-podcast-media-` |
+| python-podcast production DB | `pp_prod_db_backup_work_dir` (`/mnt/cryptdata/backups/tmp/python-podcast-production-db-backup`), `pp_prod_db_backup_work_mount`, `pp_prod_db_backup_work_retention_hours` | the runner user (`deploy`) | `pp-backup-`, `pp-restore-` |
+| python-podcast staging | `pp_staging_backup_work_dir` (`/mnt/cryptdata/backups/tmp/python-podcast-staging-backup`), `pp_staging_backup_work_mount`, `pp_staging_backup_work_retention_hours` | the runner user (`deploy`) | `pp-backup-`, `pp-restore-` |
+| homepage staging | `homepage_staging_backup_work_dir` (`/mnt/cryptdata/backups/tmp/homepage-staging-backup`), `homepage_staging_backup_work_mount`, `homepage_staging_backup_work_retention_hours` | the runner user (`deploy`) | `homepage-backup-`, `homepage-restore-` |
 
-The homepage runners run as `deploy` (FastDeploy's `sudo -u deploy`, no rule to
-root: their SSH key and `mc` config belong to `deploy`), so `deploy` cannot
-create directories below `/mnt/cryptdata/backups` (`root:postgres 0770`). The
-register playbook in the control repo provisions the work dir (`deploy:deploy
-0700`) and a traverse-only ACL for `deploy` on the parents; without that the run
-fails closed in `init` with a permission error.
+The runners marked "the runner user" run as `deploy` (FastDeploy's
+`sudo -u deploy`, no rule to root: their SSH key and `mc` config belong to
+`deploy`), so `deploy` cannot create directories below `/mnt/cryptdata/backups`
+(`root:postgres 0770`). The register playbook in the control repo provisions
+the work dir (`deploy:deploy 0700`) and a traverse-only ACL for `deploy` on the
+parents; without that the run fails closed in `init` with a permission error.
+Templates shared by several runners (django-chat/ggs/mastodon, marina
+staging/production) default to the first runner's directory; the register
+playbooks of the others set `<prefix>_work_dir` to their own directory.
 
 File modes in the homepage runners:
 
@@ -318,6 +340,51 @@ File modes in the homepage runners:
   carry the dump as `0600`). Locally it stays private inside the `0700` run dir;
 - media: umask `077` for backup and restore (rclone config with credentials and
   the manifest are `0600`; objects go S3 <-> MinIO without touching the disk).
+
+Deploy runners that copy a dump to staging for `pg_restore` as `postgres`
+(python-podcast production DB, python-podcast staging, homepage staging) chmod
+the extracted dump to `0644` right before the `scp`, like the homepage
+production DB restore, so an archive that carries the dump as `0600` still
+restores. The python-podcast media runner works like the homepage media
+runner: umask `077`, and its rclone config (S3 and MinIO credentials) is
+created `0600` with `O_EXCL`.
+
+The other runners keep the process umask. Their files are private because the
+run dir is `0700` below a `0700` work dir (root runners: `root:root`), and the
+archives keep the modes they had before, so a restore puts files back into
+live paths with the same modes as before the move. Where a runner already set
+modes explicitly (for example `0600` for credentials or a restored database),
+that is unchanged.
+
+Root runners (they re-run themselves through `sudo -n`) create their work dir
+`root:root 0700` on the first run; `/mnt/cryptdata/backups/tmp` must exist
+(the control repo does not provision anything for them). A missing mount fails
+the run before any command: for runners that validate their configuration
+first, after that validation and before the first write. Free-space checks
+that looked at the old temp dir (Graphyard, FastDeploy, Echoport self and
+Paperless restores) now measure the work dir.
+
+The generic runner serves every SQLite/file target through one work dir, so a
+missing mount fails all of its targets at once. It reports the refusal as an
+`init` failure with `ECHOPORT_RESULT` success `false` (backup and restore),
+after the path and MinIO alias checks and before anything is copied,
+downloaded or stopped. `echoport_backup_temp_dir` stays in the role defaults
+only for the templates that do not include the work dir yet.
+
+The FastDeploy template serves two runners; the weeknotes-home register
+playbook sets `fastdeploy_echoport_backup_work_dir` to its own directory.
+
+PostgreSQL steps never read or write the work dir as `postgres`, which cannot
+traverse the root-only run dir:
+
+- `pg_dump` runs as `postgres` and writes to stdout; the runner (root) writes
+  the file (FastDeploy, Paperless, mail DB);
+- `pg_restore` (FastDeploy, mail DB) and the Paperless `psql` restore read the
+  dump on stdin. The Paperless restore used to copy the dump to
+  `<temp dir>/restore-db/` (outside the run dir, `0644`) and pass that path to
+  `psql --file`; it now opens the dump in the run dir before dropping the
+  database and runs `psql --file -` with the file on stdin, so nothing is
+  staged outside the run dir.
 
 ## UniFi Template Notes
 

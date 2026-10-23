@@ -34,7 +34,6 @@ def render_runner(temp_dir: Path, **overrides: Any) -> types.ModuleType:
         "echoport_backup_mc_install_path": "/usr/local/bin/mc",
         "echoport_backup_minio_alias": "backup-mail-db",
         "echoport_backup_default_bucket": "backups",
-        "echoport_backup_temp_dir": str(temp_dir),
         "mail_db_echoport_backup_db_name": "mail",
         "mail_db_echoport_backup_postgres_os_user": "postgres",
         "mail_db_echoport_backup_restore_db_prefix": "mail_restore",
@@ -46,6 +45,13 @@ def render_runner(temp_dir: Path, **overrides: Any) -> types.ModuleType:
     module = types.ModuleType("mail_db_backup_test")
     module.__file__ = str(TEMPLATE_DIR / TEMPLATE)
     exec(compile(source, module.__file__, "exec"), module.__dict__)
+    # The external work dir check (_work_dir.py.j2) is covered by
+    # test_echoport_runner_work_dirs; here run dirs go to temp_dir.
+    def create_run_dir(prefix: str) -> Path:
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix=prefix, dir=temp_dir))
+
+    module.create_run_dir = create_run_dir
     return module
 
 

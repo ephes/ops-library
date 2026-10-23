@@ -12,7 +12,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +31,15 @@ MINIO_PREFIX_ALIASES = {{ echoport_backup_minio_prefix_aliases | to_json }}
 # Refuse keys whose first segment has no entry instead of using MINIO_ALIAS.
 MINIO_REQUIRE_PREFIX_ALIAS = {{ 'True' if echoport_backup_minio_require_prefix_alias | bool else 'False' }}
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/echoport-backup') }}"
+WORK_MOUNT = "{{ echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("echoport_", "echoport_restore_")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 # Security: Allowed backup path roots (defense-in-depth)
 # Only paths under these directories can be backed up.
@@ -148,6 +155,25 @@ def emit_echoport_result(success: bool, bucket: str = "", key: str = "",
     # Echoport parses ECHOPORT_RESULT: prefix from step messages
     result_json = json.dumps(result)
     update_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
+
+
+emit_step = update_step  # the name _work_dir.py.j2 reports through
+
+
+{% include '_work_dir.py.j2' %}
+
+
+def open_run_dir(prefix: str) -> Optional[Path]:
+    """Return a fresh run dir, or report the refusal in init and return None."""
+    try:
+        return create_run_dir(prefix)
+    except Exception as e:
+        error_msg = f"Work directory check failed: {e}"
+        print(error_msg, file=sys.stderr)
+        update_step("init", "failure", error_msg)
+        emit_echoport_result(False, error=error_msg)
+        finish_deployment("failure", error_msg)
+        return None
 
 
 def validate_path(path: str) -> bool:
@@ -795,8 +821,10 @@ def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
 
     update_step("init", "success", f"Configuration loaded for {target_name}")
 
-    # Create temporary work directory
-    work_dir = Path(tempfile.mkdtemp(prefix="echoport_restore_", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    # Fail closed: the run dir must be on WORK_MOUNT (no fallback to /tmp).
+    work_dir = open_run_dir("echoport_restore_")
+    if work_dir is None:
+        return 1
     restore_dir = work_dir / "restore"
     restore_dir.mkdir(parents=True)
 
@@ -1026,8 +1054,10 @@ def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
 
     update_step("init", "success", f"Configuration loaded for {target_name}")
 
-    # Create temporary backup directory
-    work_dir = Path(tempfile.mkdtemp(prefix="echoport_", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    # Fail closed: the run dir must be on WORK_MOUNT (no fallback to /tmp).
+    work_dir = open_run_dir("echoport_")
+    if work_dir is None:
+        return 1
     backup_dir = work_dir / "backup"
     backup_dir.mkdir(parents=True)
 
@@ -1162,9 +1192,6 @@ if __name__ == "__main__":
         args = ["sudo", "-n", script_path] + sys.argv[1:]
         result = subprocess.run(args, stdout=sys.stdout, stderr=sys.stderr)
         sys.exit(result.returncode)
-
-    # Ensure temp directory exists
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())

@@ -134,7 +134,6 @@ class Harness:
             "echoport_backup_mc_install_path": str(self.bin / "mc"),
             "echoport_backup_minio_alias": "backup-gotosocial",
             "echoport_backup_default_bucket": "backups",
-            "echoport_backup_temp_dir": str(self.root / "runner-tmp"),
             "gotosocial_backup_remote_host": "fedi.example.org",
             "gotosocial_backup_data_dir": str(self.data),
             "gotosocial_backup_db_path": str(self.db),
@@ -148,6 +147,9 @@ class Harness:
         module = types.ModuleType("gotosocial_backup_test")
         module.__file__ = str(TEMPLATE_DIR / TEMPLATE)
         exec(compile(source, module.__file__, "exec"), module.__dict__)
+        # The external work dir check (_work_dir.py.j2) is covered by
+        # test_echoport_runner_work_dirs; here run dirs go to runner-tmp.
+        module.create_run_dir = lambda prefix: Path(tempfile.mkdtemp(prefix=prefix, dir=self.root / "runner-tmp"))
 
         harness = self
 

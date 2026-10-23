@@ -17,7 +17,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +31,15 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ homeassistant_backup_work_dir | default('/mnt/cryptdata/backups/tmp/homeassistant-backup') }}"
+WORK_MOUNT = "{{ homeassistant_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ homeassistant_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("ha-backup-", "ha-restore-")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 # Home Assistant-specific configuration from Ansible
 SITE_ROOT = "{{ homeassistant_backup_site_root }}"
@@ -220,6 +227,9 @@ def normalize_root(root: str) -> str:
     if not normalized.endswith(os.sep):
         normalized += os.sep
     return normalized
+
+
+{% include '_work_dir.py.j2' %}
 
 
 def path_in_allowed_roots(path: str) -> bool:
@@ -532,7 +542,7 @@ def backup(cenv: Dict) -> int:
     key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{target}/{timestamp}")
     bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
 
-    work_dir = Path(tempfile.mkdtemp(prefix="ha-backup-", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    work_dir = create_run_dir("ha-backup-")
     stage_dir = work_dir / "backup"
     stage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -744,7 +754,7 @@ def restore(cenv: Dict) -> int:
         finish_stdout("failure", error)
         return 1
 
-    work_dir = Path(tempfile.mkdtemp(prefix="ha-restore-", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    work_dir = create_run_dir("ha-restore-")
     tarball_path = work_dir / "backup.tar.gz"
     extract_dir = work_dir / "extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)
@@ -1006,8 +1016,6 @@ if __name__ == "__main__":
         script_path = os.path.abspath(__file__)
         result = subprocess.run(["sudo", "-n", script_path] + sys.argv[1:], stdout=sys.stdout, stderr=sys.stderr)
         sys.exit(result.returncode)
-
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())

@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +32,15 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
-TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# Per-run work dirs live on the external encrypted disk only (fail closed, see
+# _work_dir.py.j2): no fallback to /tmp, / or the system temp dir.
+WORK_DIR = "{{ fastdeploy_echoport_backup_work_dir | default('/mnt/cryptdata/backups/tmp/fastdeploy-backup') }}"
+WORK_MOUNT = "{{ fastdeploy_echoport_backup_work_mount | default('/mnt/cryptdata') }}"
+WORK_RETENTION_HOURS = max(1, {{ fastdeploy_echoport_backup_work_retention_hours | default(24) | int(24) }})
+RUN_DIR_PREFIXES = ("fd-backup-", "fd-restore-")
+# The runner re-runs itself as root (sudo -n): WORK_DIR must belong to root.
+WORK_OWNER_UID = 0
+WORK_OWNER_LABEL = "root"
 
 # FastDeploy-specific configuration from Ansible
 SITE_ROOT = "{{ fastdeploy_echoport_backup_site_root }}"
@@ -252,6 +259,9 @@ def normalize_root(root: str) -> str:
     if not normalized.endswith(os.sep):
         normalized += os.sep
     return normalized
+
+
+{% include '_work_dir.py.j2' %}
 
 
 def path_in_allowed_roots(path: str) -> bool:
@@ -533,18 +543,6 @@ def get_free_bytes_for_path(path: Path) -> int:
     return stat.f_bavail * stat.f_frsize
 
 
-def get_temp_parent_dir() -> str | None:
-    """
-    Return writable temp parent dir for mkdtemp, or None for system default.
-
-    This avoids hard-failing when the configured TEMP_DIR exists but the
-    runtime user does not have write/execute permissions.
-    """
-    if TEMP_DIR and Path(TEMP_DIR).exists() and os.access(TEMP_DIR, os.W_OK | os.X_OK):
-        return TEMP_DIR
-    return None
-
-
 def estimate_current_db_size() -> int:
     result = run_cmd(
         build_postgres_command(
@@ -586,7 +584,7 @@ def disk_space_precheck(tarball_path: Path) -> None:
 
     required_bytes = int(math.ceil(extracted_payload_bytes * DISK_SPACE_MULTIPLIER) + safety_snapshot_bytes)
 
-    filesystem_paths = [Path(SITE_ROOT), Path(RUNNER_ROOT), Path(TEMP_DIR)]
+    filesystem_paths = [Path(SITE_ROOT), Path(RUNNER_ROOT), Path(WORK_DIR)]
     if INCLUDE_WORKSPACE:
         filesystem_paths.append(Path(WORKSPACE_PATH))
     free_bytes = min(get_free_bytes_for_path(p) for p in filesystem_paths)
@@ -745,7 +743,7 @@ def backup(cenv: Dict) -> int:
     key = resolve_backup_key(cenv, target, timestamp)
     bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
 
-    work_dir = Path(tempfile.mkdtemp(prefix="fd-backup-", dir=get_temp_parent_dir()))
+    work_dir = create_run_dir("fd-backup-")
     stage_dir = work_dir / "backup"
     stage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -898,7 +896,7 @@ def restore(cenv: Dict) -> int:
         finish_stdout("failure", error)
         return 1
 
-    work_dir = Path(tempfile.mkdtemp(prefix="fd-restore-", dir=get_temp_parent_dir()))
+    work_dir = create_run_dir("fd-restore-")
     tarball_path = work_dir / "backup.tar.gz"
     extract_dir = work_dir / "extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)
@@ -1089,8 +1087,6 @@ if __name__ == "__main__":
         script_path = os.path.abspath(__file__)
         result = subprocess.run(["sudo", "-n", script_path] + sys.argv[1:], stdout=sys.stdout, stderr=sys.stderr)
         sys.exit(result.returncode)
-
-    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
         sys.exit(main())

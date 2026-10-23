@@ -36,7 +36,6 @@ def render_runner() -> types.ModuleType:
         echoport_backup_mc_install_path="/usr/local/bin/mc",
         echoport_backup_minio_alias="backup-fastdeploy",
         echoport_backup_default_bucket="backups",
-        echoport_backup_temp_dir="/tmp/fastdeploy-backup",
         fastdeploy_echoport_backup_allowed_roots=["/home/fastdeploy/", "/tmp/"],
         fastdeploy_echoport_backup_check_disk_space=True,
         fastdeploy_echoport_backup_cleanup_safety_snapshot=True,

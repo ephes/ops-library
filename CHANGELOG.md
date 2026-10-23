@@ -2,6 +2,96 @@
 
 ## [Unreleased]
 
+## [2.72.0] - 2026-10-23
+
+### Echoport runners work only on the external disk
+
+The Echoport runner templates listed below now include `_work_dir.py.j2`: per-run
+dirs move from `echoport_backup_temp_dir` or the runner's `*_temp_dir`
+(macmini: `/tmp/<runner>` or `/var/tmp/<runner>` on the internal root
+filesystem) to `<prefix>_work_dir` (default
+`/mnt/cryptdata/backups/tmp/<runner>`) on `<prefix>_work_mount` (default
+`/mnt/cryptdata`), with retention `<prefix>_work_retention_hours` (default
+24). Backup and restore fail closed when the mount is missing or wrong; there
+is no fallback to `/tmp`, `/` or the system temp dir any more (several runners
+used to fall back silently when the temp dir was missing or not writable), and
+no runner creates a temp dir before `main`. The old variables are ignored by
+these runners; templates not listed keep using `echoport_backup_temp_dir`.
+The runners keep the process umask: run dirs are `0700` below a `0700` work
+dir, and archive member modes, and so the modes a restore writes into live
+paths, are unchanged. See the role README ("External work dir") for the
+variables of each runner.
+
+- Root runners (work dir `root:root 0700`, created by the runner on its first
+  run): delve (`delve_echoport_backup_*`), SnappyMail
+  (`snappymail_echoport_backup_*`), Vaultwarden
+  (`vaultwarden_echoport_backup_*`), PostfixAdmin
+  (`postfixadmin_echoport_backup_*`), Minecraft Java
+  (`minecraft_java_echoport_backup_*`), Home Assistant
+  (`homeassistant_backup_*`) and Graphyard (`graphyard_echoport_backup_*`).
+  Their path validation no longer lists the temp dir (the include checks the
+  work dir more strictly), so the control repo can drop the `/tmp/<runner>/`
+  entries from `*_allowed_roots`. The Graphyard restore free-space check
+  measures the work dir instead of the old temp dir. The Minecraft restore
+  creates its run dir after resolving the world target, so a failing check no
+  longer leaves an empty run dir behind.
+- Root runners with PostgreSQL or the former `get_temp_parent_dir()`
+  fallback: FastDeploy and weeknotes-home (`fastdeploy_backup.py.j2`,
+  `fastdeploy_echoport_backup_*`; weeknotes-home sets its own work dir),
+  Echoport self (`echoport_backup.py.j2`, `echoport_self_backup_*`), Paperless
+  (`paperless_echoport_backup_*`) and the mail DB runner
+  (`mail_db_echoport_backup_*`, previously `/var/tmp/mail-db-backup` on the
+  root filesystem). `get_temp_parent_dir()` is gone; the restore free-space
+  checks measure the work dir. The Paperless database restore no longer
+  stages a `0644` copy of the dump in `<temp dir>/restore-db/` for
+  `psql --file <path>`: it opens the dump in the run dir before dropping the
+  database and feeds it to `psql --file -` on stdin, because `postgres` cannot
+  traverse the root-only run dir. `pg_dump` (stdout) and `pg_restore` (stdin)
+  already worked that way in the other runners.
+- The generic runner (`backup.py.j2`, all SQLite/file targets): new role
+  defaults `echoport_backup_work_dir`
+  (`/mnt/cryptdata/backups/tmp/echoport-backup`), `echoport_backup_work_mount`
+  and `echoport_backup_work_retention_hours`; it no longer reads
+  `echoport_backup_temp_dir` (default `/tmp/echoport-backup`, kept for the
+  templates that do not include the work dir). A refused work dir is an `init`
+  failure with `ECHOPORT_RESULT` success `false`.
+- Deploy runners (no sudo to root; the work dir is `deploy:deploy 0700` and
+  must be provisioned by the control repo's register playbook, like the
+  homepage runners): `django_chat_staging_db_backup.py.j2`
+  (`django_chat_staging_db_backup_*`; used by django-chat staging DB,
+  ggs-lennestrasse staging DB and mastodon production DB, which used
+  `/var/tmp/<runner>`), GoToSocial (`gotosocial_backup_*`),
+  `marina_staging_backup.py.j2` (`marina_staging_backup_*`; marina staging
+  and marina production), python-podcast media
+  (`python_podcast_media_backup_*`), python-podcast production DB
+  (`pp_prod_db_backup_*`), python-podcast staging (`pp_staging_backup_*`) and
+  homepage staging (`homepage_staging_backup_*`). A refused work dir fails
+  the run before any SSH, `mc` or rclone call: as an `init` failure, or, in
+  the django-chat and mail DB templates, through their existing error step
+  ("Work directory check failed: ..."). The three runners whose
+  restore copies the dump to staging for `pg_restore` as `postgres` chmod it
+  to `0644` right before the `scp`. The python-podcast media runner sets
+  umask `077` and creates its rclone config `0600` with `O_EXCL` (it used to
+  write it with the process umask and chmod it afterwards).
+
+### Tests
+
+- New `tests/test_echoport_runner_work_dirs.py` (`just
+  test-echoport-runner-work-dirs`, part of `just test`): for every migrated
+  runner the rendered defaults and overrides, that the old temp dir variables
+  are ignored, that backup and restore refuse before any command and before
+  `mkdtemp` when the mount is missing, that a symlinked work dir is refused
+  without writing to its target, and that failing runs remove their run dir in
+  the work dir. Paperless: `psql` gets the dump on stdin (`--file -`), no path
+  and no staging copy, and an unreadable dump fails before `dropdb`.
+  The staging restore runners upload a `0644` dump from the work dir even
+  when the archive carries it `0600`; the python-podcast media rclone config
+  is `0600` under umask `022`. `test_postfixadmin_echoport_backup`,
+  `test_mail_db_echoport_backup`, `test_django_chat_staging_db_backup`,
+  `test_gotosocial_echoport_backup`, the generic runner tests in
+  `test_minio_backup_accounts` and the GoToSocial guard test put their run
+  dirs in the test tree instead of `echoport_backup_temp_dir`.
+
 ## [2.71.0] - 2026-10-23
 
 ### Homepage Echoport runners work only on the external disk
