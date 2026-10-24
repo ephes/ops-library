@@ -9,6 +9,7 @@ daybook_operations_runtime_deploy
 
 daybook_operations_api_deploy
 
+wagtail_deploy
 fastdeploy_deploy
 fastdeploy_self_deploy
 daybook_sessions_deploy

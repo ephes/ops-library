@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2.74.0] - 2026-10-24
+
+### Security runtime provisioning
+
+- Raise the verified uv default to 0.13.5 so its managed-Python catalog includes
+  CPython 3.15.1. Extract `wagtail_deploy/tasks/runtime.yml` for runtime-only
+  preparation with optional existing trust-floor verification and no service
+  restart by default. Preserve normal deploy restart notifications and retain
+  older interpreter patches for rollback.
+
 ### Docs
 
 - `mail_backend_deploy`: the README and defaults said a local-delivery client

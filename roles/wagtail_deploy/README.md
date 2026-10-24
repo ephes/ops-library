@@ -261,3 +261,43 @@ MIT
 Source and dependency changes notify the existing restart handlers after deployment.
 Wagtail restarts its web service and, when enabled, the database worker. Unchanged syncs do not request a restart.
 The `wagtail_service_restart_on_change` setting (default `true`) controls these handlers.
+
+## Runtime-only provisioning
+
+Import `local.ops_library.wagtail_deploy` with `tasks_from: runtime.yml` to
+install uv and a requested managed Python without syncing source/dependencies,
+recreating a venv, migrating data or restarting a service. The existing service
+user and home must already exist. Set `wagtail_user`, `wagtail_home`,
+`wagtail_uv_path` and an exact `wagtail_python_version`, with an explicit matching
+`wagtail_runtime_expected_version` (default empty, refused standalone); set
+`wagtail_runtime_verify_trust: true` to verify the installed runtime with the
+existing `python_security_floor` checker. Its default is false to preserve the
+normal deploy's existing environment verification path.
+
+`wagtail_runtime_notify_restarts` defaults to false for this entry. The normal
+`python.yml` flow explicitly enables its previous restart notifications. The
+runtime-only entry does not dispatch app restarts; a reviewed app deployment
+must follow a patch installation. uv can move its managed minor-version link,
+so an existing venv may resolve the new interpreter even before it is resynced.
+Retain the old exact-patch runtime for rollback; this entry never uninstalls it.
+`wagtail_runtime_install_bin` defaults to false (`python.yml` sets it true).
+`--no-bin` avoids replacing user-facing executables in the user's bin directory.
+
+The default uv is 0.13.5, with published release checksums, whose catalog includes
+the 20261021 CPython 3.15.1 standalone builds. For the standard Linux x86-64 GNU
+build, the complete 38,075,450-byte archive matched the official asset SHA-256;
+its bundled pip 26.2.2 wheel vendors certifi 2026.10.19 and lacks both configured
+distrusted roots. Runtime provisioning is an explicit managed install, never an
+implicit `uv sync` download. Callers should disable automatic interpreter
+downloads for later application syncs and qualify the exact app lock/runtime.
+
+The real Linux boundary test (`tests/run_wagtail_runtime_boundary.py`) reproduces
+an existing minor-aliased venv: installing 3.15.1 retargets that venv from 3.15.0
+to 3.15.1 immediately. This installation is therefore a live runtime mutation,
+not harmless preparation. Keep runtime install and the qualified app deploy in
+one coordinated service window. The same test proves rollback via normal
+`uv sync --frozen --no-default-groups --python 3.15.0` with the matching old
+source/lock; no manual symlink or venv repair is part of that rollback. Both
+exact interpreter installations remain. Rehearsal fixture setup is confined to
+a disposable prefix; production runtime installs never manipulate venv links
+by hand. The dedicated Linux CI runs this test and the local role/uv-sync tests.

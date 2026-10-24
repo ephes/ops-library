@@ -70,7 +70,7 @@ metube_basic_auth_remove_header: true
 metube_repo_url: https://github.com/alexta69/metube.git
 metube_repo_version: master
 metube_manage_uv: true
-metube_uv_version: "0.13.4"  # Keep aligned with uv_install version/checksums.
+metube_uv_version: "0.13.5"  # Keep aligned with uv_install version/checksums.
 metube_uv_path: /usr/local/bin/uv
 metube_python_version: "3.14"
 metube_nodejs_version: 24

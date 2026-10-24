@@ -1,40 +1,18 @@
 ---
 # Setup Python environment for Wagtail
 
-- name: python | Ensure uv binary is installed
-  ansible.builtin.import_role:
-    name: uv_install
+- name: python | Provision and verify managed runtime
+  ansible.builtin.import_tasks: runtime.yml
   vars:
-    uv_install_dir: "{{ wagtail_uv_path | dirname }}"
-
-- name: python | Check for requested Python version
-  ansible.builtin.command:
-    cmd: "{{ wagtail_uv_path }} python find {{ wagtail_python_version }}"
-  register: _wagtail_uv_python_find
-  become: true
-  become_user: "{{ wagtail_user }}"
-  changed_when: false
-  failed_when: false
-  when: wagtail_python_version | length > 0
-
-- name: python | Install requested Python version via uv
-  ansible.builtin.command:
-    cmd: "{{ wagtail_uv_path }} python install {{ wagtail_python_version }}"
-  become: true
-  become_user: "{{ wagtail_user }}"
-  when:
-    - wagtail_python_version | length > 0
-    - _wagtail_uv_python_find.rc != 0
-  # A new patch moves uv's cpython-<minor> link, so the existing virtualenv
-  # already reports it and is not rebuilt. Restart so the running processes
-  # leave the old interpreter.
-  notify:
-    - restart wagtail
-    - restart wagtail db worker
+    wagtail_runtime_notify_restarts: true
+    wagtail_runtime_install_bin: true
 
 - name: python | Determine Python executable path
   ansible.builtin.command:
-    cmd: "{{ wagtail_uv_path }} python find {{ wagtail_python_version }}"
+    cmd: "{{ wagtail_uv_path }} --no-config python find --no-python-downloads {{ wagtail_python_version }}"
+    chdir: "{{ wagtail_home }}"
+  environment:
+    HOME: "{{ wagtail_home }}"
   register: _wagtail_python_exec_path
   become: true
   become_user: "{{ wagtail_user }}"

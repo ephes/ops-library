@@ -1,0 +1,39 @@
+---
+name: Wagtail runtime boundary
+"on":
+  push:
+    paths:
+      - "roles/wagtail_deploy/**"
+      - "roles/uv_install/**"
+      - "roles/python_security_floor/**"
+      - "tests/test_wagtail_runtime.py"
+      - "tests/run_wagtail_runtime_boundary.py"
+      - "tests/test_wagtail_uv_sync.py"
+      - ".github/workflows/wagtail-runtime.yml"
+  pull_request:
+    paths:
+      - "roles/wagtail_deploy/**"
+      - "roles/uv_install/**"
+      - "roles/python_security_floor/**"
+      - "tests/test_wagtail_runtime.py"
+      - "tests/run_wagtail_runtime_boundary.py"
+      - "tests/test_wagtail_uv_sync.py"
+      - ".github/workflows/wagtail-runtime.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.13.5"
+      - name: Exercise local fake-runtime and real dependency-sync boundaries
+        run: >-
+          uv run --no-project --python 3.14 --with ansible-core --with pytest
+          --with pyyaml python -m pytest -q tests/test_wagtail_runtime.py
+          tests/test_wagtail_uv_sync.py
+      - name: Verify real Linux patch installation and managed rollback
+        run: uv run --no-project --python 3.14 python tests/run_wagtail_runtime_boundary.py uv

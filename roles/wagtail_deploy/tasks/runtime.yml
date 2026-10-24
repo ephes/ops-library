@@ -1,0 +1,79 @@
+---
+# Runtime only: no venv, dependencies, source or service changes by default.
+
+- name: runtime | Require an explicit exact standalone patch
+  ansible.builtin.assert:
+    that:
+      - wagtail_runtime_expected_version is match('^[0-9]+[.][0-9]+[.][0-9]+$')
+      - wagtail_python_version == wagtail_runtime_expected_version
+    fail_msg: "Set an exact standalone runtime expected version matching wagtail_python_version."
+  when: not (wagtail_runtime_notify_restarts | bool)
+
+- name: runtime | Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ wagtail_uv_path | dirname }}"
+
+- name: runtime | Check for requested Python version
+  ansible.builtin.command:
+    cmd: "{{ wagtail_uv_path }} --no-config python find --no-python-downloads {{ wagtail_python_version }}"
+    chdir: "{{ wagtail_home }}"
+  environment:
+    HOME: "{{ wagtail_home }}"
+  register: _wagtail_uv_python_find
+  become: true
+  become_user: "{{ wagtail_user }}"
+  changed_when: false
+  failed_when: false
+  when: wagtail_python_version | length > 0
+
+- name: runtime | Install requested Python version via uv
+  ansible.builtin.command:
+    cmd: "{{ wagtail_uv_path }} --no-config python install {{ '' if wagtail_runtime_install_bin | bool else '--no-bin ' }}{{ wagtail_python_version }}"
+    chdir: "{{ wagtail_home }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  environment:
+    HOME: "{{ wagtail_home }}"
+  when:
+    - wagtail_python_version | length > 0
+    - _wagtail_uv_python_find.rc != 0
+  # A new patch moves uv's cpython-<minor> link, so the existing virtualenv
+  # already reports it and is not rebuilt. Restart so the running processes
+  # leave the old interpreter.
+  notify: >-
+    {{ ['restart wagtail', 'restart wagtail db worker']
+       if wagtail_runtime_notify_restarts | bool else [] }}
+
+- name: runtime | Resolve installed interpreter without downloads
+  ansible.builtin.command:
+    argv:
+      - "{{ wagtail_uv_path }}"
+      - --no-config
+      - python
+      - find
+      - --no-python-downloads
+      - "{{ wagtail_python_version }}"
+    chdir: "{{ wagtail_home }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  environment:
+    HOME: "{{ wagtail_home }}"
+  register: _wagtail_runtime_python
+  changed_when: false
+  when:
+    - wagtail_python_version | length > 0
+    - wagtail_runtime_verify_trust | bool
+
+- name: runtime | Verify installed interpreter trust
+  ansible.builtin.include_role:
+    name: python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ _wagtail_runtime_python.stdout | trim }}"
+    python_security_floor_user: "{{ wagtail_user }}"
+    python_security_floor_label: "{{ wagtail_user }} managed Python runtime"
+  when:
+    - wagtail_python_version | length > 0
+    - wagtail_runtime_verify_trust | bool

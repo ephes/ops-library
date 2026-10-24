@@ -13,7 +13,7 @@ Deploys Open WebUI on Ubuntu using a uv-managed virtualenv and systemd, with Tra
         open_webui_ollama_base_url: "http://studio.tailde2ec.ts.net:11434"
         open_webui_traefik_host: "open-webui.home.xn--wersdrfer-47a.de"
         open_webui_basic_auth_user: "admin"
-        open_webui_basic_auth_password: "CHANGEME"
+        open_webui_basic_auth_password: "CHANGEME"  # pragma: allowlist secret - public placeholder
         open_webui_data_dir: "/mnt/cryptdata/open-webui/data"
 ```
 
@@ -46,7 +46,7 @@ Note: the inventory host is `macstudio`, but the Tailscale hostname is `studio.t
 | `open_webui_ollama_base_url` | `http://localhost:11434` | Ollama base URL Open WebUI should use. |
 | `open_webui_webui_secret_key` | `""` | Optional `WEBUI_SECRET_KEY` for session signing. |
 | `open_webui_webui_auth_enabled` | `true` | Whether to set `WEBUI_AUTH` (disable only for first-time bootstrap). |
-| `open_webui_openai_api_key` | `""` | Optional OpenAI API key. |
+| `open_webui_openai_api_key` | `""` | Optional OpenAI API key. |  # pragma: allowlist secret - public example placeholder
 | `open_webui_openai_api_base_url` | `""` | Optional OpenAI-compatible base URL. |
 | `open_webui_extra_env` | `{}` | Extra environment variables to append to the env file. |
 | `open_webui_traefik_enabled` | `true` | Manage Traefik routing. |
@@ -77,6 +77,7 @@ keep user data intact.
 ## Traefik Routing
 
 Traefik uses a dual-router pattern:
+
 - Internal IPs bypass basic auth.
 - External access requires basic auth.
 
@@ -109,11 +110,13 @@ ansible-playbook -e skip_preflight_ports=true playbooks/deploy-open-webui.yml
 ## Troubleshooting
 
 ### Service does not start
+
 - Check `journalctl -u open-webui -f` for errors.
 - Ensure `{{ open_webui_venv_path }}/bin/open-webui` exists.
 - If the CLI does not support `--host`, set `open_webui_use_host_flag=false`.
 
 ### Traefik route not responding
+
 - Confirm `/etc/traefik/dynamic/open-webui.yml` exists.
 - Restart Traefik (`systemctl restart traefik`).
 
@@ -137,7 +140,7 @@ Enabling or disabling rewrites the unit on the next deploy.
 
 ## Verified uv bootstrap
 
-`open_webui_uv_version` defaults to `0.13.4`, matching the verified release
+`open_webui_uv_version` defaults to `0.13.5`, matching the verified release
 checksums in `uv_install`. When overriding this version, also supply matching
 `uv_checksum` entries for each target (see the `uv_install` role README).
 Bump the version and checksum together; `latest` is no longer accepted.

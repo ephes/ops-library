@@ -34,7 +34,7 @@ MIT
 
 ## Verified uv bootstrap
 
-`metube_uv_version` defaults to `0.13.4`, matching the verified release
+`metube_uv_version` defaults to `0.13.5`, matching the verified release
 checksums in `uv_install`. When overriding this version, also supply matching
 `uv_checksum` entries for each target (see the `uv_install` role README).
 Bump the version and checksum together; `latest` is no longer accepted.
