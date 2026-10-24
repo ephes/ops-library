@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import venv
 from pathlib import Path
 
 import yaml
@@ -30,6 +31,12 @@ class RuntimeTests(unittest.TestCase):
     ):
         with tempfile.TemporaryDirectory(prefix="wagtail-runtime-") as td:
             base = Path(td)
+            # Installed-runtime fixture is isolated from the test runner environment.
+            # Never seed pip or inherit its externally visible packages.
+            venv.EnvBuilder(with_pip=False, system_site_packages=False).create(
+                base / "runtime"
+            )
+            runtime_python = base / "runtime/bin/python"
             marker = base / "installed"
             calls = base / "calls"
             if installed:
@@ -48,7 +55,7 @@ if 'install' in sys.argv:
     if {fail_install!r}: sys.exit(7)
     marker.touch(); sys.exit(0)
 if not marker.exists(): sys.exit(1)
-print({str(base / "bad-python") if fail_trust else sys.executable!r})
+print({str(base / "bad-python") if fail_trust else str(runtime_python)!r})
 """
             )
             uv.chmod(0o700)

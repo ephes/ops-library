@@ -32,7 +32,7 @@ jobs:
           version: "0.13.5"
       - name: Exercise local fake-runtime and real dependency-sync boundaries
         run: >-
-          uv run --no-project --python 3.14 --with ansible-core --with pytest
+          uv run --no-project --python 3.14 --with ansible --with pytest
           --with pyyaml python -m pytest -q tests/test_wagtail_runtime.py
           tests/test_wagtail_uv_sync.py
       - name: Verify real Linux patch installation and managed rollback
