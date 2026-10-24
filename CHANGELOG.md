@@ -16,7 +16,9 @@
   now resolve managed Python only: they no longer adopt unmanaged interpreters
   from PATH, may install the requested managed patch and may restart services.
 - Exercise the actual Ansible role caller and metadata on real Linux Python,
-  retaining legacy-link retarget and managed rollback coverage.
+  retaining legacy-link retarget and managed rollback coverage. Isolate mutable
+  trust-test installs with copies and owned uv caches so Linux hardlinks cannot
+  contaminate subsequent fixtures or the shared wheel cache.
 
 ## [2.74.0] - 2026-10-24
 

@@ -333,6 +333,14 @@ class LifecycleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix="ops-library-python-security-"))
+        # Tests deliberately mutate installed bundles. Linux uv hardlinks by
+        # default; use copies and an owned cache so no fixture corrupts another
+        # environment or the caller's shared wheel cache.
+        cls.uv_env = {
+            **os.environ,
+            "UV_LINK_MODE": "copy",
+            "UV_CACHE_DIR": str(cls.tmp / "cache"),
+        }
         cls.constraints = cls.tmp / "constraints.txt"
         cls.constraints.write_text(flt.python_security_constraints(FLOORS))
         capped = cls.tmp / "capped"
@@ -361,6 +369,7 @@ class LifecycleTests(unittest.TestCase):
                 str(path),
             ],
             check=True,
+            env=self.uv_env,
         )
         if packages:
             self.uv_pip("install", "-q", *packages, venv=path)
@@ -373,6 +382,7 @@ class LifecycleTests(unittest.TestCase):
             capture_output=True,
             text=True,
             cwd=self.tmp,
+            env=self.uv_env,
         )
 
     def inspect(self, venv):
@@ -446,6 +456,18 @@ class LifecycleTests(unittest.TestCase):
             problem.endswith("contains distrusted root emSign ECC Root CA - G3"),
             problem,
         )
+
+    def test_mutated_bundle_does_not_contaminate_another_environment(self):
+        pristine = self.venv("isolated-pristine", "certifi==2026.10.19")
+        changed = self.venv("isolated-changed", "certifi==2026.10.19")
+        original = self.bundle(pristine).read_bytes()
+        self.bundle(changed).write_text("not a certificate\n")
+        self.assertEqual(self.bundle(pristine).read_bytes(), original)
+        self.assertEqual(violations(self.inspect(pristine)), [])
+        # Also reinstall from the same fixture-owned cache after mutation.
+        after = self.venv("isolated-after", "certifi==2026.10.19")
+        self.assertEqual(self.bundle(after).read_bytes(), original)
+        self.assertEqual(violations(self.inspect(after)), [])
 
     def test_bundle_openssl_cannot_load_fails_closed(self):
         venv = self.venv("garbage", "certifi==2026.10.19")
@@ -565,7 +587,16 @@ class CollectionLoaderTests(unittest.TestCase):
             capture_output=True,
             text=True,
         ).stdout.strip()
-        env = {**os.environ, "ANSIBLE_COLLECTIONS_PATH": collections}
+        cache = tempfile.TemporaryDirectory(prefix="python-security-loader-cache-")
+        self.addCleanup(cache.cleanup)
+        # The local Ansible loader's uv commands inherit this owned cache and
+        # copy policy too; do not consume a shared cache dirtied by old tests.
+        env = {
+            **os.environ,
+            "ANSIBLE_COLLECTIONS_PATH": collections,
+            "UV_LINK_MODE": "copy",
+            "UV_CACHE_DIR": cache.name,
+        }
         result = subprocess.run(
             [
                 "ansible-playbook",
