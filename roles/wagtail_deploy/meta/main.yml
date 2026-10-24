@@ -22,6 +22,7 @@ galaxy_info:
 
 dependencies:
   - role: local.ops_library.postgres_install
+    when: not (wagtail_runtime_only | bool)
     vars:
       postgres_install_version: "{{ wagtail_postgres_version }}"
       postgres_install_use_pgdg_repo: "{{ wagtail_postgres_repo_enabled }}"

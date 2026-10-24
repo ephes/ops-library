@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [2.74.1] - 2026-10-24
+
+### Managed runtime verification repair
+
+- Qualify managed base Python explicitly through the existing trust inspector:
+  canonical base prefix, executable and package/bundle origins, exact patch,
+  pip and vendored certifi floors, with no distro or deferral exemptions.
+  Preserve the default application-venv policy.
+- Require `wagtail_runtime_only: true` for standalone runtime tasks and skip
+  PostgreSQL metadata dependencies in that mode. Refuse that flag at the full
+  deployment entry; normal PostgreSQL dependencies are unchanged. Normal deploys
+  now resolve managed Python only: they no longer adopt unmanaged interpreters
+  from PATH, may install the requested managed patch and may restart services.
+- Exercise the actual Ansible role caller and metadata on real Linux Python,
+  retaining legacy-link retarget and managed rollback coverage.
+
 ## [2.74.0] - 2026-10-24
 
 ### Security runtime provisioning

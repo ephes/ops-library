@@ -264,15 +264,43 @@ The `wagtail_service_restart_on_change` setting (default `true`) controls these 
 
 ## Runtime-only provisioning
 
-Import `local.ops_library.wagtail_deploy` with `tasks_from: runtime.yml` to
+Include `local.ops_library.wagtail_deploy` with `tasks_from: runtime.yml` and
+`wagtail_runtime_only: true` to
 install uv and a requested managed Python without syncing source/dependencies,
 recreating a venv, migrating data or restarting a service. The existing service
 user and home must already exist. Set `wagtail_user`, `wagtail_home`,
 `wagtail_uv_path` and an exact `wagtail_python_version`, with an explicit matching
 `wagtail_runtime_expected_version` (default empty, refused standalone); set
 `wagtail_runtime_verify_trust: true` to verify the installed runtime with the
-existing `python_security_floor` checker. Its default is false to preserve the
+existing `python_security_floor` checker in its strict managed-base mode.
+It binds the canonical runtime prefix, executable and import/bundle origins
+and checks the exact requested patch, pip and vendored certifi floors. Its default is false to preserve the
 normal deploy's existing environment verification path.
+
+`wagtail_runtime_only` defaults to false, preserving PostgreSQL dependencies
+for normal deployments. Standalone callers must set it true so Ansible skips
+those metadata dependencies before executing runtime tasks. The main deployment
+entry refuses this mode; it cannot accidentally deploy without PostgreSQL.
+Omitting the flag at a standalone call runs the PostgreSQL dependency before
+the runtime task can refuse it: Ansible evaluates metadata first. Always set
+`wagtail_runtime_only: true` on the `include_role` itself. Both runtime probes
+require `--managed-python`; an exact patch found only on PATH is not admitted
+as the managed installation. Normal deployment's later interpreter selection
+uses the same managed-only policy.
+
+```yaml
+- name: Provision the exact managed runtime only
+  ansible.builtin.include_role:
+    name: local.ops_library.wagtail_deploy
+    tasks_from: runtime.yml
+  vars:
+    wagtail_runtime_only: true
+    wagtail_user: app
+    wagtail_home: /home/app
+    wagtail_python_version: "3.15.1"
+    wagtail_runtime_expected_version: "3.15.1"
+    wagtail_runtime_verify_trust: true
+```
 
 `wagtail_runtime_notify_restarts` defaults to false for this entry. The normal
 `python.yml` flow explicitly enables its previous restart notifications. The
@@ -300,4 +328,7 @@ one coordinated service window. The same test proves rollback via normal
 source/lock; no manual symlink or venv repair is part of that rollback. Both
 exact interpreter installations remain. Rehearsal fixture setup is confined to
 a disposable prefix; production runtime installs never manipulate venv links
-by hand. The dedicated Linux CI runs this test and the local role/uv-sync tests.
+by hand. The dedicated Linux CI runs the actual `include_role` caller with real metadata,
+uv installation and managed-base trust verification, plus the local role/uv-sync
+tests. Its PostgreSQL dependency sentinel must remain unexecuted; the default
+application policy must still reject base imports.

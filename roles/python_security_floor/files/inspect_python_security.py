@@ -7,6 +7,7 @@ code, and prints one JSON object for the ``python_security_report_violations``
 filter. Standard library only, so it also runs in old environments.
 """
 
+import argparse
 import glob
 import hashlib
 import importlib
@@ -40,11 +41,22 @@ def version(module_file, name):
     return None
 
 
-def in_environment(path):
+def inside(path, prefix):
+    return os.path.realpath(path).startswith(os.path.realpath(prefix) + os.sep)
+
+
+def in_environment(path, managed_base_prefix=""):
+    if managed_base_prefix:
+        return (
+            os.path.realpath(sys.prefix)
+            == os.path.realpath(sys.base_prefix)
+            == os.path.realpath(managed_base_prefix)
+            and inside(sys.executable, managed_base_prefix)
+            and inside(path, managed_base_prefix)
+        )
     if sys.prefix == sys.base_prefix:
         return False
-    prefix = os.path.realpath(sys.prefix) + os.sep
-    return os.path.realpath(path).startswith(prefix)
+    return inside(path, sys.prefix)
 
 
 def distro_owner(path):
@@ -74,10 +86,13 @@ def fingerprints(path):
     protocol = getattr(ssl, "PROTOCOL_TLS_CLIENT", None) or ssl.PROTOCOL_SSLv23
     context = ssl.SSLContext(protocol)
     context.load_verify_locations(cafile=path)
-    return [hashlib.sha256(der).hexdigest() for der in context.get_ca_certs(binary_form=True)]
+    return [
+        hashlib.sha256(der).hexdigest()
+        for der in context.get_ca_certs(binary_form=True)
+    ]
 
 
-def inspect(distribution, module_name):
+def inspect(distribution, module_name, managed_base_prefix=""):
     top = module_name.split(".")[0]
     if importlib.util.find_spec(top) is None:
         return {"installed": False}
@@ -86,9 +101,21 @@ def inspect(distribution, module_name):
         package = importlib.import_module(top)
         result["module_file"] = os.path.realpath(package.__file__)
         result["version"] = version(result["module_file"], distribution)
-        result["in_environment"] = in_environment(package.__file__)
-        result["distro_owner"] = None if result["in_environment"] else distro_owner(package.__file__)
-        bundle = importlib.import_module(module_name).where()
+        result["in_environment"] = in_environment(package.__file__, managed_base_prefix)
+        result["distro_owner"] = (
+            None if result["in_environment"] else distro_owner(package.__file__)
+        )
+        bundle_module = importlib.import_module(module_name)
+        if managed_base_prefix:
+            result["bundle_module_file"] = os.path.realpath(bundle_module.__file__)
+            result["bundle_version"] = getattr(bundle_module, "__version__", None)
+            result["module_origins"] = {
+                name: os.path.realpath(module.__file__)
+                for name, module in list(sys.modules.items())
+                if (name == top or name.startswith(top + "."))
+                and getattr(module, "__file__", None)
+            }
+        bundle = bundle_module.where()
         result["bundle"] = os.path.realpath(bundle)
     except Exception as exc:  # report, never guess
         result["error"] = "{}: {}".format(type(exc).__name__, exc)
@@ -101,11 +128,23 @@ def inspect(distribution, module_name):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--managed-base-prefix", default="")
+    args = parser.parse_args()
     report = {
         "python_version": platform.python_version(),
         "prefix": os.path.realpath(sys.prefix),
-        "packages": {name: inspect(*spec) for name, spec in PACKAGES.items()},
+        "packages": {
+            name: inspect(*spec, managed_base_prefix=args.managed_base_prefix)
+            for name, spec in PACKAGES.items()
+        },
     }
+    if args.managed_base_prefix:
+        report.update(
+            expected_base_prefix=os.path.realpath(args.managed_base_prefix),
+            base_prefix=os.path.realpath(sys.base_prefix),
+            executable=os.path.realpath(sys.executable),
+        )
     print(json.dumps(report, sort_keys=True))
 
 

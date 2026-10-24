@@ -1,6 +1,12 @@
 ---
 # Wagtail deployment main tasks
 
+- name: main | Refuse runtime-only mode at the deployment entry
+  ansible.builtin.assert:
+    that:
+      - not (wagtail_runtime_only | bool)
+    fail_msg: "Use tasks_from: runtime.yml with wagtail_runtime_only; full deployment requires PostgreSQL dependencies."
+
 - name: main | Validate inputs
   ansible.builtin.import_tasks: validate.yml
 

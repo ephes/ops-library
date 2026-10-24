@@ -4,9 +4,10 @@
 - name: runtime | Require an explicit exact standalone patch
   ansible.builtin.assert:
     that:
+      - wagtail_runtime_only | bool
       - wagtail_runtime_expected_version is match('^[0-9]+[.][0-9]+[.][0-9]+$')
       - wagtail_python_version == wagtail_runtime_expected_version
-    fail_msg: "Set an exact standalone runtime expected version matching wagtail_python_version."
+    fail_msg: "Set wagtail_runtime_only: true and an exact standalone expected version matching wagtail_python_version."
   when: not (wagtail_runtime_notify_restarts | bool)
 
 - name: runtime | Ensure uv binary is installed
@@ -17,7 +18,7 @@
 
 - name: runtime | Check for requested Python version
   ansible.builtin.command:
-    cmd: "{{ wagtail_uv_path }} --no-config python find --no-python-downloads {{ wagtail_python_version }}"
+    cmd: "{{ wagtail_uv_path }} --no-config python find --managed-python --no-python-downloads {{ wagtail_python_version }}"
     chdir: "{{ wagtail_home }}"
   environment:
     HOME: "{{ wagtail_home }}"
@@ -53,6 +54,7 @@
       - --no-config
       - python
       - find
+      - --managed-python
       - --no-python-downloads
       - "{{ wagtail_python_version }}"
     chdir: "{{ wagtail_home }}"
@@ -72,6 +74,8 @@
     tasks_from: verify.yml
   vars:
     python_security_floor_python: "{{ _wagtail_runtime_python.stdout | trim }}"
+    python_security_floor_managed_base_prefix: "{{ _wagtail_runtime_python.stdout | trim | dirname | dirname }}"
+    python_security_floor_expected_python_version: "{{ wagtail_python_version }}"
     python_security_floor_user: "{{ wagtail_user }}"
     python_security_floor_label: "{{ wagtail_user }} managed Python runtime"
   when:

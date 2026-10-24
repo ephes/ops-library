@@ -34,8 +34,13 @@ def _version(value: Any, what: str) -> Version:
 
 def _floors(floors: Any) -> dict[str, Version]:
     if not isinstance(floors, dict) or not floors:
-        raise AnsibleFilterError("floors must be a non-empty mapping of package to minimum version")
-    return {_name(str(name)): _version(minimum, f"floor for {name}") for name, minimum in floors.items()}
+        raise AnsibleFilterError(
+            "floors must be a non-empty mapping of package to minimum version"
+        )
+    return {
+        _name(str(name)): _version(minimum, f"floor for {name}")
+        for name, minimum in floors.items()
+    }
 
 
 def uv_lock_floor_violations(lock_text: Any, floors: Any) -> list[str]:
@@ -61,11 +66,15 @@ def uv_lock_floor_violations(lock_text: Any, floors: Any) -> list[str]:
         if name not in minimums:
             continue
         if "version" not in package:
-            problems.append(f"{name}: locked without a version (source: {package.get('source')})")
+            problems.append(
+                f"{name}: locked without a version (source: {package.get('source')})"
+            )
             continue
         locked = _version(package["version"], f"locked {name}")
         if locked < minimums[name]:
-            problems.append(f"{name} {locked} is locked; {minimums[name]} or later is required")
+            problems.append(
+                f"{name} {locked} is locked; {minimums[name]} or later is required"
+            )
     return problems
 
 
@@ -76,7 +85,9 @@ def python_security_constraints(floors: Any) -> str:
     never add a package.
     """
 
-    return "".join(f"{name}>={minimum}\n" for name, minimum in sorted(_floors(floors).items()))
+    return "".join(
+        f"{name}>={minimum}\n" for name, minimum in sorted(_floors(floors).items())
+    )
 
 
 def _fingerprint(value: Any) -> str:
@@ -90,11 +101,17 @@ def _supported(name: str, requires_python: Any, python: Version) -> tuple[bool, 
     try:
         return python in SpecifierSet(str(spec)), str(spec)
     except InvalidSpecifier as exc:
-        raise AnsibleFilterError(f"invalid Requires-Python for {name}: {spec!r}") from exc
+        raise AnsibleFilterError(
+            f"invalid Requires-Python for {name}: {spec!r}"
+        ) from exc
 
 
 def _deferral_problem(
-    name: str, info: dict[str, Any], minimums: dict[str, Version], requires_python: Any, python: Version
+    name: str,
+    info: dict[str, Any],
+    minimums: dict[str, Version],
+    requires_python: Any,
+    python: Version,
 ) -> str | None:
     if name not in minimums or not info.get("in_environment"):
         return None
@@ -108,7 +125,12 @@ def _deferral_problem(
 
 
 def python_security_report_violations(
-    report: Any, floors: Any, distrusted_roots: Any, requires_python: Any, deferred: Any = None
+    report: Any,
+    floors: Any,
+    distrusted_roots: Any,
+    requires_python: Any,
+    deferred: Any = None,
+    managed_base: Any = None,
 ) -> list[str]:
     """Problems in an ``inspect_python_security.py`` report.
 
@@ -130,7 +152,9 @@ def python_security_report_violations(
 
     minimums = _floors(floors)
     if not isinstance(report, dict) or "packages" not in report:
-        raise AnsibleFilterError("report must be the JSON object printed by inspect_python_security.py")
+        raise AnsibleFilterError(
+            "report must be the JSON object printed by inspect_python_security.py"
+        )
     bad = {}
     for root in distrusted_roots or []:
         if not isinstance(root, dict) or not root.get("sha256"):
@@ -139,6 +163,41 @@ def python_security_report_violations(
     python = _version(report.get("python_version"), "environment Python")
     skipped = {_name(str(name)) for name in deferred or []}
     problems = []
+    if managed_base:
+        if not {"pip", "certifi"}.issubset(minimums):
+            raise AnsibleFilterError(
+                "managed base verification requires pip and certifi floors"
+            )
+        if not isinstance(managed_base, dict) or not re.fullmatch(
+            r"[0-9]+[.][0-9]+[.][0-9]+", str(managed_base.get("python_version", ""))
+        ):
+            raise AnsibleFilterError(
+                "managed base verification requires an exact Python patch"
+            )
+        # Explicit base-runtime mode is stricter than the default venv policy:
+        # no deferrals, absent pip, external imports or distro exemptions.
+        if deferred:
+            problems.append(
+                "managed base runtime verification does not allow deferrals"
+            )
+        expected = report.get("expected_base_prefix")
+        if (
+            not expected
+            or expected == "/"
+            or report.get("prefix") != expected
+            or report.get("base_prefix") != expected
+            or not str(report.get("executable", "")).startswith(expected + "/")
+        ):
+            problems.append(
+                "managed base runtime prefix/executable does not match the expected base"
+            )
+        if report.get("python_version") != managed_base["python_version"]:
+            problems.append(
+                "managed base runtime Python does not match the exact expected version"
+            )
+        if not report["packages"].get("pip", {}).get("installed"):
+            problems.append("managed base runtime must contain pip")
+        skipped = set()
     for raw_name, info in sorted(report["packages"].items()):
         name = _name(raw_name)
         if not info.get("installed"):
@@ -154,7 +213,9 @@ def python_security_report_violations(
             continue
         if info.get("in_environment"):
             if name in minimums and info.get("version") is None:
-                problems.append(f"{name}: installed version could not be read from its metadata")
+                problems.append(
+                    f"{name}: installed version could not be read from its metadata"
+                )
             elif name in minimums:
                 installed = _version(info.get("version"), f"installed {name}")
                 if installed < minimums[name]:
@@ -166,20 +227,53 @@ def python_security_report_violations(
                             f" runs {python}; it cannot be updated in place"
                         )
                     problems.append(detail)
+        elif managed_base:
+            problems.append(
+                f"{name} is imported from outside the expected managed base runtime"
+            )
         else:
             owner = info.get("distro_owner") or ""
-            if owner not in DISTRO_OWNERS.get(name, ()) or info.get("bundle") not in SYSTEM_BUNDLES:
+            if (
+                owner not in DISTRO_OWNERS.get(name, ())
+                or info.get("bundle") not in SYSTEM_BUNDLES
+            ):
                 problems.append(
                     f"{name} is imported from outside the environment ({info.get('module_file')}) with bundle"
                     f" {info.get('bundle')}; only a distribution package using the system store is accepted"
                 )
+        if managed_base:
+            prefix = str(report.get("expected_base_prefix", "")) + "/"
+            for field in ("module_file", "bundle_module_file", "bundle"):
+                if not str(info.get(field, "")).startswith(prefix):
+                    problems.append(
+                        f"{name}: {field} is outside the expected managed base runtime"
+                    )
+            origins = info.get("module_origins")
+            if not origins or any(
+                not str(path).startswith(prefix) for path in origins.values()
+            ):
+                problems.append(
+                    f"{name}: imported module origins are outside or missing from the expected managed base runtime"
+                )
+            bundled = info.get("bundle_version")
+            if (
+                bundled is None
+                or _version(bundled, f"{name} bundled certifi") < minimums["certifi"]
+            ):
+                problems.append(
+                    f"{name}: bundled certifi must meet {minimums['certifi']}"
+                )
         if info.get("bundle_error"):
-            problems.append(f"{name}: bundle {info.get('bundle')} could not be read: {info['bundle_error']}")
+            problems.append(
+                f"{name}: bundle {info.get('bundle')} could not be read: {info['bundle_error']}"
+            )
             continue
         for fingerprint in info.get("bundle_fingerprints") or []:
             label = bad.get(_fingerprint(fingerprint))
             if label:
-                problems.append(f"{name}: bundle {info.get('bundle')} contains distrusted root {label}")
+                problems.append(
+                    f"{name}: bundle {info.get('bundle')} contains distrusted root {label}"
+                )
     return problems
 
 
