@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.75.0] - 2026-10-25
+
 ### nyxmon_deploy: Python agent fallback retired
 
 - **Breaking:** `nyxmon_agent_impl` is removed. `nyxmon-monitor.service` always
