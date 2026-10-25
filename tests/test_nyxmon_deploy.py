@@ -470,12 +470,16 @@ def run_cases(task: dict, cases: dict[str, dict], show: str) -> dict[str, object
 
 
 class RustAgentTests(unittest.TestCase):
-    """PLAN.md 8.3 of nyxmon agent-rs: versioned install, drop-in switch."""
+    """PLAN.md 8.3 of nyxmon agent-rs: versioned install; the Rust agent only.
 
-    def test_defaults_keep_the_python_agent_and_install_nothing(self) -> None:
+    The Python agent fallback (nyxmon_agent_impl and the agent-impl.conf
+    drop-in) was retired in 2.75.0: the base unit starts the pinned release.
+    """
+
+    def test_defaults_pin_nothing_and_have_no_implementation_switch(self) -> None:
         defaults = role_defaults()
 
-        self.assertEqual(defaults["nyxmon_agent_impl"], "python")
+        self.assertNotIn("nyxmon_agent_impl", defaults)
         self.assertEqual(defaults["nyxmon_agent_rust_version"], "")
         self.assertEqual(defaults["nyxmon_agent_rust_sha256"], "")
         self.assertEqual(defaults["nyxmon_agent_rust_local_archive"], "")
@@ -497,10 +501,8 @@ class RustAgentTests(unittest.TestCase):
 
     def test_agent_tasks_run_after_migrations_and_verify_after_the_restart(self) -> None:
         names = [task.get("name") for task in task_list("main.yml")]
-        install = names.index("Install the Rust agent and select the agent implementation")
-        verify = names.index(
-            "main | Verify the running agent implementation and prune old Rust agents"
-        )
+        install = names.index("Install and validate the pinned Rust agent")
+        verify = names.index("main | Verify the running Rust agent and prune old versions")
 
         self.assertLess(names.index("Configure Django application"), install)
         self.assertLess(install, names.index("Setup monitoring"))
@@ -510,42 +512,59 @@ class RustAgentTests(unittest.TestCase):
         self.assertLess(
             verify, names.index("main | Validate live nyxmon-monitor OpsGate settings")
         )
-        self.assertLess(
-            names.index("Validate monitoring agent implementation settings"),
-            names.index("Setup user and directories"),
-        )
+        for validation in (
+            "Refuse the retired monitoring agent switch",
+            "Validate monitoring agent settings",
+        ):
+            with self.subTest(task=validation):
+                self.assertLess(
+                    names.index(validation), names.index("Setup user and directories")
+                )
 
-    def test_dropin_starts_the_versioned_binary_with_the_python_arguments(self) -> None:
-        dropin = render(
-            "agent-impl.conf.j2",
+    def test_the_unit_starts_the_versioned_binary_with_the_agent_arguments(self) -> None:
+        unit = render(
+            "nyxmon-monitor.service.j2",
             nyxmon_agent_rust_binary="/opt/nyxmon-agent/0.1.0/nyxmon-agent",
         )
-        base = render("nyxmon-monitor.service.j2")
 
         self.assertIn(
-            "[Service]\nExecStart=\n"
-            "ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent "
+            "\nExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent "
             "--db /home/nyxmon/site/db.sqlite3 --enable-telegram\n",
-            dropin,
+            unit,
         )
-        self.assertIn(
-            "ExecStart=/home/nyxmon/site/.venv/bin/start-agent "
-            "--db /home/nyxmon/site/db.sqlite3 --enable-telegram\n",
-            base,
+        self.assertEqual(unit.count("ExecStart="), 1)
+        self.assertNotIn("start-agent", unit)
+        self.assertFalse((ROLE / "templates" / "agent-impl.conf.j2").exists())
+
+    def test_the_retired_dropin_is_removed_by_its_fixed_path_after_the_unit(self) -> None:
+        derive = find_task(task_list("agent_rust.yml"), "agent_rust | Derive the unit paths")
+        self.assertEqual(
+            derive["ansible.builtin.set_fact"]["nyxmon_agent_legacy_dropin"],
+            "/etc/systemd/system/{{ nyxmon_agent_monitor_unit }}.service.d/agent-impl.conf",
         )
+        tasks = task_list("monitoring.yml")
+        names = [task.get("name") for task in tasks]
+        unit = names.index("monitoring | Create monitoring service file")
+        check = names.index("monitoring | Check for the retired agent implementation drop-in")
+        refuse = names.index("monitoring | Refuse a retired drop-in that is not a regular file")
+        remove = names.index("monitoring | Remove the retired agent implementation drop-in")
+        start = names.index("monitoring | Enable and start monitoring service")
 
-    def test_dropin_exists_only_for_rust_and_every_change_restarts(self) -> None:
-        tasks = task_list("agent_rust.yml")
-        rust = find_task(tasks, "agent_rust | Select the Rust agent for the monitoring unit")
-        python = find_task(tasks, "agent_rust | Select the Python agent for the monitoring unit")
+        self.assertLess(unit, check)
+        self.assertLess(check, refuse)
+        self.assertLess(refuse, remove)
+        self.assertLess(remove, start)
+        self.assertIs(tasks[check]["ansible.builtin.stat"]["follow"], False)
+        self.assertEqual(
+            tasks[remove]["ansible.builtin.file"],
+            {"path": "{{ nyxmon_agent_legacy_dropin }}", "state": "absent"},
+        )
+        self.assertEqual(tasks[remove]["when"], "nyxmon_agent_legacy_dropin_stat.stat.exists")
+        self.assertEqual(tasks[remove]["notify"], ["reload systemd", "restart nyxmon-monitor"])
+        self.assertEqual(tasks[unit]["notify"], ["reload systemd", "restart nyxmon-monitor"])
+        self.assertTrue(tasks[start]["systemd"]["daemon_reload"])
 
-        self.assertEqual(rust["when"], "nyxmon_agent_impl == 'rust'")
-        self.assertEqual(python["when"], "nyxmon_agent_impl == 'python'")
-        self.assertEqual(python["ansible.builtin.file"]["state"], "absent")
-        for task in (rust, python):
-            self.assertEqual(task["notify"], ["reload systemd", "restart nyxmon-monitor"])
-
-    def test_candidate_is_validated_before_the_dropin_changes(self) -> None:
+    def test_candidate_is_validated_before_the_selection_is_recorded(self) -> None:
         tasks = task_list("agent_rust.yml")
         names = [task.get("name") for task in walk_tasks(tasks)]
         install = find_task(tasks, "agent_rust | Install and validate the pinned Rust agent release")
@@ -566,7 +585,7 @@ class RustAgentTests(unittest.TestCase):
             ),
             (
                 "agent_rust | Assert the database schema satisfies the candidate",
-                "agent_rust | Select the Rust agent for the monitoring unit",
+                "agent_rust | Remember the previously selected Rust version",
             ),
         ):
             self.assertLess(names.index(earlier), names.index(later))
@@ -592,36 +611,51 @@ class RustAgentTests(unittest.TestCase):
             "sha256:{{ nyxmon_agent_rust_sha256 }}",
         )
 
+    def test_the_retired_switch_is_refused(self) -> None:
+        task = find_task(task_list("main.yml"), "Refuse the retired monitoring agent switch")
+
+        outcomes = run_cases(
+            task,
+            {
+                "unset": {},
+                "rust": {"nyxmon_agent_impl": "rust"},
+                "python": {"nyxmon_agent_impl": "python"},
+                "empty": {"nyxmon_agent_impl": ""},
+            },
+            "none",
+        )
+
+        self.assertEqual(
+            outcomes, {"unset": None, "rust": "failed", "python": "failed", "empty": "failed"}
+        )
+
     def test_settings_validation(self) -> None:
-        task = find_task(task_list("main.yml"), "Validate monitoring agent implementation settings")
+        task = find_task(task_list("main.yml"), "Validate monitoring agent settings")
         sha = "a" * 64
         base = {
-            "nyxmon_agent_impl": "python",
-            "nyxmon_agent_rust_version": "",
-            "nyxmon_agent_rust_sha256": "",
+            "nyxmon_agent_rust_version": "0.1.0",
+            "nyxmon_agent_rust_sha256": sha,
             "nyxmon_agent_rust_local_archive": "",
             "nyxmon_agent_rust_install_root": "/opt/nyxmon-agent",
             "nyxmon_agent_rust_keep_versions": 3,
             "nyxmon_monitoring_enabled": True,
         }
         accepted = {
-            "defaults": {},
-            "python_with_a_pinned_release": {"nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": sha},
-            "rust_release": {"nyxmon_agent_impl": "rust", "nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": sha},
-            "rust_local_archive": {"nyxmon_agent_impl": "rust", "nyxmon_agent_rust_version": "0.2.0-rc.1", "nyxmon_agent_rust_local_archive": "/tmp/a.tar.gz"},
+            "pinned_release": {},
+            "local_archive": {"nyxmon_agent_rust_version": "0.2.0-rc.1", "nyxmon_agent_rust_sha256": "", "nyxmon_agent_rust_local_archive": "/tmp/a.tar.gz"},
             "keep_one": {"nyxmon_agent_rust_keep_versions": 1},
+            "monitoring_disabled_without_release": {"nyxmon_agent_rust_version": "", "nyxmon_agent_rust_sha256": "", "nyxmon_monitoring_enabled": False},
+            "monitoring_disabled_with_release": {"nyxmon_monitoring_enabled": False},
         }
         refused = {
-            "unknown_impl": {"nyxmon_agent_impl": "go"},
-            "rust_without_version": {"nyxmon_agent_impl": "rust"},
-            "rust_without_monitoring": {"nyxmon_agent_impl": "rust", "nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": sha, "nyxmon_monitoring_enabled": False},
-            "version_without_checksum": {"nyxmon_agent_rust_version": "0.1.0"},
-            "short_checksum": {"nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": "a" * 63},
-            "uppercase_checksum": {"nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": "A" * 64},
-            "checksum_without_version": {"nyxmon_agent_rust_sha256": sha},
-            "archive_without_version": {"nyxmon_agent_rust_local_archive": "/tmp/a.tar.gz"},
-            "version_with_a_path": {"nyxmon_agent_rust_version": "../0.1.0", "nyxmon_agent_rust_sha256": sha},
-            "version_with_a_v": {"nyxmon_agent_rust_version": "v0.1.0", "nyxmon_agent_rust_sha256": sha},
+            "monitoring_without_release": {"nyxmon_agent_rust_version": "", "nyxmon_agent_rust_sha256": ""},
+            "version_without_checksum": {"nyxmon_agent_rust_sha256": ""},
+            "short_checksum": {"nyxmon_agent_rust_sha256": "a" * 63},
+            "uppercase_checksum": {"nyxmon_agent_rust_sha256": "A" * 64},
+            "checksum_without_version": {"nyxmon_agent_rust_version": "", "nyxmon_monitoring_enabled": False},
+            "archive_without_version": {"nyxmon_agent_rust_version": "", "nyxmon_agent_rust_sha256": "", "nyxmon_agent_rust_local_archive": "/tmp/a.tar.gz", "nyxmon_monitoring_enabled": False},
+            "version_with_a_path": {"nyxmon_agent_rust_version": "../0.1.0"},
+            "version_with_a_v": {"nyxmon_agent_rust_version": "v0.1.0"},
             "root_install_root": {"nyxmon_agent_rust_install_root": "/"},
             "relative_install_root": {"nyxmon_agent_rust_install_root": "opt/nyxmon-agent"},
             "keep_zero": {"nyxmon_agent_rust_keep_versions": 0},
@@ -638,37 +672,63 @@ class RustAgentTests(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(outcomes[name], "failed")
 
-    def test_previous_rust_version_is_read_from_the_dropin(self) -> None:
+    def test_previous_rust_version_is_read_from_the_unit_or_the_retired_dropin(self) -> None:
         task = find_task(
             task_list("agent_rust.yml"),
-            "agent_rust | Derive the Rust version the drop-in selected so far",
+            "agent_rust | Derive the Rust version the unit selected so far",
         )
-        rendered = render(
-            "agent-impl.conf.j2",
-            nyxmon_agent_rust_binary="/opt/nyxmon-agent/0.1.0/nyxmon-agent",
+        rust_unit = render(
+            "nyxmon-monitor.service.j2",
+            nyxmon_agent_rust_binary="/opt/nyxmon-agent/0.1.1/nyxmon-agent",
+        )
+        python_unit = rust_unit.replace(
+            "ExecStart=/opt/nyxmon-agent/0.1.1/nyxmon-agent ",
+            "ExecStart=/home/nyxmon/site/.venv/bin/start-agent ",
+        )
+        legacy_dropin = (
+            "# Managed by Ansible (nyxmon_deploy): nyxmon_agent_impl=rust.\n"
+            "[Service]\nExecStart=\n"
+            "ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent "
+            "--db /home/nyxmon/site/db.sqlite3 --enable-telegram\n"
         )
 
-        def case(content: str | None) -> dict:
-            variables: dict = {"nyxmon_agent_rust_install_root": "/opt/nyxmon-agent"}
-            variables["nyxmon_agent_dropin_before"] = (
-                {"skipped": True}
-                if content is None
-                else {"content": base64.b64encode(content.encode()).decode()}
-            )
-            return variables
+        def slurped(content: str | None) -> dict:
+            if content is None:
+                return {"skipped": True}
+            return {"content": base64.b64encode(content.encode()).decode()}
+
+        def case(unit: str | None, dropin: str | None) -> dict:
+            return {
+                "nyxmon_agent_rust_install_root": "/opt/nyxmon-agent",
+                "nyxmon_agent_unit_before": slurped(unit),
+                "nyxmon_agent_legacy_dropin_before": slurped(dropin),
+            }
 
         outcomes = run_cases(
             task,
             {
-                "rust_dropin": case(rendered),
-                "no_dropin": case(None),
-                "foreign_path": case("[Service]\nExecStart=\nExecStart=/usr/bin/x --db y\n"),
+                "rust_unit": case(rust_unit, None),
+                "python_unit_and_dropin": case(python_unit, legacy_dropin),
+                "dropin_overrides_the_unit": case(rust_unit, legacy_dropin),
+                "python_unit_only": case(python_unit, None),
+                "nothing": case(None, None),
+                "foreign_path": case(
+                    None, "[Service]\nExecStart=\nExecStart=/usr/bin/x --db y\n"
+                ),
             },
             "nyxmon_agent_rust_active_before",
         )
 
         self.assertEqual(
-            outcomes, {"rust_dropin": "0.1.0", "no_dropin": "", "foreign_path": ""}
+            outcomes,
+            {
+                "rust_unit": "0.1.1",
+                "python_unit_and_dropin": "0.1.0",
+                "dropin_overrides_the_unit": "0.1.0",
+                "python_unit_only": "",
+                "nothing": "",
+                "foreign_path": "",
+            },
         )
 
     def test_pruning_keeps_the_pinned_previous_and_newest_versions(self) -> None:
@@ -724,7 +784,7 @@ class RustAgentTests(unittest.TestCase):
 
     def test_pruning_needs_the_live_check(self) -> None:
         tasks = task_list("agent_verify.yml")
-        verify = find_task(tasks, "agent_verify | Verify the running agent implementation")
+        verify = find_task(tasks, "agent_verify | Verify the running Rust agent")
         prune = find_task(tasks, "agent_verify | Prune old Rust agent versions")
 
         self.assertIn("nyxmon_monitoring_enabled", verify["when"])
@@ -745,21 +805,20 @@ class RustAgentTests(unittest.TestCase):
             "register": "probe",
         }
 
-        def case(before: str, impl: str, version: str) -> dict:
+        def case(before: str, version: str) -> dict:
             return {
                 "nyxmon_agent_rust_active_before": before,
                 "nyxmon_agent_rust_active_before_stat": {"stat": {"isdir": True}},
-                "nyxmon_agent_impl": impl,
                 "nyxmon_agent_rust_version": version,
             }
 
         outcomes = run_cases(
             probe,
             {
-                "same_version_rewritten": case("0.2.0", "rust", "0.2.0"),
-                "rust_to_rust": case("0.1.0", "rust", "0.2.0"),
-                "rust_to_python": case("0.2.0", "python", "0.2.0"),
-                "no_rust_before": case("", "rust", "0.2.0"),
+                "same_version_rewritten": case("0.2.0", "0.2.0"),
+                "rust_to_rust": case("0.1.0", "0.2.0"),
+                "rollback": case("0.2.0", "0.1.0"),
+                "no_rust_before": case("", "0.2.0"),
             },
             "probe is not skipped",
         )
@@ -769,7 +828,7 @@ class RustAgentTests(unittest.TestCase):
             {
                 "same_version_rewritten": False,
                 "rust_to_rust": True,
-                "rust_to_python": True,
+                "rollback": True,
                 "no_rust_before": False,
             },
         )
@@ -792,15 +851,25 @@ class RustAgentTests(unittest.TestCase):
         chmod = find_task(tasks, "agent_rust | Make the agent binary root-owned and executable")
         self.assertIs(chmod["ansible.builtin.file"]["follow"], False)
 
-    def test_live_process_check_identifies_each_implementation(self) -> None:
+    def test_live_process_check_identifies_the_rust_binary(self) -> None:
         raw = (ROLE / "tasks" / "agent_verify.yml").read_text()
 
         self.assertIn("('exe=' ~ nyxmon_agent_rust_binary)", raw)
-        self.assertIn("('arg=' ~ nyxmon_venv_bin ~ '/start-agent')", raw)
         self.assertIn('readlink "/proc/$pid/exe"', raw)
-        self.assertIn('done < "/proc/$pid/cmdline"', raw)
+        self.assertNotIn("start-agent", raw)
+        self.assertNotIn("nyxmon_agent_impl", raw)
 
-    def test_readme_documents_the_switch_and_rollback(self) -> None:
+    def test_no_task_or_template_still_knows_the_python_agent(self) -> None:
+        for part in ("tasks", "templates", "defaults", "handlers"):
+            for path in sorted((ROLE / part).rglob("*")):
+                if not path.is_file():
+                    continue
+                text = path.read_text()
+                with self.subTest(path=str(path.relative_to(ROLE))):
+                    self.assertNotIn("start-agent", text)
+                    self.assertNotIn("nyxmon_agent_impl ==", text)
+
+    def test_readme_documents_the_release_pin_and_rollback(self) -> None:
         readme = (ROLE / "README.md").read_text()
 
         for name in role_defaults():
@@ -809,6 +878,7 @@ class RustAgentTests(unittest.TestCase):
                     self.assertIn(f"`{name}`", readme)
         self.assertIn("agent-impl.conf", readme)
         self.assertIn("Rollback", readme)
+        self.assertIn("retired", readme)
 
 
 def run_play(tasks: list[dict], variables: dict) -> subprocess.CompletedProcess:

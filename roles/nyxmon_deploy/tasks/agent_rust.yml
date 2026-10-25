@@ -1,10 +1,11 @@
 ---
-# Install the pinned Rust agent release and select the monitoring agent
-# implementation. Runs after the migrations (django.yml), so --check-schema sees
-# the schema the agent will run against, and before monitoring.yml.
+# Install and validate the pinned Rust agent release that nyxmon-monitor.service
+# runs. Runs after the migrations (django.yml), so --check-schema sees the
+# schema the agent will run against, and before monitoring.yml, which writes the
+# unit naming the versioned binary.
 #
-# With nyxmon_agent_rust_version empty nothing is installed or validated, and
-# with impl python the drop-in is absent: the unit runs the venv start-agent.
+# With nyxmon_agent_rust_version empty (monitoring disabled) nothing is
+# installed or validated.
 
 - name: agent_rust | Derive agent paths
   ansible.builtin.set_fact:
@@ -13,9 +14,12 @@
     nyxmon_agent_rust_binary: "{{ nyxmon_agent_rust_install_root }}/{{ nyxmon_agent_rust_version }}/nyxmon-agent"
     nyxmon_agent_rust_staging: "{{ nyxmon_agent_rust_install_root }}/.staging"
 
-- name: agent_rust | Derive the drop-in path
+# nyxmon_agent_legacy_dropin: the drop-in that selected the Rust agent over a
+# Python ExecStart before 2.75.0; monitoring.yml removes it.
+- name: agent_rust | Derive the unit paths
   ansible.builtin.set_fact:
-    nyxmon_agent_dropin: "/etc/systemd/system/{{ nyxmon_agent_monitor_unit }}.service.d/agent-impl.conf"
+    nyxmon_agent_unit_file: "/etc/systemd/system/{{ nyxmon_agent_monitor_unit }}.service"
+    nyxmon_agent_legacy_dropin: "/etc/systemd/system/{{ nyxmon_agent_monitor_unit }}.service.d/agent-impl.conf"
 
 - name: agent_rust | Install and validate the pinned Rust agent release
   when: nyxmon_agent_rust_version | length > 0
@@ -94,7 +98,7 @@
           but this run pins {{ nyxmon_agent_rust_archive_sha256 }}. An installed
           version is never replaced in place. Pin the matching archive, or remove
           the directory by hand when it is not the active version
-          ({{ nyxmon_agent_dropin }}).
+          ({{ nyxmon_agent_unit_file }}).
       when: nyxmon_agent_rust_dir_stat.stat.exists
 
     - name: agent_rust | Stage the pinned release
@@ -237,9 +241,9 @@
             path: "{{ nyxmon_agent_rust_staging }}"
             state: absent
 
-    # Validated by the versioned path before the drop-in points at it, as the
+    # Validated by the versioned path before the unit points at it, as the
     # service user. A fresh install that fails is removed again; an installed
-    # version, the drop-in and the running unit are left alone.
+    # version, the unit and the running agent are left alone.
     - name: agent_rust | Validate the candidate binary
       when: not ansible_check_mode or nyxmon_agent_rust_dir_stat.stat.exists
       block:
@@ -304,68 +308,50 @@
             msg: >-
               nyxmon-agent {{ nyxmon_agent_rust_version }} failed validation
               ({{ ansible_failed_result.msg | default('see above') }}). Nothing was
-              switched: the drop-in, the running unit and the other installed
+              switched: the unit, the running agent and the other installed
               versions are unchanged.
 
-- name: agent_rust | Check for an agent implementation drop-in
+# The Rust version the monitoring unit started so far, read before
+# monitoring.yml rewrites the unit: the base unit's ExecStart, or the retired
+# drop-in's while it still exists (it overrides the base unit).
+- name: agent_rust | Check the monitoring unit and the retired drop-in
   ansible.builtin.stat:
-    path: "{{ nyxmon_agent_dropin }}"
-  register: nyxmon_agent_dropin_stat
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ nyxmon_agent_unit_file }}"
+    - "{{ nyxmon_agent_legacy_dropin }}"
+  register: nyxmon_agent_unit_stat
 
-- name: agent_rust | Read the agent implementation drop-in
+- name: agent_rust | Read the monitoring unit
   ansible.builtin.slurp:
-    path: "{{ nyxmon_agent_dropin }}"
-  register: nyxmon_agent_dropin_before
-  when: nyxmon_agent_dropin_stat.stat.exists
+    path: "{{ nyxmon_agent_unit_file }}"
+  register: nyxmon_agent_unit_before
+  when: nyxmon_agent_unit_stat.results[0].stat.isreg | default(false)
 
-- name: agent_rust | Derive the Rust version the drop-in selected so far
+- name: agent_rust | Read the retired drop-in
+  ansible.builtin.slurp:
+    path: "{{ nyxmon_agent_legacy_dropin }}"
+  register: nyxmon_agent_legacy_dropin_before
+  when: nyxmon_agent_unit_stat.results[1].stat.isreg | default(false)
+
+- name: agent_rust | Derive the Rust version the unit selected so far
   ansible.builtin.set_fact:
     nyxmon_agent_rust_active_before: >-
       {{
         (
-          (nyxmon_agent_dropin_before.content | default('') | b64decode)
-          | regex_search(
+          [nyxmon_agent_legacy_dropin_before, nyxmon_agent_unit_before]
+          | map(attribute='content', default='')
+          | map('b64decode')
+          | map('regex_search',
               '(?m)^ExecStart=' ~ (nyxmon_agent_rust_install_root | regex_escape)
               ~ '/([^/ ]+)/nyxmon-agent( |$)', '\1')
-          | default([], true)
+          | map('default', [''], true)
+          | map('first')
+          | select
           | first
         ) | default('', true)
       }}
-
-- name: agent_rust | Ensure the monitoring unit drop-in directory exists
-  ansible.builtin.file:
-    path: "{{ nyxmon_agent_dropin | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-  when: nyxmon_agent_impl == 'rust'
-
-# The version is part of the drop-in, so every version change and every impl
-# flip changes the file and restarts the unit; an unchanged deploy restarts
-# nothing. The base unit keeps the Python ExecStart and the shared hardening.
-- name: agent_rust | Select the Rust agent for the monitoring unit
-  ansible.builtin.template:
-    src: agent-impl.conf.j2
-    dest: "{{ nyxmon_agent_dropin }}"
-    owner: root
-    group: root
-    mode: "0644"
-  register: nyxmon_agent_dropin_rust
-  notify:
-    - reload systemd
-    - restart nyxmon-monitor
-  when: nyxmon_agent_impl == 'rust'
-
-- name: agent_rust | Select the Python agent for the monitoring unit
-  ansible.builtin.file:
-    path: "{{ nyxmon_agent_dropin }}"
-    state: absent
-  register: nyxmon_agent_dropin_python
-  notify:
-    - reload systemd
-    - restart nyxmon-monitor
-  when: nyxmon_agent_impl == 'python'
 
 - name: agent_rust | Check the previously selected Rust version
   ansible.builtin.stat:
@@ -374,8 +360,8 @@
   when: nyxmon_agent_rust_active_before | length > 0
 
 # Kept by the pruning step as the rollback target. Written only when the
-# selection moves away from that version (another version, or Python), not when
-# the drop-in changes for another reason.
+# selection moves to another version, not when the unit changes for another
+# reason.
 - name: agent_rust | Remember the previously selected Rust version
   ansible.builtin.copy:
     content: "{{ nyxmon_agent_rust_active_before }}\n"
@@ -386,6 +372,4 @@
   when:
     - nyxmon_agent_rust_active_before | length > 0
     - nyxmon_agent_rust_active_before_stat.stat.isdir | default(false)
-    - >-
-      nyxmon_agent_rust_active_before
-      != (nyxmon_agent_rust_version if nyxmon_agent_impl == 'rust' else '')
+    - nyxmon_agent_rust_active_before != nyxmon_agent_rust_version

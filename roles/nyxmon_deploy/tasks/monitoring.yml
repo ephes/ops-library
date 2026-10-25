@@ -12,6 +12,34 @@
     - reload systemd
     - restart nyxmon-monitor
 
+# Before 2.75.0 this drop-in pointed the unit's Python ExecStart at the Rust
+# agent. The unit above starts the Rust agent itself, so the drop-in is removed
+# here, after the unit is written and before systemd reloads. Only this fixed
+# path is touched; the directory and its other drop-ins stay.
+- name: monitoring | Check for the retired agent implementation drop-in
+  ansible.builtin.stat:
+    path: "{{ nyxmon_agent_legacy_dropin }}"
+    follow: false
+  register: nyxmon_agent_legacy_dropin_stat
+
+- name: monitoring | Refuse a retired drop-in that is not a regular file
+  ansible.builtin.assert:
+    that:
+      - nyxmon_agent_legacy_dropin_stat.stat.isreg
+    fail_msg: >-
+      {{ nyxmon_agent_legacy_dropin }} exists but is not a regular file; it is
+      left alone. Inspect and remove it by hand.
+  when: nyxmon_agent_legacy_dropin_stat.stat.exists
+
+- name: monitoring | Remove the retired agent implementation drop-in
+  ansible.builtin.file:
+    path: "{{ nyxmon_agent_legacy_dropin }}"
+    state: absent
+  notify:
+    - reload systemd
+    - restart nyxmon-monitor
+  when: nyxmon_agent_legacy_dropin_stat.stat.exists
+
 - name: monitoring | Enable and start monitoring service
   systemd:
     name: "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"

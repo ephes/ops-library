@@ -1,16 +1,13 @@
 ---
-# After the handlers ran: prove the monitoring unit runs the selected agent,
-# then prune old Rust agent versions. A failed check stops the play before
-# anything is pruned.
+# After the handlers ran: prove the monitoring unit runs the pinned Rust agent,
+# then prune old versions. A failed check stops the play before anything is
+# pruned.
 
-- name: agent_verify | Verify the running agent implementation
+- name: agent_verify | Verify the running Rust agent
   when:
     - nyxmon_monitoring_enabled
     - not ansible_check_mode
   block:
-    # The uv venv interpreter is a symlink to a uv-managed Python outside the
-    # venv, so the Python agent is identified by its argv, the Rust agent by
-    # /proc/<pid>/exe.
     - name: agent_verify | Read the live nyxmon-monitor process
       ansible.builtin.shell: |
         unit={{ nyxmon_agent_monitor_unit | quote }}
@@ -32,38 +29,19 @@
       delay: 3
       until:
         - "'state=active' in nyxmon_agent_live.stdout_lines | default([])"
-        - nyxmon_agent_expected_line in nyxmon_agent_live.stdout_lines | default([])
-      vars:
-        nyxmon_agent_expected_line: >-
-          {{
-            ('exe=' ~ nyxmon_agent_rust_binary)
-            if nyxmon_agent_impl == 'rust'
-            else ('arg=' ~ nyxmon_venv_bin ~ '/start-agent')
-          }}
+        - ('exe=' ~ nyxmon_agent_rust_binary) in nyxmon_agent_live.stdout_lines | default([])
 
-    - name: agent_verify | Assert nyxmon-monitor runs the selected agent
+    - name: agent_verify | Assert nyxmon-monitor runs the pinned Rust agent
       ansible.builtin.assert:
         that:
           - "'state=active' in nyxmon_agent_live.stdout_lines"
-          - nyxmon_agent_expected_line in nyxmon_agent_live.stdout_lines
-          - >-
-            nyxmon_agent_impl == 'rust' or
-            nyxmon_agent_live.stdout_lines
-            | select('match', 'exe=' ~ (nyxmon_agent_rust_install_root | regex_escape) ~ '/')
-            | list | length == 0
+          - ('exe=' ~ nyxmon_agent_rust_binary) in nyxmon_agent_live.stdout_lines
         fail_msg: |-
-          {{ nyxmon_agent_monitor_unit }}.service does not run the selected agent
-          (nyxmon_agent_impl={{ nyxmon_agent_impl }}); expected '{{ nyxmon_agent_expected_line }}'.
-          With nyxmon_service_restart_on_change=false a changed drop-in only takes
-          effect after a manual restart. Live process:
+          {{ nyxmon_agent_monitor_unit }}.service does not run
+          {{ nyxmon_agent_rust_binary }}. With
+          nyxmon_service_restart_on_change=false a changed unit only takes effect
+          after a manual restart. Live process:
           {{ nyxmon_agent_live.stdout_lines | join('\n') }}
-      vars:
-        nyxmon_agent_expected_line: >-
-          {{
-            ('exe=' ~ nyxmon_agent_rust_binary)
-            if nyxmon_agent_impl == 'rust'
-            else ('arg=' ~ nyxmon_venv_bin ~ '/start-agent')
-          }}
 
 # Pruning needs the live check above: without the monitoring unit (monitoring
 # disabled) nothing proves which binary still runs, so nothing is pruned.
@@ -87,7 +65,7 @@
       register: nyxmon_agent_rust_previous
       failed_when: false
 
-    # Kept: the pinned version (active with impl rust), the rollback target,
+    # Kept: the pinned version (the one the unit runs), the rollback target,
     # the version the live process runs and the newest
     # nyxmon_agent_rust_keep_versions installs. Directories that are not
     # version-shaped are never touched.

@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### nyxmon_deploy: Python agent fallback retired
+
+- **Breaking:** `nyxmon_agent_impl` is removed. `nyxmon-monitor.service` always
+  runs the pinned Rust agent, and a run that still sets `nyxmon_agent_impl`
+  (any value) fails before anything changes. `nyxmon_agent_rust_version` (with
+  `nyxmon_agent_rust_sha256` or a local archive) is required while
+  `nyxmon_monitoring_enabled`.
+- The base unit's `ExecStart` is now the versioned binary
+  (`<install root>/<version>/nyxmon-agent --db <db> --enable-telegram`)
+  instead of the venv `start-agent`. The `agent-impl.conf` template is gone;
+  on a host deployed before this version the role removes exactly
+  `/etc/systemd/system/<monitor unit>.service.d/agent-impl.conf` after
+  writing the unit (a non-regular file there fails the run), leaves the other
+  drop-ins alone and restarts `nyxmon-monitor` once. The process keeps the
+  same binary and arguments.
+- The version the unit ran so far, for `.previous-version` and pruning, is
+  read from the unit, or from the old drop-in while it still exists.
+- The live check after the restart only accepts the versioned binary
+  (`/proc/<pid>/exe`). Rollback is pinning the previous Rust release again;
+  the switch back to Python exists only in git history.
+- Molecule converges Rust-only, migrates a planted pre-2.75.0 unit plus
+  drop-in (keeping an operator's own drop-in) and ends with a Rust-to-Rust
+  rollback.
+
 ## [2.74.1] - 2026-10-24
 
 ### Managed runtime verification repair

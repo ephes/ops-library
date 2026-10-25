@@ -104,12 +104,12 @@ nyxmon_notify_warning_repeat_interval_seconds: 86400
 nyxmon_processing_lease_seconds: 900
 nyxmon_check_batch_size: 5
 
-# Monitoring agent implementation: python (the venv `start-agent`) or rust
-# (the `nyxmon-agent` release binary, selected by a systemd drop-in).
-nyxmon_agent_impl: python
-# Rust agent release to install, e.g. "0.1.0". Empty: nothing is installed,
-# validated or pruned. A set version is installed even with impl python, so the
-# binary can be in place before the switch. Required for impl rust.
+# Monitoring agent: nyxmon-monitor.service runs the Rust `nyxmon-agent` release
+# binary. The Python agent fallback (nyxmon_agent_impl) was retired in 2.75.0;
+# setting nyxmon_agent_impl now fails the run.
+# Rust agent release to install and run, e.g. "0.1.0". Required while
+# nyxmon_monitoring_enabled; empty (monitoring disabled) installs, validates and
+# prunes nothing.
 nyxmon_agent_rust_version: ""
 # sha256 of the release archive (64 hex digits). Required with a version unless
 # nyxmon_agent_rust_local_archive is set; also checked against a local archive
@@ -121,8 +121,8 @@ nyxmon_agent_rust_release_url: >-
 # the download.
 nyxmon_agent_rust_local_archive: ""
 nyxmon_agent_rust_install_root: /opt/nyxmon-agent
-# Installed versions kept by the pruning step. The version in the drop-in, the
-# previously active version and the pinned version are always kept on top.
+# Installed versions kept by the pruning step. The running version, the
+# previously selected version and the pinned version are always kept on top.
 nyxmon_agent_rust_keep_versions: 3
 
 # Python package management

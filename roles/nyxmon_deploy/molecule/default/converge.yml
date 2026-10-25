@@ -1,9 +1,12 @@
 ---
-- name: Converge with the Python agent
+# The role needs a pinned agent release with monitoring enabled, so the first
+# play only prepares the instance and the first converge runs with a fake
+# release (below).
+- name: Prepare the instance
   hosts: all
   become: true
 
-  pre_tasks:
+  tasks:
     - name: Ensure apt helpers and curl are present
       ansible.builtin.apt:
         name:
@@ -57,10 +60,7 @@
   vars_files:
     - nyxmon_vars.yml
 
-  roles:
-    - role: nyxmon_deploy
-
-# The Rust phases use a fake nyxmon-agent compiled in the instance: the real
+# The converges use a fake nyxmon-agent compiled in the instance: the real
 # release is an x86_64 binary and Molecule may run on arm64. The fake answers
 # --version and --check-schema like the real one (the latter only checks the
 # --db path exists) and otherwise waits for SIGTERM, so /proc/<pid>/exe of the
@@ -193,7 +193,7 @@
         flat: true
       loop: "{{ fake_agent_builds.keys() | list + ['link'] }}"
 
-- name: Switch to the Rust agent (fake 0.1.0)
+- name: Converge with the Rust agent (fake 0.1.0)
   hosts: all
   become: true
   vars_files:
@@ -203,24 +203,34 @@
   roles:
     - role: nyxmon_deploy
       vars:
-        nyxmon_agent_impl: rust
         nyxmon_agent_rust_version: "0.1.0"
         nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/a.tar.gz"
         nyxmon_agent_rust_keep_versions: 1
   post_tasks:
-    - name: Read the drop-in
+    - name: Read the monitoring unit
       ansible.builtin.slurp:
+        path: /etc/systemd/system/nyxmon-monitor.service
+      register: rust_unit
+
+    - name: Check for the retired drop-in
+      ansible.builtin.stat:
         path: /etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf
       register: rust_dropin
 
-    - name: Assert the drop-in starts the versioned binary
+    - name: Assert the unit starts the versioned binary itself
       ansible.builtin.assert:
         that:
           - >-
             'ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent --db /home/nyxmon/site/src/django/db.sqlite3 --enable-telegram'
-            in (rust_dropin.content | b64decode)
+            in (rust_unit.content | b64decode)
+          - "'start-agent' not in (rust_unit.content | b64decode)"
+          - not rust_dropin.stat.exists
 
-- name: Switch to another Rust version (fake 0.1.1) and prune
+# A host deployed before 2.75.0: the base unit names the Python start-agent and
+# the agent-impl.conf drop-in selects the Rust agent. The deploy rewrites the
+# unit, removes the drop-in (and only it), remembers the version the drop-in
+# selected and prunes.
+- name: Retire the drop-in of an older deploy, switch to fake 0.1.1 and prune
   hosts: all
   become: true
   vars_files:
@@ -243,10 +253,39 @@
         mode: "0755"
         modification_time: "200001010000.00"
         modification_time_format: "%Y%m%d%H%M.%S"
+
+    - name: Restore the Python ExecStart of the pre-2.75.0 base unit
+      ansible.builtin.replace:
+        path: /etc/systemd/system/nyxmon-monitor.service
+        regexp: '^ExecStart=/opt/nyxmon-agent/0\.1\.0/nyxmon-agent '
+        replace: "ExecStart={{ nyxmon_site_path }}/.venv/bin/start-agent "
+
+    - name: Plant the pre-2.75.0 drop-in selecting fake 0.1.0
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf
+        mode: "0644"
+        content: |
+          # Managed by Ansible (nyxmon_deploy): nyxmon_agent_impl=rust.
+          # Removed when nyxmon_agent_impl=python; the base unit then runs the venv
+          # start-agent again.
+          [Service]
+          ExecStart=
+          ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent --db /home/nyxmon/site/src/django/db.sqlite3 --enable-telegram
+
+    - name: Plant a drop-in of the operator's own
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/nyxmon-monitor.service.d/zz-operator.conf
+        mode: "0644"
+        content: |
+          [Service]
+          Environment=MOLECULE_OPERATOR_DROPIN=1
+
+    - name: Load the planted unit state
+      ansible.builtin.systemd:
+        daemon_reload: true
   roles:
     - role: nyxmon_deploy
       vars:
-        nyxmon_agent_impl: rust
         nyxmon_agent_rust_version: "0.1.1"
         nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/b.tar.gz"
         nyxmon_agent_rust_keep_versions: 1
@@ -263,11 +302,33 @@
         path: /opt/nyxmon-agent/.previous-version
       register: rust_previous
 
-    - name: Assert the previous version is kept and the old one pruned
+    - name: Read the monitoring unit
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/nyxmon-monitor.service
+      register: retired_unit
+
+    - name: Check the drop-ins
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/nyxmon-monitor.service.d/{{ item }}"
+      loop:
+        - agent-impl.conf
+        - zz-operator.conf
+      register: retired_dropins
+
+    - name: Remove the operator drop-in again
+      ansible.builtin.file:
+        path: /etc/systemd/system/nyxmon-monitor.service.d/zz-operator.conf
+        state: absent
+
+    - name: Assert the drop-in is retired, the previous version kept and the old one pruned
       ansible.builtin.assert:
         that:
           - rust_installed.files | map(attribute='path') | map('basename') | sort == ['0.1.0', '0.1.1', 'keep-me']
           - rust_previous.content | b64decode | trim == '0.1.0'
+          - "'ExecStart=/opt/nyxmon-agent/0.1.1/nyxmon-agent ' in (retired_unit.content | b64decode)"
+          - "'start-agent' not in (retired_unit.content | b64decode)"
+          - not retired_dropins.results[0].stat.exists
+          - retired_dropins.results[1].stat.exists
 
 - name: Refuse a binary that reports another version
   hosts: all
@@ -288,7 +349,6 @@
           ansible.builtin.include_role:
             name: nyxmon_deploy
           vars:
-            nyxmon_agent_impl: rust
             nyxmon_agent_rust_version: "0.2.0"
             nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/wrong.tar.gz"
             nyxmon_agent_rust_keep_versions: 1
@@ -307,10 +367,10 @@
             path: /opt/nyxmon-agent/0.2.0
           register: rejected_version
 
-        - name: Read the drop-in
+        - name: Read the monitoring unit
           ansible.builtin.slurp:
-            path: /etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf
-          register: refused_dropin
+            path: /etc/systemd/system/nyxmon-monitor.service
+          register: refused_unit
 
         - name: Assert nothing was switched
           ansible.builtin.assert:
@@ -318,7 +378,7 @@
               - not (refused_run_succeeded | default(false))
               - "'reports the pinned version' in ansible_failed_result.msg | default('') or 'failed validation' in ansible_failed_result.msg | default('')"
               - not rejected_version.stat.exists
-              - "'/opt/nyxmon-agent/0.1.1/nyxmon-agent' in (refused_dropin.content | b64decode)"
+              - "'/opt/nyxmon-agent/0.1.1/nyxmon-agent' in (refused_unit.content | b64decode)"
               - pid_after.stdout == pid_before.stdout
 
     - name: Fail when the role accepted the wrong binary
@@ -346,7 +406,6 @@
           ansible.builtin.include_role:
             name: nyxmon_deploy
           vars:
-            nyxmon_agent_impl: rust
             nyxmon_agent_rust_version: "0.1.0"
             nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/a2.tar.gz"
             nyxmon_agent_rust_keep_versions: 1
@@ -392,7 +451,6 @@
           ansible.builtin.include_role:
             name: nyxmon_deploy
           vars:
-            nyxmon_agent_impl: rust
             nyxmon_agent_rust_version: "0.3.0"
             nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/link.tar.gz"
             nyxmon_agent_rust_keep_versions: 1
@@ -426,7 +484,9 @@
         that:
           - not (link_run_succeeded | default(false))
 
-- name: Roll back to the Python agent
+# The rollback after the Python fallback's retirement: pin the previous Rust
+# release again. verify.yml checks the result.
+- name: Roll back to the previous Rust release (fake 0.1.0)
   hosts: all
   become: true
   vars_files:
@@ -436,7 +496,6 @@
   roles:
     - role: nyxmon_deploy
       vars:
-        nyxmon_agent_impl: python
-        nyxmon_agent_rust_version: "0.1.1"
-        nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/b.tar.gz"
+        nyxmon_agent_rust_version: "0.1.0"
+        nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/a.tar.gz"
         nyxmon_agent_rust_keep_versions: 1
