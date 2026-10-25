@@ -200,8 +200,10 @@ What the role does, in order:
    migrations). A failure stops the play; a version installed in this run is
    removed again, the unit, the running agent and the other versions stay
    as they were.
-4. Records the version the unit ran so far in `<root>/.previous-version` when
-   the pin moves to another version, then writes `nyxmon-monitor.service`
+4. With monitoring enabled: records the version the unit ran so far in
+   `<root>/.previous-version` when the pin moves to another version (a run
+   with monitoring disabled leaves the marker alone), then writes
+   `nyxmon-monitor.service`
    with the versioned binary:
 
    ```ini

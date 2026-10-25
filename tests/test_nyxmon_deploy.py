@@ -805,11 +805,12 @@ class RustAgentTests(unittest.TestCase):
             "register": "probe",
         }
 
-        def case(before: str, version: str) -> dict:
+        def case(before: str, version: str, monitoring: bool = True) -> dict:
             return {
                 "nyxmon_agent_rust_active_before": before,
                 "nyxmon_agent_rust_active_before_stat": {"stat": {"isdir": True}},
                 "nyxmon_agent_rust_version": version,
+                "nyxmon_monitoring_enabled": monitoring,
             }
 
         outcomes = run_cases(
@@ -819,6 +820,9 @@ class RustAgentTests(unittest.TestCase):
                 "rust_to_rust": case("0.1.0", "0.2.0"),
                 "rollback": case("0.2.0", "0.1.0"),
                 "no_rust_before": case("", "0.2.0"),
+                # monitoring.yml leaves the unit alone: the marker must keep the rollback target.
+                "monitoring_disabled_without_pin": case("0.1.1", "", monitoring=False),
+                "monitoring_disabled_with_pin": case("0.1.1", "0.2.0", monitoring=False),
             },
             "probe is not skipped",
         )
@@ -830,6 +834,8 @@ class RustAgentTests(unittest.TestCase):
                 "rust_to_rust": True,
                 "rollback": True,
                 "no_rust_before": False,
+                "monitoring_disabled_without_pin": False,
+                "monitoring_disabled_with_pin": False,
             },
         )
 
