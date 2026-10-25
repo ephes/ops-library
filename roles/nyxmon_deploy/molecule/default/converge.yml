@@ -45,9 +45,10 @@
         enabled: true
         state: started
 
+    # The role default of nyxmon_site_path; this play does not load the role.
     - name: Remove existing site path for clean git clone
       ansible.builtin.file:
-        path: "{{ nyxmon_site_path }}"
+        path: /home/nyxmon/site
         state: absent
       when: nyxmon_deploy_method == "git"
 
@@ -258,7 +259,7 @@
       ansible.builtin.replace:
         path: /etc/systemd/system/nyxmon-monitor.service
         regexp: '^ExecStart=/opt/nyxmon-agent/0\.1\.0/nyxmon-agent '
-        replace: "ExecStart={{ nyxmon_site_path }}/.venv/bin/start-agent "
+        replace: "ExecStart=/home/nyxmon/site/.venv/bin/start-agent "
 
     - name: Plant the pre-2.75.0 drop-in selecting fake 0.1.0
       ansible.builtin.copy:
