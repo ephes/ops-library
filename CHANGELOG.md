@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.75.1] - 2026-10-26
+
+### metrics_endpoint: password verification on stdin
+
 - Keep metrics_endpoint Python Basic Auth passwords out of process arguments:
   verify with `htpasswd -vi` and stdin, matching the existing thermal and
   torrent endpoints. Preserve the realm and accepted password semantics,
