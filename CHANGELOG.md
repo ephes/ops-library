@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Keep metrics_endpoint Python Basic Auth passwords out of process arguments:
+  verify with `htpasswd -vi` and stdin, matching the existing thermal and
+  torrent endpoints. Preserve the realm and accepted password semantics,
+  including bcrypt suffix equivalence only for actual bcrypt records; retain
+  the 255-byte bound and reject truncated CR/LF input for other schemes. A NUL
+  in the password fails closed with 401 instead of a Python exception.
+
 ## [2.75.0] - 2026-10-25
 
 ### nyxmon_deploy: Python agent fallback retired

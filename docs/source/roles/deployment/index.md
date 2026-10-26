@@ -30,6 +30,7 @@ traefik_deploy
 dns_deploy
 bind_authoritative_deploy
 dns_metrics_endpoint
+metrics_endpoint
 tailscale_deploy
 homelab_deploy
 work_app_deploy

@@ -59,6 +59,13 @@ metrics_endpoint_probe_states: []         # probe state files exported as sectio
 - Creates `metrics` system user/group.
 - Deploys `mail-metrics.sh` (queue counts, disk usage, service status).
 - Deploys `metrics_httpd.py` (Python HTTP server, basic auth via htpasswd, runs metrics script).
+  Password verification sends the request password on stdin (`htpasswd -vi`),
+  keeping it out of process arguments. The Basic Auth realm and ordinary
+  responses stay unchanged. Requests with a NUL in the password fail closed with
+  401 instead of an exception. The existing 255-byte limit is enforced; CR/LF requests are
+  rejected except for already accepted suffix bytes beyond bcrypt's 72-byte
+  boundary, and that exception requires every record for the selected user to
+  be bcrypt. APR/SHA and other schemes receive no suffix exception.
 - Generates htpasswd file at `/etc/metrics-endpoint/htpasswd`.
 - Creates systemd unit `metrics-endpoint.service`, binds to loopback/Tailscale only.
 - Applies ACLs on postfix queue paths so the metrics user can read queue counts.
@@ -121,7 +128,7 @@ stdout served as the body (PLAN.md 4.4).
 ## Notes
 
 - Auth placeholders must be overridden; role asserts on `CHANGE_ME`.
-- The Python server calls `htpasswd -vb` for auth checks; keep `apache2-utils` installed.
+- The Python server calls `htpasswd -vi` with the password on stdin for auth checks; keep `apache2-utils` installed.
 - The systemd unit runs `/usr/bin/python3` directly; ensure the system package is present.
 - Adjust `metrics_endpoint_services`/paths per host (edge vs backend).
 - ACLs are set on queue paths; ensure filesystem supports ACLs (`acl` package installed).
