@@ -73,3 +73,9 @@ chmod 600 /mnt/cryptdata/snappymail/_data_/_default_/storage/example.com/alice/i
 ```
 
 The identity file is stored in the data directory and survives redeploys and backup/restore cycles.
+
+## HSTS preload policy
+
+`snappymail_traefik_sts_preload` defaults to false. Set it explicitly to true
+to retain an existing preload policy; this adds `stsPreload: true` to the route
+without changing certificate, authentication or IP allowlist settings.

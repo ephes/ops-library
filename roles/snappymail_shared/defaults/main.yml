@@ -78,3 +78,6 @@ snappymail_healthcheck_enabled: true
 snappymail_healthcheck_url: "http://127.0.0.1:{{ snappymail_listen_port }}/"
 snappymail_healthcheck_timeout: 10
 snappymail_healthcheck_retries: 3
+
+# Preserve an explicitly selected HSTS preload policy.
+snappymail_traefik_sts_preload: false

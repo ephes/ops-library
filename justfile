@@ -837,7 +837,7 @@ test-voxhelm-csrf: venv
 test-voxhelm-prune-and-service-knobs: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_voxhelm_prune_and_service_knobs
 
-# Collection-wide policy: role templates omit the HSTS preload directive.
+# Default-off HSTS preload policy; explicit mail UI overrides are tested separately.
 test-traefik-hsts: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_traefik_hsts
 

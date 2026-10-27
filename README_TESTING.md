@@ -20,7 +20,7 @@ just molecule-test fastdeploy_register_service
 ## What `just test` Covers
 
 - portable audit follow-up render/static checks (`just test-lowfindings`)
-- HSTS preload policy across all role templates (`just test-traefik-hsts`)
+- Default-off HSTS preload policy across all role templates, including explicit mail UI overrides (`just test-traefik-hsts`)
 - role test harness (`just test-roles`)
 - no_log check for credential-carrying tasks (`just test-secret-no-log`)
 - non-failing lint summary (`just lint`)

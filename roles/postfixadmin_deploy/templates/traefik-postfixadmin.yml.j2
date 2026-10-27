@@ -73,6 +73,9 @@ http:
         forceSTSHeader: true
         stsSeconds: 31536000
         stsIncludeSubdomains: true
+{% if postfixadmin_traefik_sts_preload | default(false) | bool %}
+        stsPreload: true
+{% endif %}
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ postfixadmin_traefik_host }}"

@@ -201,3 +201,9 @@ Jochen Wersdoerfer
 ## Credential logging
 
 Password-bearing admin queries and admin backup writes use `no_log: true` to keep password hashes out of Ansible output, including verbose runs.
+
+## HSTS preload policy
+
+`postfixadmin_traefik_sts_preload` defaults to false. Set it explicitly to true
+to retain an existing preload policy; this adds `stsPreload: true` to the route
+without changing certificate, authentication or IP allowlist settings.

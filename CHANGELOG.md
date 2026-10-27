@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add explicit, default-off HSTS preload inputs for PostfixAdmin and SnappyMail
+  routes so an existing host policy can be preserved during ordinary deployment.
+  Certificate, authentication and IP allowlist behavior remain unchanged.
+
 ## [2.75.1] - 2026-10-26
 
 ### metrics_endpoint: password verification on stdin

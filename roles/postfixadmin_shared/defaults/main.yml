@@ -192,3 +192,6 @@ postfixadmin_healthcheck_enabled: true
 postfixadmin_healthcheck_url: "http://{{ postfixadmin_listen_address }}:{{ postfixadmin_listen_port }}/"
 postfixadmin_healthcheck_timeout: 10
 postfixadmin_healthcheck_retries: 3
+
+# Preserve an explicitly selected HSTS preload policy.
+postfixadmin_traefik_sts_preload: false

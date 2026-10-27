@@ -26,7 +26,9 @@ system Python builds; set `uv_version` and the role-specific `*_python_version` 
 
 ## Traefik HSTS policy
 
-Role templates omit the HSTS `preload` directive. The owner decided against
+Role templates omit the HSTS `preload` directive by default. PostfixAdmin and
+SnappyMail expose an explicit, default-off override to preserve an existing route
+policy; this does not register a domain with browser preload lists. The owner decided against
 browser preload registration on 2026-10-19 because it is difficult to undo and
 requires HTTPS for every subdomain. Existing HSTS lifetimes, `includeSubDomains`
 settings, and other security headers remain unchanged.
