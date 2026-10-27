@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.75.2] - 2026-10-27
+
+### Mail web: preserve explicit existing HSTS preload policy
+
 - Add explicit, default-off HSTS preload inputs for PostfixAdmin and SnappyMail
   routes so an existing host policy can be preserved during ordinary deployment.
   Certificate, authentication and IP allowlist behavior remain unchanged.
