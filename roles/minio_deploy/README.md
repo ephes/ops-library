@@ -297,8 +297,8 @@ additive identities permit other attachments. `MinioSupersededPolicy` declares
 an obsolete policy to retire. The weeknotes example is a private caller's
 immutable versioned policy, not a new Ansible variable.
 
-The separately implemented public pyinfra runtime is native-qualified; private
-inventory adoption remains pending. This Ansible role and its defaults are unchanged. The accepted port checks the shared client
+The separately implemented public pyinfra runtime is native-qualified; the
+private metadata-selected default has also completed inventory first/repeat. This Ansible role and its defaults are unchanged. The accepted port checks the shared client
 alias, bucket configuration, user credentials, policies and attachments before
 writing. It uses signed requests with a private temporary client configuration,
 never an IAM export. Disabled users and unknown/transport failures stop the run.
@@ -322,7 +322,7 @@ read-only binary copies are permitted for owned fixtures; no replacement release
 or artifact source is selected implicitly. ARM/QEMU CLI research is emulated,
 not native deployment qualification. The later offline x86 KVM matrix completed
 28 phases with 13 strict zero-change repeats and every-phase foreign-alias
-equality; inventory adoption remains pending.
+equality; separate inventory qualification is recorded below.
 The pyinfra client uses the official GitHub `minio/mc` release asset
 `mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z`, anonymously verified at 30,535,864 bytes
 and unchanged SHA256 `01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891`.
@@ -357,6 +357,25 @@ were verified. Earlier failed attempts remain retained. This is synthetic native
 proof, not production IAM/object access, global zero-I/O or inventory acceptance.
 An independent original S4 lag probe ran afterward with its own receipt and
 expected marker/status writes; it does not extend MinIO deployment ownership.
+
+
+The separate2026-10-28 inventory plan/default-first/explicit-host repeat used
+immutable public1249bd0. Each actual call ran6 encrypted-volume and29 MinIO
+operations:70 successful operations total, zero managed changes/uploads. Every
+normal CLI child proved all684 installed resources/noneditable direct_url.
+Protected files/config/unit/PIDs, relevant mounts, packages, listeners, explicit
+directory metadata, health and memory-only private-content equality remained
+exact. No restart, root rotation, remount, manual IAM repair or upgrade occurred.
+
+The initial plan stopped before apply on two real conditional rollout rows. The
+final recorder kept those rows and proved only exact installed callback/closure
+operands false, bound to earlier no-change operations in the same state/host;
+unknown/changed conditions still refuse. Both actual calls independently returned
+zero managed changes. Original failure evidence and its private-comparison
+discontinuity remain retained; the fresh successful run used a new continuous
+ephemeral comparison and released its writer lock. This bounded deploy proof is
+not whole-object-tree/global zero-I/O or certificate validation, and it does not
+convert the outstanding maintenance rollback or other lifecycle workflows.
 
 ## Upgrades
 

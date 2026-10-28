@@ -6,7 +6,10 @@
   top-level-only ownership with read-only descendant checks, normal known-owned
   recovery and explicit half-applied-state refusal/partial-change limits.
   The exact client now has a verified official download source; the original
-  server source remains HTTP410. Inventory adoption is separately coordinated.
+  server source remains HTTP410. Separate inventory default first/explicit repeat
+  completed70 operations with zero managed changes/uploads and exact protected
+  state/health. Retain the initial conditional-plan stop and source-bound false
+  predicate proof without hiding raw conditional rows.
   Existing Ansible tasks, defaults and lifecycle behavior are unchanged.
 
 - Document the original Postfix no-configuration fresh-install gap and the typed
