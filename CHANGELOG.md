@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Document the original Postfix no-configuration fresh-install gap and the typed
+  pyinfra API's absent-only distribution-config bootstrap. No Ansible task or
+  default changes.
+
 - Document the software-live pyinfra port's deliberate change-gated
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.

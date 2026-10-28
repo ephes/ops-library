@@ -128,3 +128,18 @@ MIT
 ## Author Information
 
 Jochen Wersdoerfer
+
+## Fresh Postfix and the typed deployment API
+
+The Ansible role retains its original `No configuration` package preseed. On a
+pristine supported Ubuntu package, that creates the Postfix account/master.cf
+but can leave `/etc/postfix/main.cf` absent; the role's subsequent `postconf`
+commands then fail. Existing configured installations retain their normal
+behavior. This documentation change does not change the Ansible role.
+
+The [typed pyinfra API](https://github.com/ephes/ops-deploy/blob/main/docs/services/fractal_monitoring.md)
+adds a separately qualified, fresh-only bootstrap: initial package/tool/config
+absence is required, then only an absent main.cf is filled from the installed
+distribution default before declared relay settings are validated and the daemon
+starts. Existing installed missing/damaged configurations refuse rather than
+being regenerated. Unowned defaults and TLS settings with `use_tls=false` remain.
