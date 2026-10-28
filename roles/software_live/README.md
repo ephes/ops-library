@@ -11,6 +11,35 @@ current minor release and end-of-life date.
 The role never runs apt update/upgrade, changes Traefik, or restarts applications.
 The deployment installs Python/APT bindings and endpoint dependencies if missing.
 
+## Pyinfra collection behavior
+
+The `ops-deploy` software-live port deliberately gates collection on
+changed programs, units/drop-ins, policy, endpoint configuration or implementation,
+or on missing/stale state (`generated_at_epoch` outside the 30-minute freshness
+window). An unchanged fresh pyinfra deploy verifies the selected process and
+performs authenticated read-only HTTP checks without starting another collection.
+When it does collect, it retains this role's wait-for-idle and state-rewrite checks.
+
+This Ansible role remains unchanged: it requests collection on every invocation
+and marks that task unchanged. Alternating tools therefore rewrites observation
+state on the Ansible turn; it is not a physical no-op. Existing timer schedules,
+Python/Rust rollback, shadow units, release protection and software-live-specific
+Nyxmon semantics remain part of the port's contract.
+
+[Owned native qualification](https://github.com/ephes/ops-deploy/actions/runs/40609646598)
+passed Ubuntu Python and Debian 13 Rust legs (33 phases each). Healthy repeats
+preserved protected snapshots with zero managed changes/uploads. The Debian
+userspace guest shares the runner kernel; all fixture data was synthetic. The
+intentional invalid-shadow fault performed five real rollback operations before
+failing and is not a zero-change phase. Default and four-host inventory repeats
+subsequently completed with zero managed changes/uploads. The first fleet run
+only wrote a declared policy update and ran its observation collector (two
+managed operations, one upload), matching an already installed application
+version without upgrading it. Other protected configuration and application
+PIDs were preserved; existing warning baselines were retained. This does not
+claim global zero I/O: collector observations and monitoring database metadata
+were recorded separately from the protected configuration.
+
 ## Configuration
 
 ```yaml

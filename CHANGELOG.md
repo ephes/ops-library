@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Document the software-live pyinfra port's deliberate change-gated
+  collection behavior and the unchanged Ansible role's unconditional collection.
+  No role task, default, unit or program changes.
+
 ## [2.75.2] - 2026-10-27
 
 ### Mail web: preserve explicit existing HSTS preload policy
