@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
-- Document the prepared MinIO pyinfra port's check-before-write IAM,
-  top-level-only ownership changes with recursive read-only verification,
-  explicit admission/recovery limits and the pinned URLs' HTTP 410 limitation.
+- Document MinIO pyinfra's owned native qualification: conditional IAM writes,
+  top-level-only ownership with read-only descendant checks, normal known-owned
+  recovery and explicit half-applied-state refusal/partial-change limits.
+  The exact client now has a verified official download source; the original
+  server source remains HTTP410. Inventory adoption is separately coordinated.
   Existing Ansible tasks, defaults and lifecycle behavior are unchanged.
 
 - Document the software-live pyinfra port's deliberate change-gated
