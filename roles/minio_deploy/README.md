@@ -126,6 +126,14 @@ See `defaults/main.yml` for the complete list.
 
 ## Version Pinning & Checksums
 
+The pinned defaults' server and client download URLs returned HTTP 410 during
+2026-10-28 research. This affects unchanged Ansible downloads too: a fresh
+installation or upgrade cannot fetch those artifacts from those URLs. A
+matching installed executable can be reused. The commands below describe the
+upstream layout, not evidence of current artifact availability; verify a
+reviewed, checksummed source before scheduling a fresh install or upgrade.
+No alternative release or artifact source is selected by this documentation.
+
 **SECURITY REQUIREMENT**: Version pinning is mandatory for reproducible and secure deployments.
 
 ### Get MinIO Checksums
@@ -280,7 +288,50 @@ mc ls local/
 4. **Checksum Validation**: Binary integrity verified before installation
 5. **No Secrets in Logs**: `no_log: true` for sensitive operations
 
+## Prepared pyinfra convergence contract
+
+The [prepared pyinfra port documentation](https://github.com/ephes/ops-deploy/blob/991238f2bf0faf69e2ae6dc3a405e1cdd2ca29a8/docs/services/minio.md)
+defines its additional identity/policy inputs and limitations. In that API,
+`MinioIdentity.exact` requires exactly its declared attachments and no groups;
+additive identities permit other attachments. `MinioSupersededPolicy` declares
+an obsolete policy to retire. The weeknotes example is a private caller's
+immutable versioned policy, not a new Ansible variable.
+
+The separately implemented pyinfra deployment is in preparation; this Ansible
+role and its defaults are unchanged. The accepted port checks the shared client
+alias, bucket configuration, user credentials, policies and attachments before
+writing. It uses signed requests with a private temporary client configuration,
+never an IAM export. Disabled users and unknown/transport failures stop the run.
+Existing immutable versioned policies are not overwritten, and rollback of the
+weeknotes policy remains a legacy-play operation.
+
+The port manages each data root's owner/group/mode without recursive chmod or
+chown; a read-only foreign-owner search refuses a mismatched descendant.
+On a healthy store it walks every descendant metadata entry, with no separate
+probe timeout; it reads no object bodies.
+It leaves objects, replication, lifecycle jobs, backup identities and unrelated
+aliases outside deployment ownership. False bucket-versioning input never
+disables an existing setting. These are deliberate convergence changes, not
+claims that the Ansible role has become write-free on repeat.
+
+The pinned server/client URLs returned HTTP 410 during research. Exact verified
+read-only binary copies are permitted for owned fixtures; no replacement release
+or artifact source is selected implicitly. ARM/QEMU CLI research is emulated,
+not native deployment qualification. Inventory adoption remains pending.
+
+For an existing bootstrap-enabled server, the prepared port requires a working
+client and a reachable server accepting the supplied root credentials before
+queuing writes. Root credential rotation, missing-client enablement and
+stopped/broken-service recovery remain outside this adoption contract and
+refuse rather than performing a partial rollout. Exact-policy identities may
+not declare superseded-policy retirement; that path is limited to additive
+identities. The legacy Ansible workflows remain unchanged.
+
 ## Upgrades
+
+The currently pinned URLs are unavailable as noted under
+“Version Pinning & Checksums” above. Confirm availability
+of the intended exact artifact before following these steps.
 
 To upgrade MinIO:
 
@@ -291,7 +342,8 @@ To upgrade MinIO:
    minio_version: "RELEASE.2025-10-15T17-29-55Z.hotfix.c392ab039"
    minio_checksum: "sha256:newchecksum..."
    ```
-4. Rerun deployment - role will download new binary and restart service
+4. Once the reviewed artifact is available, rerun deployment; the role downloads
+   the verified binary and restarts the service.
 
 ## Troubleshooting
 

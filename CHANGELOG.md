@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Document the prepared MinIO pyinfra port's check-before-write IAM,
+  top-level-only ownership changes with recursive read-only verification,
+  explicit admission/recovery limits and the pinned URLs' HTTP 410 limitation.
+  Existing Ansible tasks, defaults and lifecycle behavior are unchanged.
+
 - Document the software-live pyinfra port's deliberate change-gated
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.
