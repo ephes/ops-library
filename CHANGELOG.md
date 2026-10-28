@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Document MinIO pyinfra's owned native qualification: conditional IAM writes,
+  top-level-only ownership with read-only descendant checks, normal known-owned
+  recovery and explicit half-applied-state refusal/partial-change limits.
+  The exact client now has a verified official download source; the original
+  server source remains HTTP410. Inventory adoption is separately coordinated.
+  Existing Ansible tasks, defaults and lifecycle behavior are unchanged.
+
 - Document the original Postfix no-configuration fresh-install gap and the typed
   pyinfra API's absent-only distribution-config bootstrap. No Ansible task or
   default changes.

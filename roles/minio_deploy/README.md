@@ -126,6 +126,14 @@ See `defaults/main.yml` for the complete list.
 
 ## Version Pinning & Checksums
 
+The pinned defaults' server and client download URLs returned HTTP 410 during
+2026-10-28 research. This affects unchanged Ansible downloads too: a fresh
+installation or upgrade cannot fetch those artifacts from those URLs. A
+matching installed executable can be reused. The commands below describe the
+upstream layout, not evidence of current artifact availability; verify a
+reviewed, checksummed source before scheduling a fresh install or upgrade.
+No alternative release or artifact source is selected by this documentation.
+
 **SECURITY REQUIREMENT**: Version pinning is mandatory for reproducible and secure deployments.
 
 ### Get MinIO Checksums
@@ -280,7 +288,81 @@ mc ls local/
 4. **Checksum Validation**: Binary integrity verified before installation
 5. **No Secrets in Logs**: `no_log: true` for sensitive operations
 
+## Native-qualified pyinfra convergence contract
+
+The [published pyinfra contract](https://github.com/ephes/ops-deploy/blob/3c621d1b9edf404e3e6a433d5f77e94d04f6cb06/docs/services/minio.md)
+defines its additional identity/policy inputs and limitations. In that API,
+`MinioIdentity.exact` requires exactly its declared attachments and no groups;
+additive identities permit other attachments. `MinioSupersededPolicy` declares
+an obsolete policy to retire. The weeknotes example is a private caller's
+immutable versioned policy, not a new Ansible variable.
+
+The separately implemented public pyinfra runtime is native-qualified; private
+inventory adoption remains pending. This Ansible role and its defaults are unchanged. The accepted port checks the shared client
+alias, bucket configuration, user credentials, policies and attachments before
+writing. It uses signed requests with a private temporary client configuration,
+never an IAM export. Disabled users and unknown/transport failures stop the run.
+Existing immutable versioned policies are not overwritten. The explicit
+weeknotes-policy maintenance rollback is outstanding tracked conversion work;
+the current legacy command remains available until its guarded equivalent is
+implemented and qualified. This is not a permanent workflow exception or a new
+acknowledgement requirement.
+
+The port manages each data root's owner/group/mode without recursive chmod or
+chown; a read-only foreign-owner search refuses a mismatched descendant.
+On a healthy store it walks every descendant metadata entry, with no separate
+probe timeout; it reads no object bodies.
+It leaves objects, replication, lifecycle jobs, backup identities and unrelated
+aliases outside deployment ownership. False bucket-versioning input never
+disables an existing setting. These are deliberate convergence changes, not
+claims that the Ansible role has become write-free on repeat.
+
+The legacy pinned server/client URLs returned HTTP 410 during research. Exact verified
+read-only binary copies are permitted for owned fixtures; no replacement release
+or artifact source is selected implicitly. ARM/QEMU CLI research is emulated,
+not native deployment qualification. The later offline x86 KVM matrix completed
+28 phases with 13 strict zero-change repeats and every-phase foreign-alias
+equality; inventory adoption remains pending.
+The pyinfra client uses the official GitHub `minio/mc` release asset
+`mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z`, anonymously verified at 30,535,864 bytes
+and unchanged SHA256 `01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891`.
+Matching clients do not download. This source-only correction leaves this role's
+Ansible/custom URL inputs unchanged; the server source is still unavailable.
+
+The native-qualified port includes current-root host-local IAM admission and normal
+known-owned client/service recovery. A missing pinned client is installed, or a
+known inactive unit with the declared valid configuration is started, before a
+complete IAM check. These prerequisite changes remain reported if later IAM
+admission fails. Desired root credentials are applied with a change-gated restart
+and rechecked before alias/IAM writes. Unknown/foreign state remains a refusal;
+no acknowledgement flag is added. The owned native matrix exercised missing
+client recovery (one installed artifact), stopped-unit recovery (one start) and
+root rotation (three managed operations/no upload), each followed by a strict
+zero-change repeat. Disabled-IAM refusals after prerequisites retain those
+actual partial changes.
+
+Exact-policy identities may not declare superseded-policy retirement; that path
+is limited to additive identities. This documentation does not change the legacy
+Ansible workflow: its root environment notifies a deferred restart, but bootstrap
+uses desired credentials before that handler. The original owned root-rotation
+case actually failed after writing the new environment but before restarting
+the old-credential process. Pyinfra safely refused that untouched half-applied
+state before writes; it is not claimed to repair every historical partial state.
+Original normal/missing-client/stopped-service cases succeeded with real writes.
+
+Public artifact 1249bd0 was installed noneditably in a fresh Ubuntu24 independent
+KVM guest; all 684 installed resources matched Git, KVM was present/enabled, and
+the guest had loopback only. Final exit 0 and exact owned container/image cleanup
+were verified. Earlier failed attempts remain retained. This is synthetic native
+proof, not production IAM/object access, global zero-I/O or inventory acceptance.
+An independent original S4 lag probe ran afterward with its own receipt and
+expected marker/status writes; it does not extend MinIO deployment ownership.
+
 ## Upgrades
+
+The currently pinned URLs are unavailable as noted under
+“Version Pinning & Checksums” above. Confirm availability
+of the intended exact artifact before following these steps.
 
 To upgrade MinIO:
 
@@ -291,7 +373,8 @@ To upgrade MinIO:
    minio_version: "RELEASE.2025-10-15T17-29-55Z.hotfix.c392ab039"
    minio_checksum: "sha256:newchecksum..."
    ```
-4. Rerun deployment - role will download new binary and restart service
+4. Once the reviewed artifact is available, rerun deployment; the role downloads
+   the verified binary and restarts the service.
 
 ## Troubleshooting
 
