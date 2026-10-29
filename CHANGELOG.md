@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Correct DNS removal documentation: the original role creates no backup, and
+  its blocklist unit files remain installed after stopping/disabling them.
+  Tasks, defaults and runtime behavior are unchanged.
+
 - Document the native-qualified and inventory-adopted Paperless typed deployment,
   its deliberate bounded metadata/count index policy and equal-count freshness
   limit. Retain this Ansible role's unconditional reindex semantics unchanged.

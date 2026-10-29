@@ -74,13 +74,13 @@ None.
 2. **Unbound service and packages**
 3. **Configuration files** in `/etc/unbound/`
 4. **Blocklist data** in `/var/lib/unbound/`
-5. **Systemd timers** for blocklist updates
+5. **Blocklist timers/services** are stopped and disabled; their unit files are retained
 6. **Firewall rules** for DNS (if configured)
 
 ## Safety Features
 
 - Requires explicit confirmation (`dns_confirm_removal: true`)
-- Creates backups before removal
+- Does not create backups: arrange any required backup before invoking removal
 - Can restore systemd-resolved for continued DNS functionality
 - Safe to run multiple times (idempotent)
 
