@@ -134,6 +134,52 @@ and service pause. Large collections need a maintenance window proportional to
 their full indexing time. After an error, inspect the task output, correct the
 cause, and rerun deployment; the existing index may be incomplete until recovery.
 
+### Typed pyinfra deployment and intentional index-policy difference
+
+The separate public [Paperless typed contract](https://github.com/ephes/ops-deploy/blob/main/docs/services/paperless.md)
+is native-qualified and adopted for the normal private macmini deployment.
+It retains the original release/dependency/scanner/secret precedence and
+UV 0.13.5 manager defaults. This Ansible role's tasks and defaults are unchanged,
+including the unconditional reindex described above.
+
+The typed deployment uses two bounded index metadata/sentinel files plus a
+validated read-only SQL count. Release/package/migration/schema/language changes,
+missing or malformed index state, count drift and explicit force can require a
+rebuild. Equal-count content replacement cannot be detected by that aggregate;
+force remains available. Managed reindex retains stop/resume-on-failure and
+ordinary retry. A missing entire index directory is safely created as only the
+missing leaf by the service user; unrelated parents/ownership are not repaired.
+No production document names or bodies are needed for the deployment decision.
+
+Owned current and 3.0.4→3.2.1 upgrade matrices completed 50 typed phases each,
+including 26 strict zero-managed/zero-upload repeats per leg, real synthetic
+SFTP/OCR/authenticated search and index/application/scanner recovery. Upgrade
+first performed 12 managed operations/zero uploads. Those systemd userspaces
+shared their disposable GitHub VM kernels; they do not attest physical scanner
+or encrypted-device hardware. Original bootstrap prerequisite recoveries and
+prior failed/timeout attempts remain documented, not pristine bootstrap passes.
+
+Separate inventory qualification on 2026-10-29 used the exact 905-resource
+noneditable artifact. EV-first default deployment completed 111 successful
+operations with 4 managed changes/2 uploads: UV 0.13.4→0.13.5, Redis cache,
+constraints and exact route preload-line removal. The runner stopped after the
+successful command because it expected 5 managed changes but PostgreSQL's later
+cache step reported no change. That failure remains recorded; no first replay
+or host repair occurred. One adjudicated explicit repeat completed 110 successful
+operations with zero managed changes/uploads and strict protected-state equality.
+No application upgrade, managed migration, reindex, service restart or real
+document upload was performed in that inventory adoption.
+
+Only named operational paths, two index metadata files and aggregate SQL count
+were observed. Raw private bodies stayed on the remote host; ephemeral comparison
+keys/values were not persisted. The separate first/repeat RAM keys do not prove
+private-body equality across processes. All persisted operational fields matched
+across the continuation, with the desired route/constraints rebound. Loopback
+HTTPS establishes status with certificate verification disabled, and the known
+same-origin schema redirect must terminate at HTTP 200. No global zero-I/O claim
+is made. Separate backup/restore/remove conversion and legacy entrypoint retirement
+remain tracked work; normal deployment does not qualify those paths.
+
 ### Other failures
 
 - **PostgreSQL packages fail to install**: Ensure outbound network access to `apt.postgresql.org` or disable `paperless_postgres_repo_enabled` and adjust `paperless_postgres_version` to what the distro provides.

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Document the native-qualified and inventory-adopted Paperless typed deployment,
+  its deliberate bounded metadata/count index policy and equal-count freshness
+  limit. Retain this Ansible role's unconditional reindex semantics unchanged.
+  Record actual first 111 operations/4 managed/2 uploads, explicit repeat 110/0/0,
+  the retained cache-count assertion and privacy/native/lifecycle limits.
+
 - Document MinIO pyinfra's owned native qualification: conditional IAM writes,
   top-level-only ownership with read-only descendant checks, normal known-owned
   recovery and explicit half-applied-state refusal/partial-change limits.
