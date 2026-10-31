@@ -35,6 +35,7 @@ def selected_tasks(filename):
 
 def variables(entities, selected="owned-entry"):
     return {
+        "_ha_assist_registry_entities": entities,
         "_ha_entity_registry_raw": {
             "content": base64.b64encode(
                 json.dumps({"data": {"entities": entities}}).encode()
@@ -73,7 +74,17 @@ class AssistAutodetection(unittest.TestCase):
             self.assertEqual(len(tasks), 2)
             for kind, task in zip(("stt", "tts"), tasks):
                 expression = next(iter(task["ansible.builtin.set_fact"].values()))
-                legacy = expression.replace("\\.", "\\\\.")
+                frozen = yaml.safe_load(
+                    (
+                        ROOT
+                        / "tests/fixtures/homeassistant_assist_registry_original.yml"
+                    ).read_text()
+                )
+                original_task = frozen[filename]["tasks"][0 if kind == "stt" else 1]
+                original_expression = next(
+                    iter(original_task["ansible.builtin.set_fact"].values())
+                )
+                legacy = original_expression.replace("\\.", "\\\\.")
                 self.assertEqual(
                     hashlib.sha256(legacy.encode()).hexdigest(),
                     OLD_EXPRESSION_SHA[kind],

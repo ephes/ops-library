@@ -1,0 +1,74 @@
+---
+- name: "assist_registry | Ensure Home Assistant API is ready for live Assist discovery"
+  ansible.builtin.include_tasks: integration_api_ready.yml
+  when: not ansible_check_mode
+
+- name: "assist_registry | Initialize live Assist registry selection"
+  ansible.builtin.set_fact:
+    _ha_assist_registry_entities: []
+
+- name: "assist_registry | Read enabled Assist entities from the live registry"
+  ansible.builtin.command:
+    argv:
+      - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -I
+      - -B
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path + '/files/assist_registry.py') }}"
+    stdin: >-
+      {{ {'url': (
+          'http://' + ansible_default_ipv4.address + ':' + (homeassistant_app_port | string)
+          if (ansible_default_ipv4.address is defined and
+              ('localhost' in (homeassistant_api_url | lower) or '127.0.0.1' in homeassistant_api_url))
+          else homeassistant_api_url),
+          'token': homeassistant_api_token, 'timeout': homeassistant_api_timeout | int,
+          'validate_certs': homeassistant_api_validate_certs | bool,
+          'entry_id': _ha_assist_pipeline_entry_id, 'kinds': _ha_assist_registry_required | default([]),
+          'retries': homeassistant_api_retries | int, 'delay': homeassistant_api_retry_delay | int} | to_json }}
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  register: _ha_assist_registry_response
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: "assist_registry | Require a successful live Assist registry query"
+  ansible.builtin.assert:
+    that: (_ha_assist_registry_response.rc | default(1)) == 0
+    quiet: true
+    fail_msg: "Home Assistant live Assist registry query failed."
+  when: not ansible_check_mode
+
+- name: "assist_registry | Retain only selected live engine identifiers"
+  ansible.builtin.set_fact:
+    _ha_assist_registry_entities: "{{ (_ha_assist_registry_response.stdout | from_json).entities }}"
+  no_log: true
+  when: not ansible_check_mode
+
+# Check mode must not call the application. Preserve its original saved-state
+# observation without claiming that it proves current live readiness.
+- name: "assist_registry | Inspect saved Assist registry in check mode"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
+  register: _ha_assist_registry_saved
+  when: ansible_check_mode
+
+- name: "assist_registry | Read saved Assist registry in check mode"
+  ansible.builtin.slurp:
+    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
+  register: _ha_assist_registry_saved_raw
+  no_log: true
+  when:
+    - ansible_check_mode
+    - _ha_assist_registry_saved.stat.exists
+
+- name: "assist_registry | Retain saved engine identifiers for check mode only"
+  ansible.builtin.set_fact:
+    _ha_assist_registry_entities: >-
+      {{ ((_ha_assist_registry_saved_raw.content | b64decode | from_json).data
+          | default({}, true)).entities | default([], true) }}
+  no_log: true
+  when:
+    - ansible_check_mode
+    - _ha_assist_registry_saved.stat.exists

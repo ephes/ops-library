@@ -1,0 +1,53 @@
+---
+assist_pipelines.yml:
+  source_sha256: 47dd7a28852ee754c4659b6d01b31546e11413ed104d24b01a85b88570f06c43  # pragma: allowlist secret
+  tasks:
+    - name: Resolve default Assist pipeline STT engine entity
+      ansible.builtin.set_fact:
+        _ha_assist_default_stt_engine_id: "{{\n  (\n    (\n      ((_ha_entity_registry_raw.content | b64decode\
+          \ | from_json).data | default({}, true)).entities\n      | default([], true)\n    )\n    | selectattr('platform',\
+          \ 'equalto', 'wyoming')\n    | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)\n\
+          \    | selectattr('entity_id', 'defined')\n    | map(attribute='entity_id')\n    | select('match',\
+          \ '^stt\\.')\n    | list\n    | first\n  ) | default('', true)\n}}"
+      when:
+        - _ha_entity_registry_stat.stat.exists
+        - "(\n  homeassistant_assist_pipelines\n  | selectattr('stt_engine_id', 'undefined')\n  | list\n\
+          \  | length\n) > 0"
+    - name: Resolve default Assist pipeline TTS engine entity
+      ansible.builtin.set_fact:
+        _ha_assist_default_tts_engine_id: "{{\n  (\n    (\n      ((_ha_entity_registry_raw.content | b64decode\
+          \ | from_json).data | default({}, true)).entities\n      | default([], true)\n    )\n    | selectattr('platform',\
+          \ 'equalto', 'wyoming')\n    | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)\n\
+          \    | selectattr('entity_id', 'defined')\n    | map(attribute='entity_id')\n    | select('match',\
+          \ '^tts\\.')\n    | list\n    | first\n  ) | default('', true)\n}}"
+      when:
+        - _ha_entity_registry_stat.stat.exists
+        - "(\n  homeassistant_assist_pipelines\n  | selectattr('tts_engine_id', 'undefined')\n  | list\n\
+          \  | length\n) > 0"
+assist_pipeline_stt.yml:
+  source_sha256: 718ef07e9381ec2b7b9f3fe1bf0cb20cab4ea3494645afc108a4cbde169c7358  # pragma: allowlist secret
+  tasks:
+    - name: Resolve Assist pipeline STT engine entity
+      ansible.builtin.set_fact:
+        _ha_assist_pipeline_desired_stt_engine_id: "{{\n  (\n    (\n      ((_ha_entity_registry_raw.content\
+          \ | b64decode | from_json).data | default({}, true)).entities\n      | default([], true)\n \
+          \   )\n    | selectattr('platform', 'equalto', 'wyoming')\n    | selectattr('config_entry_id',\
+          \ 'equalto', _ha_assist_pipeline_entry_id)\n    | selectattr('entity_id', 'defined')\n    |\
+          \ map(attribute='entity_id')\n    | select('match', '^stt\\.')\n    | list\n    | first\n  )\
+          \ | default('', true)\n}}"
+      when:
+        - homeassistant_manage_assist_pipeline_stt_engine | bool
+        - _ha_assist_pipeline_desired_stt_engine_id | length == 0
+        - _ha_entity_registry_stat.stat.exists
+    - name: Resolve Assist pipeline TTS engine entity
+      ansible.builtin.set_fact:
+        _ha_assist_pipeline_desired_tts_engine_id: "{{\n  (\n    (\n      ((_ha_entity_registry_raw.content\
+          \ | b64decode | from_json).data | default({}, true)).entities\n      | default([], true)\n \
+          \   )\n    | selectattr('platform', 'equalto', 'wyoming')\n    | selectattr('config_entry_id',\
+          \ 'equalto', _ha_assist_pipeline_entry_id)\n    | selectattr('entity_id', 'defined')\n    |\
+          \ map(attribute='entity_id')\n    | select('match', '^tts\\.')\n    | list\n    | first\n  )\
+          \ | default('', true)\n}}"
+      when:
+        - homeassistant_manage_assist_pipeline_tts_engine | bool
+        - _ha_assist_pipeline_desired_tts_engine_id | length == 0
+        - _ha_entity_registry_stat.stat.exists

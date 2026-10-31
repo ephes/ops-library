@@ -8,17 +8,6 @@
     _ha_assist_default_stt_engine_id: ""
     _ha_assist_default_tts_engine_id: ""
 
-- name: "Check Home Assistant entity registry storage"
-  ansible.builtin.stat:
-    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
-  register: _ha_entity_registry_stat
-
-- name: "Read Home Assistant entity registry storage"
-  ansible.builtin.slurp:
-    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
-  register: _ha_entity_registry_raw
-  when: _ha_entity_registry_stat.stat.exists
-
 - name: "Check Home Assistant config entries storage"
   ansible.builtin.stat:
     path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
@@ -43,12 +32,14 @@
   ansible.builtin.slurp:
     path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
   register: _ha_assist_pipeline_config_entries_raw
+  no_log: true
   when:
     - _ha_assist_pipeline_config_entries_stat is defined
     - _ha_assist_pipeline_config_entries_stat.stat is defined
     - _ha_assist_pipeline_config_entries_stat.stat.exists
 
 - name: "Resolve Wyoming config entry for Assist pipeline auto-detection"
+  no_log: true
   ansible.builtin.set_fact:
     _ha_assist_pipeline_entry_id: >-
       {{
@@ -73,14 +64,24 @@
     - _ha_assist_pipeline_config_entries_stat.stat.exists
     - _ha_assist_pipeline_entry_id | length == 0
 
+- name: "Read live Assist engine registry for automatic selection"
+  ansible.builtin.include_tasks: assist_registry.yml
+  vars:
+    _ha_assist_registry_required: >-
+      {{ (['stt'] if (homeassistant_assist_pipelines | selectattr('stt_engine_id', 'undefined') | list | length) > 0 else [])
+         + (['tts'] if (homeassistant_assist_pipelines | selectattr('tts_engine_id', 'undefined') | list | length) > 0 else []) }}
+  when:
+    - >-
+        (homeassistant_assist_pipelines | selectattr('stt_engine_id', 'undefined') | list | length) > 0
+        or (homeassistant_assist_pipelines | selectattr('tts_engine_id', 'undefined') | list | length) > 0
+
 - name: "Resolve default Assist pipeline STT engine entity"
   ansible.builtin.set_fact:
     _ha_assist_default_stt_engine_id: >-
       {{
         (
           (
-            ((_ha_entity_registry_raw.content | b64decode | from_json).data | default({}, true)).entities
-            | default([], true)
+            _ha_assist_registry_entities | default([], true)
           )
           | selectattr('platform', 'equalto', 'wyoming')
           | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
@@ -92,7 +93,6 @@
         ) | default('', true)
       }}
   when:
-    - _ha_entity_registry_stat.stat.exists
     - >-
         (
           homeassistant_assist_pipelines
@@ -107,8 +107,7 @@
       {{
         (
           (
-            ((_ha_entity_registry_raw.content | b64decode | from_json).data | default({}, true)).entities
-            | default([], true)
+            _ha_assist_registry_entities | default([], true)
           )
           | selectattr('platform', 'equalto', 'wyoming')
           | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
@@ -120,7 +119,6 @@
         ) | default('', true)
       }}
   when:
-    - _ha_entity_registry_stat.stat.exists
     - >-
         (
           homeassistant_assist_pipelines

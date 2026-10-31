@@ -33,17 +33,6 @@
     _ha_assist_pipeline_desired_tts_voice: ""
     _ha_assist_pipeline_needs_update: false
 
-- name: "Check Home Assistant entity registry storage"
-  ansible.builtin.stat:
-    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
-  register: _ha_entity_registry_stat
-
-- name: "Read Home Assistant entity registry storage"
-  ansible.builtin.slurp:
-    path: "{{ homeassistant_config_path }}/.storage/core.entity_registry"
-  register: _ha_entity_registry_raw
-  when: _ha_entity_registry_stat.stat.exists
-
 - name: "Check Assist pipeline storage"
   ansible.builtin.stat:
     path: "{{ homeassistant_config_path }}/.storage/assist_pipeline.pipelines"
@@ -75,12 +64,14 @@
   ansible.builtin.slurp:
     path: "{{ homeassistant_config_path }}/.storage/core.config_entries"
   register: _ha_assist_pipeline_config_entries_raw
+  no_log: true
   when:
     - _ha_assist_pipeline_config_entries_stat is defined
     - _ha_assist_pipeline_config_entries_stat.stat is defined
     - _ha_assist_pipeline_config_entries_stat.stat.exists
 
 - name: "Resolve Wyoming config entry for Assist pipeline auto-detection"
+  no_log: true
   ansible.builtin.set_fact:
     _ha_assist_pipeline_entry_id: >-
       {{
@@ -105,14 +96,24 @@
     - _ha_assist_pipeline_config_entries_stat.stat.exists
     - _ha_assist_pipeline_entry_id | length == 0
 
+- name: "Read live Assist engine registry for automatic selection"
+  ansible.builtin.include_tasks: assist_registry.yml
+  vars:
+    _ha_assist_registry_required: >-
+      {{ (['stt'] if (homeassistant_manage_assist_pipeline_stt_engine | bool and _ha_assist_pipeline_desired_stt_engine_id | length == 0) else [])
+         + (['tts'] if (homeassistant_manage_assist_pipeline_tts_engine | bool and _ha_assist_pipeline_desired_tts_engine_id | length == 0) else []) }}
+  when:
+    - >-
+        (homeassistant_manage_assist_pipeline_stt_engine | bool and _ha_assist_pipeline_desired_stt_engine_id | length == 0)
+        or (homeassistant_manage_assist_pipeline_tts_engine | bool and _ha_assist_pipeline_desired_tts_engine_id | length == 0)
+
 - name: "Resolve Assist pipeline STT engine entity"
   ansible.builtin.set_fact:
     _ha_assist_pipeline_desired_stt_engine_id: >-
       {{
         (
           (
-            ((_ha_entity_registry_raw.content | b64decode | from_json).data | default({}, true)).entities
-            | default([], true)
+            _ha_assist_registry_entities | default([], true)
           )
           | selectattr('platform', 'equalto', 'wyoming')
           | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
@@ -126,7 +127,6 @@
   when:
     - homeassistant_manage_assist_pipeline_stt_engine | bool
     - _ha_assist_pipeline_desired_stt_engine_id | length == 0
-    - _ha_entity_registry_stat.stat.exists
 
 - name: "Resolve Assist pipeline TTS engine entity"
   ansible.builtin.set_fact:
@@ -134,8 +134,7 @@
       {{
         (
           (
-            ((_ha_entity_registry_raw.content | b64decode | from_json).data | default({}, true)).entities
-            | default([], true)
+            _ha_assist_registry_entities | default([], true)
           )
           | selectattr('platform', 'equalto', 'wyoming')
           | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
@@ -149,7 +148,6 @@
   when:
     - homeassistant_manage_assist_pipeline_tts_engine | bool
     - _ha_assist_pipeline_desired_tts_engine_id | length == 0
-    - _ha_entity_registry_stat.stat.exists
 
 - name: "Parse Assist pipeline storage"
   ansible.builtin.set_fact:
@@ -217,15 +215,13 @@
       - >-
           (not homeassistant_manage_assist_pipeline_stt_engine | bool)
           or (
-            _ha_entity_registry_stat.stat.exists
-            and _ha_assist_pipeline_desired_stt_engine_id | length > 0
+            _ha_assist_pipeline_desired_stt_engine_id | length > 0
             and _ha_assist_pipeline_desired_stt_language | length > 0
           )
       - >-
           (not homeassistant_manage_assist_pipeline_tts_engine | bool)
           or (
-            _ha_entity_registry_stat.stat.exists
-            and _ha_assist_pipeline_desired_tts_engine_id | length > 0
+            _ha_assist_pipeline_desired_tts_engine_id | length > 0
             and _ha_assist_pipeline_desired_tts_language | length > 0
           )
     quiet: true
@@ -283,19 +279,17 @@
   ansible.builtin.command:
     argv:
       - "{{ homeassistant_virtualenv_path }}/bin/python"
+      - -I
+      - -B
       - -c
-      - |
-        import json
-        import pathlib
-        import sys
-
-        entity_id = sys.argv[1]
-        registry = pathlib.Path(sys.argv[2])
-        entities = json.loads(registry.read_text()).get("data", {}).get("entities", [])
-        sys.exit(0 if any(entry.get("entity_id") == entity_id for entry in entities) else 1)
-      - "{{ _ha_assist_pipeline_desired_stt_engine_id }}"
-      - "{{ homeassistant_config_path }}/.storage/core.entity_registry"
+      - "{{ lookup('ansible.builtin.file', role_path + '/files/assist_registry.py') }}"
+    stdin: >-
+      {{ {'url': _ha_assist_pipeline_api_url, 'token': homeassistant_api_token,
+          'timeout': homeassistant_api_timeout | int,
+          'validate_certs': homeassistant_api_validate_certs | bool,
+          'entity_id': _ha_assist_pipeline_desired_stt_engine_id} | to_json }}
   register: _ha_assist_pipeline_stt_entity_ready
+  no_log: true
   become: true
   become_user: "{{ homeassistant_user }}"
   retries: "{{ homeassistant_api_retries }}"
