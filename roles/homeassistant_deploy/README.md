@@ -348,10 +348,31 @@ not inspected. The legacy `UV_NATIVE_TLS` name is not used.
 ### Wyoming STT/TTS auto-detection
 
 When no explicit engine is supplied, both declarative Assist pipelines and the
-standalone STT/TTS update select persisted `stt.`/`tts.` entities belonging to the
+standalone STT/TTS update select enabled live `stt.`/`tts.` entities belonging to the
 selected Wyoming config entry. The domain separator is matched as a literal dot;
 other integrations, config entries and similar prefixes do not qualify. Explicit
 engine IDs retain precedence. The YAML folded expressions use one backslash for
 the literal dot: doubling it makes Ansible's templating preserve an unwanted
-backslash and rejects valid entity IDs. This correction addresses matching, not
-integration readiness or registry persistence timing.
+backslash and rejects valid entity IDs. The earlier literal-dot regression
+controls remain; live readiness and saved identity are distinguished below.
+
+### Live Assist engine discovery
+
+Automatic Wyoming STT/TTS selection reads the authenticated live entity registry.
+Home Assistant delays registry persistence, so a saved `.storage` file can omit
+entities that are already loaded. Selection retains the configured Wyoming entry,
+platform and entity-domain constraints and excludes disabled entities. The entry
+identity comes from the preceding original Wyoming flow when available; otherwise
+it retains the saved config-entry host/port/domain match. Home Assistant's
+read-only entry API omits endpoint data, so it cannot replace that identity
+fallback. If neither identity source resolves, selection fails as before; it
+never guesses from a title or the first unrelated live entry. Explicit
+engine IDs retain precedence. Read-only discovery uses the existing API timeout;
+standalone STT readiness retains the configured retries and delay. Registry bodies
+and credentials stay in protected process memory and are not written to result files.
+
+Live discovery reuses cached API readiness and the existing configured
+retry/delay bounds while waiting for matching enabled entities after startup.
+It honors `homeassistant_api_validate_certs`, including the explicit false
+setting for an operator-selected HTTPS endpoint. No persistence flush or
+fixture delay is used.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Resolve Assist STT/TTS auto-detection from the live entity registry instead of
+  its delayed persistence snapshot, in both declarative and standalone paths.
+  Preserve explicit engines and bounded readiness; exclude disabled entries.
+
 - Document the native-qualified and inventory-adopted Paperless typed deployment,
   its deliberate bounded metadata/count index policy and equal-count freshness
   limit. Retain this Ansible role's unconditional reindex semantics unchanged.

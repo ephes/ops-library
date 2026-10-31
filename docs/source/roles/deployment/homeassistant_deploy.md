@@ -104,10 +104,27 @@ Operational notes:
 ### Wyoming STT/TTS auto-detection
 
 When no explicit engine is supplied, both declarative Assist pipelines and the
-standalone STT/TTS update select persisted `stt.`/`tts.` entities belonging to the
+standalone STT/TTS update select enabled live `stt.`/`tts.` entities belonging to the
 selected Wyoming config entry. The domain separator is matched as a literal dot;
 other integrations, config entries and similar prefixes do not qualify. Explicit
 engine IDs retain precedence. The YAML folded expressions use one backslash for
 the literal dot: doubling it makes Ansible's templating preserve an unwanted
-backslash and rejects valid entity IDs. This correction addresses matching, not
-integration readiness or registry persistence timing.
+backslash and rejects valid entity IDs. The earlier literal-dot regression
+controls remain; live readiness and saved identity are distinguished below.
+
+## Live Assist engine discovery
+
+Automatic STT/TTS selection and standalone STT readiness read the live entity
+registry because Home Assistant delays saved-registry updates. Disabled entries
+are unavailable. Explicit engine IDs keep precedence. Entry identity retains the
+preceding Wyoming flow ID, then the saved config-entry host/port/domain match;
+the read-only entry API does not expose endpoint data. Missing both identity
+sources fails without guessing. API timeouts and existing readiness retries
+remain bounded. Credentials and registry responses remain in protected memory.
+Check mode retains its saved-state observation and makes no live discovery call.
+
+Live discovery reuses cached API readiness and the existing configured
+retry/delay bounds while waiting for matching enabled entities after startup.
+It honors `homeassistant_api_validate_certs`, including the explicit false
+setting for an operator-selected HTTPS endpoint. No persistence flush or
+fixture delay is used.
