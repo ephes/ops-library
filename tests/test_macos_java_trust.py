@@ -21,6 +21,14 @@ JDK = Path(
         "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home",
     )
 )
+# Public certificates of the affected roots. Vendors drop them from cacerts over
+# time (Homebrew OpenJDK 27.0.1 no longer ships either), so the removal path must
+# not depend on which JDK happens to be installed.
+AFFECTED_ROOTS = {
+    "comodoaaaca [jdk]": "comodoaaaca.txt",
+    "emsigneccrootcag3 [jdk]": "emsigneccrootcag3.txt",
+}
+FIXTURES = Path(__file__).resolve().parent / "fixtures/macos_java_trust"
 
 
 @unittest.skipUnless((JDK / "bin/keytool").exists(), "requires a real test JDK")
@@ -33,6 +41,7 @@ class TrustCopyTests(unittest.TestCase):
         self.options = self.root / "custom.vmoptions"
         self.defaults = self.root / "default.vmoptions"
         self.defaults.write_text("-Xmx2048m\n")
+        self.jdk = JDK
 
     def invoke(self, *extra, success=True):
         result = subprocess.run(
@@ -40,7 +49,7 @@ class TrustCopyTests(unittest.TestCase):
                 shutil.which("python3"),
                 str(SCRIPT),
                 "--jdk",
-                str(JDK),
+                str(self.jdk),
                 "--output",
                 str(self.output),
                 *extra,
@@ -51,9 +60,49 @@ class TrustCopyTests(unittest.TestCase):
         self.assertEqual(result.returncode == 0, success, result.stderr)
         return json.loads(result.stdout) if success else result
 
+    def keytool(self, *options):
+        return subprocess.check_output(
+            [
+                str(JDK / "bin/keytool"),
+                "-J-Duser.language=en",
+                *options,
+                "-storepass",
+                "changeit",
+            ],
+            text=True,
+        )
+
+    def jdk_with_affected_roots(self, module):
+        """Lay out a JDK whose vendor store holds both roots, real keytool included."""
+        jdk = self.root / "jdk"
+        store = jdk / "lib/security/cacerts"
+        store.parent.mkdir(parents=True)
+        (jdk / "bin").symlink_to(JDK / "bin")
+        shutil.copyfile(JDK / "lib/security/cacerts", store)
+        present = module.certificates(
+            self.keytool("-list", "-rfc", "-keystore", str(store))
+        )
+        for alias, name in AFFECTED_ROOTS.items():
+            if alias not in present:
+                self.keytool(
+                    "-importcert",
+                    "-noprompt",
+                    "-alias",
+                    alias,
+                    "-file",
+                    str(FIXTURES / name),
+                    "-keystore",
+                    str(store),
+                )
+        return jdk
+
     def test_real_copy_rejects_roots_and_preserves_all_other_aliases(self):
+        spec = importlib.util.spec_from_file_location("trust_helper", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.jdk = self.jdk_with_affected_roots(module)
         args = ["--options", str(self.options), "--default-options", str(self.defaults)]
-        original = (JDK / "lib/security/cacerts").read_bytes()
+        original = (self.jdk / "lib/security/cacerts").read_bytes()
         first = self.invoke(*args)
         self.assertTrue(first["changed"])
         # Independently pin the expected affected aliases, including Sectigo AAA
@@ -63,27 +112,13 @@ class TrustCopyTests(unittest.TestCase):
             {"comodoaaaca [jdk]", "emsigneccrootcag3 [jdk]"},
         )
         self.assertTrue(first["restart_required"])
-        spec = importlib.util.spec_from_file_location("trust_helper", SCRIPT)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
 
         def certs(path):
-            text = subprocess.check_output(
-                [
-                    str(JDK / "bin/keytool"),
-                    "-J-Duser.language=en",
-                    "-list",
-                    "-rfc",
-                    "-keystore",
-                    str(path),
-                    "-storepass",
-                    "changeit",
-                ],
-                text=True,
+            return module.certificates(
+                self.keytool("-list", "-rfc", "-keystore", str(path))
             )
-            return module.certificates(text)
 
-        before = certs(JDK / "lib/security/cacerts")
+        before = certs(self.jdk / "lib/security/cacerts")
         after = certs(self.output)
         self.assertEqual(
             after,
@@ -94,7 +129,7 @@ class TrustCopyTests(unittest.TestCase):
             },
         )
         self.assertFalse(self.invoke(*args)["changed"])
-        self.assertEqual((JDK / "lib/security/cacerts").read_bytes(), original)
+        self.assertEqual((self.jdk / "lib/security/cacerts").read_bytes(), original)
         self.assertEqual(
             self.options.read_text(),
             "-Xmx2048m\n-Djavax.net.ssl.trustStore=" + str(self.output) + "\n",

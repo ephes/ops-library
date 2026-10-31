@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `macos_java_trust` tests: stop relying on the installed JDK still shipping the
+  affected roots. Homebrew OpenJDK 27.0.1 dropped AAA Certificate Services and
+  emSign ECC Root CA - G3, which failed the removal test even though the role was
+  correct. The test now imports both public certificates from
+  `tests/fixtures/macos_java_trust` into a temporary store. No role change.
+
 - smartd: add per-device `smartd_temp_diff`, `smartd_temp_info` and
   `smartd_temp_crit` overrides on `smartd_devices` entries, so spinning disks
   and NVMe SSDs can use thresholds that fit their specification instead of one
