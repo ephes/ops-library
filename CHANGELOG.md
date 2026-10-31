@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Pin Custom Conversation 1.7.0 for current Home Assistant options compatibility,
+  preserving explicit old pins, verified default instructions and operator lists.
+  Let the real options schema supply absent ignored-intent defaults. Apply a
+  source-bound selector correction for the exact 1.7.0 archive so unregistered
+  exclusion names remain valid; include patch identity/hash in convergence.
+
 - Resolve Assist STT/TTS auto-detection from the live entity registry instead of
   its delayed persistence snapshot, in both declarative and standalone paths.
   Preserve explicit engines and bounded readiness; exclude disabled entries.
