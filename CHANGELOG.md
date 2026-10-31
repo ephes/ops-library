@@ -2,11 +2,6 @@
 
 ## [Unreleased]
 
-- Fix Wyoming STT/TTS entity auto-detection in declarative Assist pipelines and
-  standalone pipeline updates. Correct literal-dot regex escaping so valid
-  persisted entities match their selected config entry; explicit engine IDs
-  retain precedence. Add original-engine negative/positive and task controls.
-
 - Document the native-qualified and inventory-adopted Paperless typed deployment,
   its deliberate bounded metadata/count index policy and equal-count freshness
   limit. Retain this Ansible role's unconditional reindex semantics unchanged.
@@ -30,6 +25,13 @@
 - Document the software-live pyinfra port's deliberate change-gated
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.
+
+## [2.75.3] - 2026-10-31
+
+- Fix Wyoming STT/TTS entity auto-detection in declarative Assist pipelines and
+  standalone pipeline updates. Correct literal-dot regex escaping so valid
+  persisted entities match their selected config entry; explicit engine IDs
+  retain precedence. Add original-engine negative/positive and task controls.
 
 ## [2.75.2] - 2026-10-27
 
