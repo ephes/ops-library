@@ -344,3 +344,14 @@ the drop-in, restarts when it changed, waits for
 Scope: this covers downloads made by Home Assistant's bundled uv. Custom
 components, HACS and other downloaders with their own certificate handling are
 not inspected. The legacy `UV_NATIVE_TLS` name is not used.
+
+### Wyoming STT/TTS auto-detection
+
+When no explicit engine is supplied, both declarative Assist pipelines and the
+standalone STT/TTS update select persisted `stt.`/`tts.` entities belonging to the
+selected Wyoming config entry. The domain separator is matched as a literal dot;
+other integrations, config entries and similar prefixes do not qualify. Explicit
+engine IDs retain precedence. The YAML folded expressions use one backslash for
+the literal dot: doubling it makes Ansible's templating preserve an unwanted
+backslash and rejects valid entity IDs. This correction addresses matching, not
+integration readiness or registry persistence timing.

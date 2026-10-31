@@ -100,3 +100,14 @@ Operational notes:
 - IPv6 link-local multicast and Router Advertisement handling must be correct for Matter/Thread traffic.
 - The server does not require a Bluetooth adapter by default because Home Assistant uses the Companion app for commissioning.
 - `homeassistant_extra_package_specs` is host-specific upgrade debt. Use it only when Home Assistant does not install integration manifest requirements early enough for this uv-managed deployment, keep the pins compatible with the selected Home Assistant version, and revalidate them on every Home Assistant upgrade.
+
+### Wyoming STT/TTS auto-detection
+
+When no explicit engine is supplied, both declarative Assist pipelines and the
+standalone STT/TTS update select persisted `stt.`/`tts.` entities belonging to the
+selected Wyoming config entry. The domain separator is matched as a literal dot;
+other integrations, config entries and similar prefixes do not qualify. Explicit
+engine IDs retain precedence. The YAML folded expressions use one backslash for
+the literal dot: doubling it makes Ansible's templating preserve an unwanted
+backslash and rejects valid entity IDs. This correction addresses matching, not
+integration readiness or registry persistence timing.

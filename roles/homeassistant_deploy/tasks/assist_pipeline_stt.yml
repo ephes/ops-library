@@ -118,7 +118,7 @@
           | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
           | selectattr('entity_id', 'defined')
           | map(attribute='entity_id')
-          | select('match', '^stt\\.')
+          | select('match', '^stt\.')
           | list
           | first
         ) | default('', true)
@@ -141,7 +141,7 @@
           | selectattr('config_entry_id', 'equalto', _ha_assist_pipeline_entry_id)
           | selectattr('entity_id', 'defined')
           | map(attribute='entity_id')
-          | select('match', '^tts\\.')
+          | select('match', '^tts\.')
           | list
           | first
         ) | default('', true)
