@@ -24,6 +24,20 @@
     index_var: idx
     label: "{{ item.name | default('device ' ~ idx) }}"
 
+- name: validate | Assert per-device temperature thresholds are non-negative integers
+  ansible.builtin.assert:
+    that:
+      - item.smartd_temp_diff is not defined or (item.smartd_temp_diff is integer and item.smartd_temp_diff >= 0)
+      - item.smartd_temp_info is not defined or (item.smartd_temp_info is integer and item.smartd_temp_info >= 0)
+      - item.smartd_temp_crit is not defined or (item.smartd_temp_crit is integer and item.smartd_temp_crit >= 0)
+    fail_msg: >-
+      smartd_devices[{{ idx }}]: smartd_temp_diff, smartd_temp_info and smartd_temp_crit
+      must be non-negative integers when set (smartd -W; 0 disables that check)
+  loop: "{{ smartd_devices }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.name | default('device ' ~ idx) }}"
+
 - name: validate | Assert mail recipient is configured
   ansible.builtin.assert:
     that:

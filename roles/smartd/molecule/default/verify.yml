@@ -15,3 +15,16 @@
         that:
           - smartd_conf.stat.exists
           - smartd_conf.stat.size > 0
+
+    - name: Verify | read smartd.conf
+      ansible.builtin.slurp:
+        src: /etc/smartd.conf
+      register: smartd_conf_content
+
+    - name: Verify | assert role-wide and per-device temperature thresholds
+      vars:
+        smartd_conf_text: "{{ smartd_conf_content.content | b64decode }}"
+      ansible.builtin.assert:
+        that:
+          - "'/dev/disk/by-id/does-not-exist -d nvme -a -o on -S on -s (S/../.././02|L/../../6/03) -W 4,40,45 -m root' in smartd_conf_text"
+          - "'/dev/disk/by-id/does-not-exist-either -d sat -n standby -a -o on -S on -s (S/../.././02|L/../../6/03) -W 4,45,50 -m root' in smartd_conf_text"

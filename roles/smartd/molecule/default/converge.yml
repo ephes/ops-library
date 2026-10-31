@@ -9,6 +9,12 @@
       - device: /dev/disk/by-id/does-not-exist
         type: nvme
         name: dummy
+      - device: /dev/disk/by-id/does-not-exist-either
+        type: sat
+        name: dummy-hdd
+        smartd_no_spinup: true
+        smartd_temp_info: 45
+        smartd_temp_crit: 50
     smartd_mail_to: "root"
     smartd_manage_service: false
 

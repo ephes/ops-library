@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- smartd: add per-device `smartd_temp_diff`, `smartd_temp_info` and
+  `smartd_temp_crit` overrides on `smartd_devices` entries, so spinning disks
+  and NVMe SSDs can use thresholds that fit their specification instead of one
+  role-wide `-W`. Devices without overrides render exactly as before; the
+  rendered smartd.conf gains a two-line header comment. Invalid (non-integer or
+  negative) per-device values fail validation.
+
 - Document the native-qualified and inventory-adopted Paperless typed deployment,
   its deliberate bounded metadata/count index policy and equal-count freshness
   limit. Retain this Ansible role's unconditional reindex semantics unchanged.

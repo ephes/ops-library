@@ -54,6 +54,7 @@ smartd_service_name: "smartmontools"
 ```
 
 Per-device optional fields:
+
 ```yaml
 smartd_devices:
   - device: /dev/disk/by-id/ata-WDC_WD120EFGX-68CPHN0_WD-B00MJ7WD
@@ -62,7 +63,19 @@ smartd_devices:
     smartd_no_spinup: true  # Adds "-n standby" to avoid waking sleeping disks
     smartd_short_test_schedule: "S/../../0/06"  # Override short test schedule
     smartd_long_test_schedule: "L/../../0/07"   # Override long test schedule
+    smartd_temp_info: 45    # Override smartd_temp_info for this device only
+    smartd_temp_crit: 50    # Override smartd_temp_crit for this device only
+    # smartd_temp_diff: 4   # Override smartd_temp_diff for this device only
 ```
+
+The role-wide temperature thresholds (40 °C info, 45 °C critical) suit no single
+drive class well: spinning disks are usually specified up to 60–65 °C, and NVMe
+SSDs run at 50–70 °C under load. Set per-device thresholds that match each
+drive's specification and cooling. smartd logs when a drive reaches the info
+threshold and sends a mail only when it reaches the critical threshold (once,
+until it drops below the info threshold again). Each per-device value must be a
+non-negative integer; `0` disables that part of the check (see `man
+smartd.conf`, `-W`).
 
 See `defaults/main.yml` for the full list.
 
@@ -108,6 +121,7 @@ smartctl -a /dev/sda
 ## Changelog
 
 - **1.0.0** (2025-12-14): Initial release
+- **Unreleased** (2026-10-31): Per-device `smartd_temp_diff`, `smartd_temp_info` and `smartd_temp_crit` overrides
 
 ## License
 
