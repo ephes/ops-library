@@ -18,7 +18,14 @@ User input is everything after `/todo`.
 
 ## Execution Rules
 
-Always execute exactly one command:
+Execute exactly one command. For `reminder` (including the scheduled
+`/todo reminder` system event), run:
+
+```bash
+/home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh reminder
+```
+
+For `add` and `list`, run:
 
 ```bash
 /home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh todo <raw-user-input>
