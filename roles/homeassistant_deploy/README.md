@@ -119,14 +119,14 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_assist_pipeline_tts_voice` | `""` | Optional TTS voice ID (for example `en_US-lessac-medium`) stored on the Assist pipeline |
 | `homeassistant_assist_pipelines` | `[]` | Declarative Assist pipelines managed by name or id, including preferred pipeline selection. A pipeline may set `conversation_engine: "auto:custom_conversation"` to be pointed at the resolved Custom Conversation entity |
 | `homeassistant_custom_conversation_enabled` | `false` | Install the Custom Conversation component and create/update its config entry. When `false` while an entry exists, the entry (and its stored token) is removed |
-| `homeassistant_custom_conversation_version` | `1.6.1` | Pinned Custom Conversation release tag to install |
-| `homeassistant_custom_conversation_sha256` | `6397258a…020382` | sha256 of the pinned GitHub release tarball; the download is checksum-verified |
+| `homeassistant_custom_conversation_version` | `1.7.0` | Pinned Custom Conversation release tag to install |
+| `homeassistant_custom_conversation_sha256` | `a8143368…0d52` (1.7.0); old checksum for 1.6.1 | sha256 of the pinned GitHub release tarball; the download is checksum-verified |
 | `homeassistant_custom_conversation_provider` | `openai` | LiteLLM provider key the component routes through; `openai` selects the OpenAI-compatible path with a custom base URL |
 | `homeassistant_custom_conversation_base_url` | `""` | OpenAI-compatible base URL (e.g. `http://127.0.0.1:18789/v1`); required when enabled |
 | `homeassistant_custom_conversation_api_key` | `""` | Bearer token stored on the config entry; required when enabled (handled with `no_log`) |
 | `homeassistant_custom_conversation_model` | `""` | Model name sent to the endpoint (e.g. `openclaw`); required when enabled |
 | `homeassistant_custom_conversation_instructions` | `""` | Optional instructions prompt written to the entry options; left at the component default when empty |
-| `homeassistant_custom_conversation_request_timeout` | `60` | Reserved; v1.6.1 exposes no per-request timeout field (see Notes) |
+| `homeassistant_custom_conversation_request_timeout` | `60` | Reserved; v1.7.0 exposes no per-request timeout field (see Notes) |
 | `homeassistant_custom_conversation_canary_text` | `Reply with the single word OK.` | Prompt used for the post-provision `conversation/process` liveness canary |
 | `homeassistant_area_registry_updates` | `[]` | Area alias and canonical sensor updates applied through Home Assistant’s area registry |
 | `homeassistant_api_url` | `http://localhost:10020` | Base URL for Home Assistant API calls |
@@ -210,7 +210,7 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
   `conversation.home_assistant` (with a visible warning) when the bridge is
   disabled — so disabling is a single safe deploy with no group_vars ordering
   dependency.
-- **Custom Conversation 1.6.1 source-level facts** (verified against the pinned
+- **Custom Conversation 1.7.0 source-level facts** (verified against the pinned
   release; consumed by the pipeline/secret wiring):
   - The config flow is multi-step: `user` (provider select →
     `primary_provider`), `credentials` (`primary_api_key`, and
@@ -241,7 +241,7 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
     contradicts any "no `user` field is sent" assumption — a stable per-request
     key derived from the HA `conversation_id` IS transmitted. Slice 4's history
     verification must account for this.
-  - **No per-request timeout field exists** in 1.6.1. The only timeout in the
+  - **No per-request timeout field exists** in 1.7.0. The only timeout in the
     component is a hardcoded 5s on the config-time model-listing call; completions
     delegate to the LiteLLM router default (which already exceeds 60s). The
     `homeassistant_custom_conversation_request_timeout` variable is therefore
@@ -376,3 +376,30 @@ retry/delay bounds while waiting for matching enabled entities after startup.
 It honors `homeassistant_api_validate_certs`, including the explicit false
 setting for an operator-selected HTTPS endpoint. No persistence flush or
 fixture delay is used.
+
+### Custom Conversation compatibility pin
+
+The default release is 1.7.0, whose upstream HA 2026.9 compatibility changes
+remove the obsolete `homeassistant.helpers.llm.AssistAPI` dependency that fails
+when opening options on HA 2026.10. The archive checksum is pinned. An explicit
+1.6.1 version-only override selects its previously qualified checksum; explicit
+checksums and URLs still win. Other releases require their own checksum.
+
+Both 1.6.1 and 1.7.0 have the exact verified default instructions text. Unknown
+versions with empty instructions still fail before API activity; explicit
+instructions retain the existing custom-version path. On 1.7.0 an absent ignored
+intent list is left to the actual options-form schema default, while explicit
+empty and operator-supplied lists are preserved. Legacy/custom versions retain
+their original empty-list submission behavior. Agents and Langfuse options are
+preserved, and the real conversation canary remains required. Source/class and
+import oracles do not establish native service or inventory qualification.
+
+For the exact official 1.7.0 archive, the installer applies the public
+`ignored-intent-names-v1` correction only to the ignored-intent selector. It accepts
+custom exclusion names so the component's own default list remains valid when
+some intents are not yet registered. The full default/operator list is preserved;
+it is not filtered to currently available intents. The archive and candidate file
+hashes are checked before replacement. Patch identity and the desired patched-file
+hash join the convergence stamp; installed file drift is reconciled from the
+verified archive through the existing reinstall path. A correct repeat does not
+extract, patch or restart. Other versions/checksums retain their original behavior.
