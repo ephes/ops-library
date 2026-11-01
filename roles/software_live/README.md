@@ -180,8 +180,13 @@ verifies the running program (for about 30 s): the endpoint is active and
 that binary and rewrote `state.json`.
 
 **Rollback.** Rust to Rust: set `software_live_rust_version` and the
-checksums to the version in `releases/.pins/software-live.previous` (always
-still installed) and deploy. Back to Python: revert the S12 change of this
+checksums to the earlier release and deploy. After a deploy whose
+verification failed, that is the version in `releases/.pins/software-live`
+(a failed run moves no pin, so it still names the version last verified
+live). After a successful deploy of a release that later misbehaves, it is
+the version in `releases/.pins/software-live.previous` (always still
+installed; absent on a host that never changed versions). The emergency
+path of the switch period (removing the drop-ins) no longer exists. Back to Python: revert the S12 change of this
 role (the Python program is still in the repository) and deploy; the Python
 program reads the state and caches the Rust program wrote.
 

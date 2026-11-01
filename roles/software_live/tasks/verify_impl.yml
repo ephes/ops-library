@@ -81,7 +81,8 @@
           ({{ _software_live_rust_binary }}):
           {{ _software_live_verify_problems | join('; ') }}. No pin moved and
           nothing was pruned. To roll back, deploy the release named in
-          releases/.pins/software-live.previous.
+          releases/.pins/software-live (the version last verified live; this
+          failed run did not move it).
         quiet: true
       vars:
         _software_live_verify_problems: >-
