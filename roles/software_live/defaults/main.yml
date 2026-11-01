@@ -11,9 +11,10 @@ software_live_group: metrics
 software_live_config_dir: /etc/software-live
 software_live_data_dir: /var/lib/software-live
 software_live_install_dir: /usr/local/lib/software-live
+# python3 runs nyxmon_checks.py and the bind check; python3-apt is no longer
+# needed since the Python collector was retired (S12) and is not uninstalled.
 software_live_packages:
   - python3
-  - python3-apt
   - apache2-utils
 software_live_on_calendar: '*:0/15'
 software_live_nyxmon_db: /home/nyxmon/site/db.sqlite3
@@ -25,12 +26,12 @@ software_live_nyxmon_disable_names: []
 software_live_inventory_export: false
 software_live_inventory_group: software-estate-publisher
 
-# --- Python or Rust (rust/software-live/PLAN.md 7.3) ---------------------------
-# python | rust: the program the production units run. impl rust runs the
-# pinned release binary through drop-ins; impl python removes them first, so
-# the switch back never waits on a Rust task.
-software_live_impl: python
-# The release (e.g. "0.1.0"); required for impl rust or the shadow.
+# --- Rust release (rust/software-live/PLAN.md 7.3, S12) ------------------------
+# The production units run the pinned Rust release. The Python program was
+# retired in S12: rust is the only accepted value (kept so inventories that
+# set it stay valid); going back to Python means reverting the S12 change.
+software_live_impl: rust
+# The release (e.g. "0.1.1"); required.
 software_live_rust_version: ""
 # sha256 of the release archive per distribution variant (7.2):
 #   {ubuntu24.04: <64 hex>, debian13: <64 hex>}

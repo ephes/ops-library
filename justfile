@@ -888,11 +888,11 @@ test-backup-service-restart: venv
 test-software-live: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live tests.test_software_health_bridge
 
-# rust/software-live/PLAN.md 7.3/8.1: the role's switch between Python and the
-# Rust release (filters, templates, ansible-playbook runs against localhost
+# rust/software-live/PLAN.md 7.3/8.1/S12: the role's Rust release handling
+# (filters, templates, ansible-playbook runs against localhost
 # with fakes; macOS needs Homebrew coreutils for GNU mv)
 test-software-live-impl: venv
-    @echo "Testing the software_live switch between Python and Rust (drop-ins, shadow, pins, prune)..."
+    @echo "Testing the software_live Rust release handling (S12 upgrade, shadow, pins, prune)..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_live_impl
 
 # rust/software-live/PLAN.md 6.1: fixtures regenerate byte-identical, TESTMAP names every Python test.

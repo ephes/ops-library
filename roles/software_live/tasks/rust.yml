@@ -1,10 +1,8 @@
 ---
-# Steps 2 and 3 of rust/software-live/PLAN.md 7.3 (impl rust or the shadow):
-# install the pinned release with rust_release_binary and validate the
-# candidate by its versioned path before anything points at it. Runs after
-# the Python rollback of impl.yml, so a failure here never leaves or puts a
-# Rust process in the production units. A failure stops the play with the
-# running units, the drop-ins and every installed version untouched.
+# Steps 2 and 3 of rust/software-live/PLAN.md 7.3: install the pinned release
+# with rust_release_binary and validate the candidate by its versioned path
+# before anything points at it. A failure stops the play with the running
+# units, their unit files and every installed version untouched.
 
 - name: rust | Assert the Rust inputs
   ansible.builtin.include_tasks: rust_inputs.yml
@@ -102,6 +100,6 @@
           software-live-apt observe exited {{ _software_live_rust_apt.rc | default('none') }}
           with status {{ (_software_live_rust_apt.stdout | default('') | local.ops_library.software_live_apt_status) or 'none' }}
           ({{ _software_live_rust_apt.stderr | default(_software_live_rust_apt.msg | default('')) | trim | truncate(300) }}).
-          Nothing points at it: the running units, the drop-ins and every
+          Nothing points at it: the running units, their unit files and every
           installed version are unchanged.
         quiet: true

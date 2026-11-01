@@ -28,8 +28,8 @@
     - '{{ software_live_data_dir }}'
     - '{{ software_live_install_dir }}'
 
-# Python or Rust (rust/software-live/PLAN.md 7.3): validated before anything
-# changes; impl rust also needs a released variant, version and checksum here.
+# The Rust release (rust/software-live/PLAN.md 7.3, S12): a released variant,
+# version and checksum, validated before anything changes.
 - name: Validate the implementation selection
   ansible.builtin.include_tasks: impl_inputs.yml
 
@@ -83,6 +83,9 @@
     group: root
     mode: '0755'
 
+# The Nyxmon helper stays Python; the collector and the endpoint are the Rust
+# release (impl.yml). files/software_live.py stays in the role only as the
+# test oracle of the Rust port and is not deployed (PLAN.md S12).
 - name: Install software observation programs
   ansible.builtin.copy:
     src: '{{ item }}'
@@ -91,9 +94,7 @@
     group: root
     mode: '0755'
   loop:
-    - software_live.py
     - nyxmon_checks.py
-  notify: Restart software live endpoint
 
 - name: Install software observation policy
   ansible.builtin.copy:
@@ -103,20 +104,8 @@
     group: '{{ software_live_group }}'
     mode: '0640'
 
-# With impl rust the Rust candidate validates the same file before anything
-# points at it (tasks/rust.yml, PLAN.md 7.3 steps 3 and 5).
-- name: Validate software observation policy
-  ansible.builtin.command:
-    argv:
-      - /usr/bin/python3
-      - '{{ software_live_install_dir }}/software_live.py'
-      - validate
-      - --config
-      - '{{ software_live_config_dir }}/policy.json'
-  changed_when: false
-  when:
-    - not ansible_check_mode
-    - software_live_impl == 'python'
+# The Rust candidate validates the policy before anything points at it
+# (tasks/rust.yml, PLAN.md 7.3 steps 3 and 5).
 
 - name: Verify current software endpoint credentials
   ansible.builtin.command:
@@ -201,8 +190,8 @@
         group: '{{ software_live_inventory_group }}'
         mode: '0750'
 
-# Live state, Python rollback first, Rust install and candidate validation,
-# shadow units, drop-ins (PLAN.md 7.3 steps 0-4, 8.1).
+# Live state, Rust install and candidate validation, shadow units, removal of
+# the retired drop-ins (PLAN.md 7.3 steps 0-4, 8.1, S12).
 - name: Select the software observation implementation
   ansible.builtin.include_tasks: impl.yml
 
@@ -278,6 +267,16 @@
 # PLAN.md 7.3 step 6: the units run the selected program; then step 7.
 - name: Verify the running software observation implementation
   ansible.builtin.include_tasks: verify_impl.yml
+
+# PLAN.md S12: the retired Python program and its bytecode cache leave the
+# host only once the Rust units are verified (the Nyxmon helper stays).
+- name: Remove the retired Python software observation program
+  ansible.builtin.file:
+    path: '{{ software_live_install_dir }}/{{ item }}'
+    state: absent
+  loop:
+    - software_live.py
+    - __pycache__
 
 - name: Pin and prune the software-live releases
   ansible.builtin.include_tasks: rust_pins.yml

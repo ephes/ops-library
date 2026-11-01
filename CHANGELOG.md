@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- `software_live`: retire the Python collector (rust/software-live/PLAN.md S12,
+  after the 7-day soak of the Rust port on all four hosts). The base units now
+  run the pinned Rust release `releases/<version>/software-live` directly;
+  `software_live_impl` defaults to `rust` and any other value fails before a
+  change (going back to Python means reverting this change). A deploy removes
+  the `impl.conf` drop-ins of earlier versions (their directories only when
+  empty) in the same reload and restart, and removes the deployed
+  `software_live.py` and its `__pycache__` once the Rust units are verified.
+  Only `nyxmon_checks.py` is installed. `python3-apt` is dropped from
+  `software_live_packages` (not uninstalled). `files/software_live.py` stays in
+  the repository as the oracle of the Rust port's fixtures and parity harness.
+
 - Fix the OpenClaw todo skill instructions to dispatch scheduled `/todo reminder`
   to the handler’s top-level `reminder` command. The previous `todo reminder`
   invocation failed and eventually caused automatic scheduler disablement.

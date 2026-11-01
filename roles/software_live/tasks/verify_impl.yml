@@ -1,12 +1,11 @@
 ---
 # Step 6 of rust/software-live/PLAN.md 7.3: after the handlers and the
-# initial collection, prove the production units run the selected program
-# (plugins/filter/software_live_impl.py, software_live_verify), retrying for about
-# 30 s:
-# - endpoint active; impl rust: readlink /proc/<MainPID>/exe is the versioned
-#   binary; impl python: /proc/<MainPID>/cmdline runs software_live.py serve;
-# - collector ExecMainStatus=0, systemd's loaded ExecStart= runs the selected
-#   program, and state.json was rewritten by the initial collection;
+# initial collection, prove the production units run the pinned release
+# (plugins/filter/software_live_impl.py, software_live_verify with impl rust;
+# the Python program was retired in S12), retrying for about 30 s:
+# - endpoint active and readlink /proc/<MainPID>/exe is the versioned binary;
+# - collector ExecMainStatus=0, systemd's loaded ExecStart= runs the binary,
+#   and state.json was rewritten by the initial collection;
 # - with the shadow: the shadow endpoint is active and executes the binary.
 # A failure stops the play: no pin moves and nothing is pruned (rust_pins.yml
 # runs only after this). Skipped in check mode (the handlers did not run).
@@ -15,8 +14,8 @@
   when: not ansible_check_mode
   vars:
     _software_live_verify_expect:
-      impl: '{{ software_live_impl }}'
-      binary: '{{ _software_live_rust_binary if _software_live_rust_wanted | bool else "" }}'
+      impl: rust
+      binary: '{{ _software_live_rust_binary }}'
       script: '{{ software_live_install_dir }}/software_live.py'
       shadow: '{{ software_live_rust_shadow | bool }}'
   block:
@@ -78,10 +77,11 @@
         that:
           - _software_live_verify_problems | length == 0
         fail_msg: >-
-          The production units do not run the selected implementation (impl
-          {{ software_live_impl }}{{ ', ' ~ _software_live_rust_binary if software_live_impl == 'rust' else '' }}):
+          The production units do not run the selected implementation
+          ({{ _software_live_rust_binary }}):
           {{ _software_live_verify_problems | join('; ') }}. No pin moved and
-          nothing was pruned. Deploy with software_live_impl: python to roll back.
+          nothing was pruned. To roll back, deploy the release named in
+          releases/.pins/software-live.previous.
         quiet: true
       vars:
         _software_live_verify_problems: >-

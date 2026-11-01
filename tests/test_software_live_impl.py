@@ -1,27 +1,28 @@
-"""The software_live switch between Python and Rust (rust/software-live/PLAN.md 7.3, 8.1).
+"""The software_live Rust release handling (rust/software-live/PLAN.md 7.3, 8.1, S12).
 
-Slice S6:
+Slice S6, reduced to the Rust release by the Python retirement (S12):
 
 - unit tests of the decisions in ``plugins/filter/software_live_impl.py`` (release
   variant, live state of step 0, verification of step 6, APT status);
-- the drop-ins and shadow units rendered for both implementations and both
-  variants, and the base units unchanged (they keep running Python);
-- static checks of the role: task order (inputs before any change, Python
-  rollback before any Rust task, pins and prune only after the
-  verification), ``nyxmon_checks.py`` installed in every mode, no task
-  ``environment:``, ``software_live_remove`` covering drop-ins and shadow
-  units;
+- the base units and shadow units rendered with the versioned binary;
+- static checks of the role: task order (inputs before any change, the
+  candidate validated before the retired drop-ins go, pins and prune only
+  after the verification), only ``nyxmon_checks.py`` installed, no
+  ``python3-apt``, no task ``environment:``, ``software_live_remove``
+  covering drop-ins and shadow units;
 - the variable validation, run with ``ansible-playbook``;
 - ``ansible-playbook`` runs against localhost of the real tail of
   ``tasks/main.yml`` (from the implementation selection to pins and prune)
   with fake release archives in a temporary install directory, a fake
   ``systemctl`` (``tests/fixtures/software_live_impl/fake_systemctl.py``), a
-  fake ``/proc`` and cgroup tree: both directions of the switch, the
-  rollback that a broken release never blocks, the rollback pin sequence
-  v1 -> v2 -> v1 -> v3 -> v4 with ``keep_versions: 2``, protection of
-  versions only the live state names (a drop-in left by a failed play, a
-  collector run still executing an older release and its APT child), the
-  fail-closed prune, the shadow units and idempotence.
+  fake ``/proc`` and cgroup tree: the S12 upgrade of a host that ran the
+  release through drop-ins (drop-ins, ``software_live.py`` and
+  ``__pycache__`` removed, base units on the binary), refusals that change
+  nothing, the rollback pin sequence v1 -> v2 -> v1 -> v3 -> v4 with
+  ``keep_versions: 2``, protection of versions only the live state names (a
+  drop-in left by an earlier play, a collector run still executing an older
+  release and its APT child), the fail-closed prune, the shadow units and
+  idempotence.
 """
 
 from __future__ import annotations
@@ -556,64 +557,39 @@ def directives(text: str, key: str) -> list[str]:
 class TemplateTests(unittest.TestCase):
     BIN = "/usr/local/lib/software-live/releases/0.1.0/software-live"
 
-    def test_endpoint_dropin(self):
-        text = render("impl-endpoint.conf.j2", software_live_inventory_export=True)
-        self.assertEqual(
-            directives(text, "ExecStart"),
-            ["", f"{self.BIN} serve --config /etc/software-live/endpoint.json"],
-        )
-        self.assertIn("[Service]", text)
+    def test_base_units_run_the_release(self):
+        """S12: the base units name the versioned binary with the arguments
+        the Python program and the retired drop-ins had."""
 
-    def test_collector_dropin_with_and_without_export(self):
-        base_args = (
-            "collect --config /etc/software-live/policy.json --output /var/lib/software-live/state.json"
-            " --cache /var/lib/software-live/upstream.json --group metrics"
+        endpoint = render("endpoint.service.j2")
+        self.assertEqual(
+            directives(endpoint, "ExecStart"),
+            [f"{self.BIN} serve --config /etc/software-live/endpoint.json"],
         )
-        on = render("impl-collector.conf.j2", software_live_inventory_export=True)
-        self.assertEqual(directives(on, "ExecStart"), ["", f"{self.BIN} {base_args}"])
+        on = render("collector.service.j2", software_live_inventory_export=True)
+        self.assertEqual(
+            directives(on, "ExecStart"),
+            [
+                f"{self.BIN} collect --config /etc/software-live/policy.json --output "
+                "/var/lib/software-live/state.json --cache /var/lib/software-live/upstream.json --group metrics"
+            ],
+        )
         self.assertEqual(
             directives(on, "ExecStartPost"),
             [
-                "",
                 f"-{self.BIN} export-inventory --config /var/lib/software-live/state.json --output "
-                "/var/lib/software-estate-observations/software-health.json --group software-estate-publisher",
+                "/var/lib/software-estate-observations/software-health.json --group software-estate-publisher"
             ],
         )
-        off = render("impl-collector.conf.j2", software_live_inventory_export=False)
-        self.assertEqual(directives(off, "ExecStartPost"), [""])
+        off = render("collector.service.j2", software_live_inventory_export=False)
+        self.assertEqual(directives(off, "ExecStartPost"), [])
+        for text in (endpoint, on, off):
+            self.assertNotIn("python", text)
+            self.assertNotIn("software_live.py", text)
 
-    def test_dropin_arguments_match_the_python_units(self):
-        """Same arguments as the base units, only the program differs."""
-
-        for export in (True, False):
-            for base, dropin in (
-                ("endpoint.service.j2", "impl-endpoint.conf.j2"),
-                ("collector.service.j2", "impl-collector.conf.j2"),
-            ):
-                python = render(base, software_live_inventory_export=export)
-                rust = render(dropin, software_live_inventory_export=export)
-                for key in ("ExecStart", "ExecStartPost"):
-                    want = [
-                        v.replace(
-                            f"/usr/bin/python3 {TEMPLATE_VARS['software_live_install_dir']}/software_live.py",
-                            self.BIN,
-                        )
-                        for v in directives(python, key)
-                    ]
-                    got = [v for v in directives(rust, key) if v]
-                    self.assertEqual(got, want, (base, key, export))
-
-    def test_base_units_still_run_python(self):
-        for name in ("endpoint.service.j2", "collector.service.j2"):
-            for export in (True, False):
-                for line in directives(
-                    render(name, software_live_inventory_export=export), "ExecStart"
-                ):
-                    self.assertTrue(
-                        line.startswith(
-                            "/usr/bin/python3 /usr/local/lib/software-live/software_live.py "
-                        )
-                    )
+    def test_retired_dropin_templates_are_gone(self):
+        for name in ("impl-endpoint.conf.j2", "impl-collector.conf.j2"):
+            self.assertFalse((ROLE / "templates" / name).exists(), name)
 
     def test_shadow_units(self):
         collector = render(
@@ -713,7 +689,8 @@ class TemplateTests(unittest.TestCase):
 class RoleStaticTests(unittest.TestCase):
     def test_defaults(self):
         defaults = load_yaml(ROLE / "defaults/main.yml")
-        self.assertEqual(defaults["software_live_impl"], "python")
+        self.assertEqual(defaults["software_live_impl"], "rust")
+        self.assertEqual(defaults["software_live_packages"], ["python3", "apache2-utils"])
         self.assertEqual(defaults["software_live_rust_version"], "")
         self.assertEqual(defaults["software_live_rust_sha256"], {})
         self.assertIs(defaults["software_live_rust_shadow"], False)
@@ -738,37 +715,41 @@ class RoleStaticTests(unittest.TestCase):
             "Enable software observation timer and endpoint",
             "Enable the shadow timer and endpoint",
             "Verify the running software observation implementation",
+            "Remove the retired Python software observation program",
             "Pin and prune the software-live releases",
         ]
         self.assertEqual([n for n in names if n in order], order)
-        self.assertEqual(names[-2:], order[-2:])
+        self.assertEqual(names[-3:], order[-3:])
+        self.assertNotIn("Validate software observation policy", names)
 
-    def test_nyxmon_checks_installed_in_every_mode(self):
+    def test_only_nyxmon_checks_is_installed(self):
+        found = None
         for task in walk(load_yaml(ROLE / "tasks/main.yml")):
             if task.get("name") == "Install software observation programs":
                 self.assertNotIn("when", task)
-                self.assertEqual(task["loop"], ["software_live.py", "nyxmon_checks.py"])
-                return
-        self.fail("program install task missing")
+                self.assertNotIn("notify", task)
+                self.assertEqual(task["loop"], ["nyxmon_checks.py"])
+                found = task
+            if task.get("name") == "Remove the retired Python software observation program":
+                self.assertEqual(task["ansible.builtin.file"]["state"], "absent")
+                self.assertEqual(task["loop"], ["software_live.py", "__pycache__"])
+        self.assertIsNotNone(found, "program install task missing")
+        # The oracle stays in the repository (PLAN.md S12).
+        self.assertTrue((ROLE / "files/software_live.py").is_file())
 
-    def test_rollback_comes_before_every_rust_task(self):
+    def test_candidate_is_validated_before_the_dropins_go(self):
         names = task_names(ROLE / "tasks/impl.yml")
         self.assertLess(
             names.index("impl | Read the live state"),
-            names.index("impl | Select the Python implementation"),
-        )
-        self.assertLess(
-            names.index("impl | Restart the production units with Python now"),
             names.index("impl | Install and validate the Rust release"),
         )
         self.assertLess(
             names.index("impl | Install and validate the Rust release"),
-            names.index("impl | Point the production units at the Rust release"),
+            names.index("impl | Remove the retired implementation drop-ins"),
         )
-        flush = load_yaml(ROLE / "tasks/flush_handlers.yml")
-        self.assertEqual(
-            [t.get("ansible.builtin.meta") for t in flush], ["flush_handlers"]
-        )
+        self.assertFalse((ROLE / "tasks/flush_handlers.yml").exists())
+        for task in walk(load_yaml(ROLE / "tasks/impl.yml")):
+            self.assertNotIn("ansible.builtin.meta", task, task.get("name"))
 
     def test_rust_inputs_are_checked_before_any_change_with_impl_rust(self):
         tasks = load_yaml(ROLE / "tasks/impl_inputs.yml")
@@ -777,7 +758,7 @@ class RoleStaticTests(unittest.TestCase):
             for t in tasks
             if t.get("ansible.builtin.include_tasks") == "rust_inputs.yml"
         ]
-        self.assertEqual(include[0]["when"], "software_live_impl == 'rust'")
+        self.assertNotIn("when", include[0])
         rust = load_yaml(ROLE / "tasks/rust.yml")
         self.assertEqual(
             rust[0].get("ansible.builtin.include_tasks"), "rust_inputs.yml"
@@ -1208,23 +1189,71 @@ class SwitchPlaybookTests(unittest.TestCase):
         pid = self.world()["units"][unit]["main"]
         return (self.proc / str(pid) / "cmdline").read_bytes().decode().split("\0")[:-1]
 
-    def assert_python(self) -> None:
+    def assert_rust(self, version: str) -> None:
         self.assertFalse(self.dropin(ENDPOINT).exists())
         self.assertFalse(self.dropin(COLLECTOR).exists())
-        self.assertEqual(self.endpoint_exe(), "/usr/bin/python3.12")
-        self.assertEqual(
-            self.endpoint_args()[1:3], [f"{self.install}/software_live.py", "serve"]
-        )
-
-    def assert_rust(self, version: str) -> None:
         self.assertEqual(self.endpoint_exe(), os.path.realpath(self.binary(version)))
         self.assertIn(
-            f"ExecStart={self.binary(version)} serve", self.dropin(ENDPOINT).read_text()
+            f"ExecStart={self.binary(version)} serve",
+            (self.systemd / ENDPOINT).read_text(),
         )
         self.assertIn(
             f"ExecStart={self.binary(version)} collect",
-            self.dropin(COLLECTOR).read_text(),
+            (self.systemd / COLLECTOR).read_text(),
         )
+        for unit in (ENDPOINT, COLLECTOR):
+            self.assertNotIn("software_live.py", (self.systemd / unit).read_text())
+
+    def plant_pre_s12(self, version: str) -> None:
+        """A host as the role left it before the Python retirement: base units
+        with the Python commands, impl.conf drop-ins pointing them at
+        `version` (loaded and running), the Python program and its bytecode
+        cache installed."""
+
+        self.ok("rust", version)
+        script = f"{self.install}/software_live.py"
+        args = (
+            f"--config {self.config}/policy.json --output {self.data}/state.json"
+            f" --cache {self.data}/upstream.json --group {self.group}"
+        )
+        export = (
+            f"export-inventory --config {self.data}/state.json --output"
+            f" /var/lib/software-estate-observations/software-health.json --group {self.group}"
+        )
+        binary = self.binary(version)
+        for unit, base, dropin in (
+            (
+                ENDPOINT,
+                f"[Service]\nExecStart=/usr/bin/python3 {script} serve --config {self.config}/endpoint.json\n",
+                f"[Service]\nExecStart=\nExecStart={binary} serve --config {self.config}/endpoint.json\n",
+            ),
+            (
+                COLLECTOR,
+                f"[Service]\nType=oneshot\nExecStart=/usr/bin/python3 {script} collect {args}\n"
+                f"ExecStartPost=-/usr/bin/python3 {script} {export}\n",
+                f"[Service]\nExecStart=\nExecStart={binary} collect {args}\n"
+                f"ExecStartPost=\nExecStartPost=-{binary} {export}\n",
+            ),
+        ):
+            (self.systemd / unit).write_text(base)
+            self.dropin(unit).parent.mkdir(exist_ok=True)
+            self.dropin(unit).write_text(dropin)
+        world = self.world()
+        for unit in (ENDPOINT, COLLECTOR):
+            world["units"][unit]["loaded"] = None  # systemd loaded these files
+        self.save_world(world)
+        (self.install / "software_live.py").write_text("# retired\n")
+        (self.install / "__pycache__").mkdir()
+        (self.install / "__pycache__/software_live.cpython-312.pyc").write_bytes(b"\0")
+        (self.install / "nyxmon_checks.py").write_text("# kept\n")
+
+    def assert_pre_s12(self, version: str) -> None:
+        self.assertIn(self.binary(version), self.dropin(ENDPOINT).read_text())
+        self.assertIn(self.binary(version), self.dropin(COLLECTOR).read_text())
+        self.assertIn("software_live.py", (self.systemd / ENDPOINT).read_text())
+        self.assertTrue((self.install / "software_live.py").exists())
+        self.assertTrue((self.install / "__pycache__").exists())
+        self.assertEqual(self.endpoint_exe(), os.path.realpath(self.binary(version)))
 
     def plant_run(
         self,
@@ -1280,22 +1309,9 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.save_world(world)
         return pids
 
-    # -- Python --------------------------------------------------------------
+    # -- first deploy and the S12 upgrade -------------------------------------
 
-    def test_python_first_deploy_and_rerun(self):
-        first = self.ok("python")
-        self.assert_python()
-        self.assertFalse(self.releases.exists())
-        self.assertEqual(first["recap"]["ignored"], 0, first["out"])
-        second = self.ok("python")
-        self.assertEqual(second["recap"]["changed"], 0, second["out"])
-        self.assertEqual(second["starts"], [COLLECTOR])  # only the initial collection
-        self.assertFalse(self.releases.exists())
-
-    # -- both directions -------------------------------------------------------
-
-    def test_switch_to_rust_and_back_to_python(self):
-        self.ok("python")
+    def test_first_deploy_and_rerun(self):
         first = self.ok("rust", "1.0.0")
         self.assert_rust("1.0.0")
         self.assertEqual(self.pins(), {"software-live": "1.0.0"})
@@ -1319,19 +1335,50 @@ class SwitchPlaybookTests(unittest.TestCase):
             ["observe", "--max-age", "172800"],
         )
         self.assertIn(ENDPOINT, first["starts"])
+        self.assertEqual(first["recap"]["ignored"], 0, first["out"])
 
         rerun = self.ok("rust", "1.0.0")
         self.assertEqual(rerun["recap"]["changed"], 0, rerun["out"])
-        self.assertEqual(rerun["starts"], [COLLECTOR])
+        self.assertEqual(rerun["starts"], [COLLECTOR])  # only the initial collection
 
-        back = self.ok("python", "1.0.0")
-        self.assert_python()
-        # The production pin is gone, the last Rust version is the rollback pin and stays installed.
-        self.assertEqual(self.pins(), {"software-live.previous": "1.0.0"})
+    def test_s12_upgrade_from_dropins(self):
+        """PLAN.md S12: a host that ran the release through the drop-ins ends
+        with the base units on the binary, no drop-ins, no Python program and
+        no bytecode cache; the Nyxmon helper and the pins stay."""
+
+        self.plant_pre_s12("1.0.0")
+        self.assert_pre_s12("1.0.0")
+        result = self.ok("rust", "1.0.0")
+        self.assert_rust("1.0.0")
+        self.assertFalse(self.dropin(ENDPOINT).parent.exists())
+        self.assertFalse(self.dropin(COLLECTOR).parent.exists())
+        self.assertFalse((self.install / "software_live.py").exists())
+        self.assertFalse((self.install / "__pycache__").exists())
+        self.assertTrue((self.install / "nyxmon_checks.py").exists())
+        self.assertIn(ENDPOINT, result["starts"])
+        self.assertEqual(self.pins(), {"software-live": "1.0.0"})
         self.assertEqual(self.versions(), ["1.0.0"])
-        self.assertIn(ENDPOINT, back["starts"])
-        again = self.ok("python", "1.0.0")
-        self.assertEqual(again["recap"]["changed"], 0, again["out"])
+        rerun = self.ok("rust", "1.0.0")
+        self.assertEqual(rerun["recap"]["changed"], 0, rerun["out"])
+
+    def test_s12_upgrade_keeps_a_foreign_dropin(self):
+        self.plant_pre_s12("1.0.0")
+        foreign = self.dropin(ENDPOINT).parent / "override.conf"
+        foreign.write_text("[Service]\nNice=5\n")
+        self.ok("rust", "1.0.0")
+        self.assertFalse(self.dropin(ENDPOINT).exists())
+        self.assertTrue(foreign.exists())
+        self.assertFalse(self.dropin(COLLECTOR).parent.exists())
+
+    def test_s12_upgrade_with_a_new_release(self):
+        self.plant_pre_s12("1.0.0")
+        self.ok("rust", "2.0.0")
+        self.assert_rust("2.0.0")
+        self.assertEqual(
+            self.pins(), {"software-live": "2.0.0", "software-live.previous": "1.0.0"}
+        )
+        self.assertEqual(self.versions(), ["1.0.0", "2.0.0"])
+
 
     def test_rollback_pin_sequence_with_keep_versions_2(self):
         """PLAN.md 7.3: v1 -> v2 -> v1 -> v3 keeps v1 (previous) next to v3 and
@@ -1412,13 +1459,23 @@ class SwitchPlaybookTests(unittest.TestCase):
         """The same for a shadow collector run (its timer is not started by
         the play, so the run is still in progress at prune time)."""
 
-        self.ok("python", "1.0.0", shadow=True)
-        self.assertEqual(self.pins(), {"software-live-shadow": "1.0.0"})
+        self.ok("rust", "1.0.0", shadow=True)
+        self.assertEqual(
+            self.pins(), {"software-live": "1.0.0", "software-live-shadow": "1.0.0"}
+        )
         self.plant_run(SHADOW_COLLECTOR, "1.0.0", children=("software-live-apt",))
-        self.ok("python", "2.0.0", shadow=True)
+        self.ok("rust", "2.0.0", shadow=True)
         self.plant_run(SHADOW_COLLECTOR, "1.0.0", children=("software-live-apt",))
-        self.ok("python", "3.0.0", shadow=True)
-        self.assertEqual(self.pins(), {"software-live-shadow": "3.0.0"})
+        self.ok("rust", "3.0.0", shadow=True, keep=2)
+        self.assertEqual(
+            self.pins(),
+            {
+                "software-live": "3.0.0",
+                "software-live.previous": "2.0.0",
+                "software-live-shadow": "3.0.0",
+            },
+        )
+        # 1.0.0 is named only by the running shadow collector.
         self.assertEqual(self.versions(), ["1.0.0", "2.0.0", "3.0.0"])
 
     def test_unresolvable_running_collector_skips_the_prune(self):
@@ -1456,7 +1513,7 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(self.versions(), ["1.0.0", "2.0.0", "3.0.0"])
         self.assertTrue(result["facts"]["prune"]["skipped"])
 
-    def test_dropin_of_a_failed_play_protects_its_release(self):
+    def test_units_of_a_failed_play_protect_their_release(self):
         self.ok("rust", "1.0.0")
         # v2's units do not come up: the endpoint keeps running v1's image.
         (self.state / f"exe-override-{ENDPOINT}").write_text(self.binary("1.0.0"))
@@ -1466,7 +1523,7 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(self.pins(), {"software-live": "1.0.0"})
         self.assertEqual(self.versions(), ["1.0.0", "2.0.0"])
         (self.state / f"exe-override-{ENDPOINT}").unlink()
-        # v3 is fine; v2 is named only by the drop-in v3 replaces.
+        # v3 is fine; v2 is named only by the loaded units v3 replaces.
         self.ok("rust", "3.0.0", keep=2)
         self.assertEqual(
             self.pins(), {"software-live": "3.0.0", "software-live.previous": "1.0.0"}
@@ -1476,6 +1533,8 @@ class SwitchPlaybookTests(unittest.TestCase):
     def test_unreadable_or_unparseable_dropin_skips_the_prune(self):
         self.ok("rust", "1.0.0")
         self.ok("rust", "2.0.0")
+        # A drop-in an earlier version of the role left behind.
+        self.dropin(COLLECTOR).parent.mkdir()
         self.dropin(COLLECTOR).write_text(
             f"[Service]\nExecStart=\nExecStart={self.releases}/current/software-live collect\n"
         )
@@ -1490,58 +1549,20 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(self.versions(), ["2.0.0", "3.0.0", "4.0.0"])
         self.assertIn("cannot be read", json.dumps(result["facts"]["live"]["unknown"]))
 
-    # -- rollback is never blocked --------------------------------------------
+    # -- refusals ----------------------------------------------------------------
 
-    def test_python_rollback_with_a_missing_archive_shadow_off(self):
-        self.ok("rust", "1.0.0")
-        result = self.ok("python", "2.0.0", archive=str(self.base / "missing.tar.gz"))
-        self.assert_python()
-        self.assertEqual(self.pins(), {"software-live.previous": "1.0.0"})
-        self.assertEqual(self.versions(), ["1.0.0"])
-        # No Rust task ran: impl python without the shadow needs no release.
-        self.assertNotIn("rust | ", result["out"])
-
-    def test_python_rollback_with_a_broken_candidate_shadow_off(self):
-        self.ok("rust", "1.0.0")
-        (self.state / "validate-fails").write_text("")
-        (self.state / "apt-unknown").write_text("")
-        self.ok("python", "2.0.0")
-        self.assert_python()
-        self.assertEqual(self.versions(), ["1.0.0"])
-
-    def test_python_rollback_with_a_missing_archive_shadow_on(self):
-        self.ok("rust", "1.0.0")
-        result = self.failed(
-            "python", "2.0.0", shadow=True, archive=str(self.base / "missing.tar.gz")
-        )
-        self.assertIn("Install the pinned software-live release", result["out"])
-        # The production units run Python although the shadow failed.
-        self.assert_python()
-        self.assertEqual(self.pins(), {"software-live": "1.0.0"})  # step 7 not reached
-        self.assertEqual(self.versions(), ["1.0.0"])
-
-    def test_python_rollback_with_a_broken_candidate_shadow_on(self):
-        self.ok("rust", "1.0.0")
-        (self.state / "apt-unknown").write_text("")
-        result = self.failed("python", "2.0.0", shadow=True)
-        self.assertIn(
-            "software-live-apt observe exited 0 with status unknown", result["out"]
-        )
-        self.assert_python()
-        self.assertFalse((self.systemd / SHADOW_ENDPOINT).exists())
-        self.assertEqual(self.versions(), ["1.0.0", "2.0.0"])
-
-    def test_python_rollback_with_an_unknown_variant_shadow_on(self):
-        self.ok("rust", "1.0.0")
-        self.os_release.write_text('ID=ubuntu\nVERSION_ID="22.04"\n')
-        result = self.failed("python", "1.0.0", shadow=True)
-        self.assertIn("released variant", result["out"])
-        self.assert_python()
-
-    # -- impl rust refusals ----------------------------------------------------
+    def test_python_is_refused_before_any_change(self):
+        self.plant_pre_s12("1.0.0")
+        result = self.failed("python", "1.0.0")
+        self.assertIn("retired in S12", result["out"])
+        self.assert_pre_s12("1.0.0")
+        self.assertNotIn(ENDPOINT, result["starts"])
 
     def test_rust_refusals_change_nothing(self):
-        self.ok("python")
+        """A refused candidate leaves a pre-S12 host as it was: drop-ins,
+        Python program, pins and running release."""
+
+        self.plant_pre_s12("1.0.0")
         for label, kwargs, flag in (
             ("validate", {}, "validate-fails"),
             ("apt", {}, "apt-unknown"),
@@ -1550,39 +1571,42 @@ class SwitchPlaybookTests(unittest.TestCase):
             with self.subTest(label):
                 if flag:
                     (self.state / flag).write_text("")
-                result = self.failed("rust", "1.0.0", **kwargs)
+                result = self.failed("rust", "2.0.0", **kwargs)
                 if flag:
                     (self.state / flag).unlink()
-                self.assert_python()
-                self.assertEqual(self.pins(), {})
+                self.assert_pre_s12("1.0.0")
+                self.assertEqual(self.pins(), {"software-live": "1.0.0"})
                 self.assertNotIn(ENDPOINT, result["starts"])
         self.os_release.write_text('ID=ubuntu\nVERSION_ID="22.04"\n')
-        result = self.failed("rust", "1.0.0")
+        result = self.failed("rust", "2.0.0")
         self.assertIn("released variant", result["out"])
-        self.assert_python()
+        self.assert_pre_s12("1.0.0")
 
     def test_variable_validation(self):
         for overrides in (
+            {"software_live_impl": "python"},
             {"software_live_impl": "shadow"},
             {"software_live_rust_shadow": "yes"},
             {"software_live_rust_keep_versions": 1},
             {"software_live_shadow_port": 9110},
         ):
             with self.subTest(overrides):
-                result = self.play("python", **overrides)
+                result = self.play("rust", "1.0.0", **overrides)
                 self.assertNotEqual(result["rc"], 0, result["out"])
-                self.assertFalse(self.dropin(ENDPOINT).exists())
+                self.assertFalse((self.systemd / ENDPOINT).exists())
+                self.assertFalse(self.releases.exists())
         result = self.play("rust", "")
         self.assertNotEqual(result["rc"], 0)
         self.assertIn("software_live_rust_version", result["out"])
         self.assertFalse((self.systemd / ENDPOINT).exists())
 
+
     # -- shadow ----------------------------------------------------------------
 
     def test_shadow_on_and_off(self):
-        self.ok("python")
-        on = self.ok("python", "1.0.0", shadow=True)
-        self.assert_python()
+        self.ok("rust", "1.0.0")
+        on = self.ok("rust", "1.0.0", shadow=True)
+        self.assert_rust("1.0.0")
         self.assertEqual(
             self.endpoint_exe(SHADOW_ENDPOINT), os.path.realpath(self.binary("1.0.0"))
         )
@@ -1596,17 +1620,26 @@ class SwitchPlaybookTests(unittest.TestCase):
             ("127.0.0.1", 9119, f"{self.data}/state.json"),
         )
         self.assertTrue((self.data / "shadow").is_dir())
-        self.assertEqual(self.pins(), {"software-live-shadow": "1.0.0"})
+        self.assertEqual(
+            self.pins(), {"software-live": "1.0.0", "software-live-shadow": "1.0.0"}
+        )
         self.assertTrue(
             self.world()["units"]["software-live-shadow-collector.timer"]["enabled"]
         )
         self.assertIn(SHADOW_ENDPOINT, on["starts"])
-        rerun = self.ok("python", "1.0.0", shadow=True)
+        rerun = self.ok("rust", "1.0.0", shadow=True)
         self.assertEqual(rerun["recap"]["changed"], 0, rerun["out"])
-        # The shadow moves to 2.0.0 without a rollback pin.
-        self.ok("python", "2.0.0", shadow=True)
-        self.assertEqual(self.pins(), {"software-live-shadow": "2.0.0"})
-        off = self.ok("python", "2.0.0", shadow=False)
+        # The shadow moves to 2.0.0 without a rollback pin of its own.
+        self.ok("rust", "2.0.0", shadow=True)
+        self.assertEqual(
+            self.pins(),
+            {
+                "software-live": "2.0.0",
+                "software-live.previous": "1.0.0",
+                "software-live-shadow": "2.0.0",
+            },
+        )
+        off = self.ok("rust", "2.0.0", shadow=False)
         for name in (
             "software-live-shadow-collector.timer",
             SHADOW_COLLECTOR,
@@ -1615,10 +1648,12 @@ class SwitchPlaybookTests(unittest.TestCase):
             self.assertFalse((self.systemd / name).exists(), name)
         self.assertFalse((self.data / "shadow").exists())
         self.assertFalse((self.config / "shadow-endpoint.json").exists())
-        self.assertEqual(self.pins(), {})
+        self.assertEqual(
+            self.pins(), {"software-live": "2.0.0", "software-live.previous": "1.0.0"}
+        )
         self.assertEqual(self.world()["units"][SHADOW_ENDPOINT]["active"], "inactive")
         self.assertEqual(off["recap"]["failed"], 0)
-        # Nothing pins 1.0.0 and 2.0.0 any more; with keep 2 both stay (newest two).
+        self.assert_rust("2.0.0")
         self.assertEqual(self.versions(), ["1.0.0", "2.0.0"])
 
     def test_rust_with_shadow_pins_both(self):
@@ -1631,7 +1666,7 @@ class SwitchPlaybookTests(unittest.TestCase):
     # -- check mode ------------------------------------------------------------
 
     def test_check_mode_changes_nothing(self):
-        self.ok("python")
+        self.plant_pre_s12("1.0.0")
 
         def tree() -> list[str]:
             # Everything the role could touch (not the fake world or the plays).
@@ -1643,10 +1678,12 @@ class SwitchPlaybookTests(unittest.TestCase):
             )
 
         before = tree()
-        result = self.play("rust", "1.0.0", check=True)
-        self.assertEqual(result["rc"], 0, result["out"])
-        self.assertEqual(tree(), before)
-        self.assert_python()
+        for version in ("1.0.0", "2.0.0"):
+            with self.subTest(version):
+                result = self.play("rust", version, check=True)
+                self.assertEqual(result["rc"], 0, result["out"])
+                self.assertEqual(tree(), before)
+                self.assert_pre_s12("1.0.0")
 
 
 if __name__ == "__main__":
