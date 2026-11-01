@@ -72,6 +72,17 @@
       and the processing lease must be at least five minutes plus one minute per
       claimed check.
 
+- name: Validate warning delivery settings
+  assert:
+    that:
+      - nyxmon_notify_warning_delivery in ['individual', 'digest']
+      - nyxmon_warning_digest_on_calendar is string
+      - (nyxmon_warning_digest_on_calendar | trim | length) > 0
+      - nyxmon_warning_digest_on_calendar is not regex('[\x00-\x1f\x7f]')
+    fail_msg: >-
+      nyxmon_notify_warning_delivery must be individual or digest, and
+      nyxmon_warning_digest_on_calendar one line of systemd OnCalendar text.
+
 - name: Warn about the removed sample-count reminder variable
   debug:
     msg: >-

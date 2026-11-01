@@ -63,6 +63,10 @@ def render(template_name: str, **overrides: object) -> str:
         "nyxmon_notify_warning_repeat_interval_seconds": defaults[
             "nyxmon_notify_warning_repeat_interval_seconds"
         ],
+        "nyxmon_notify_warning_delivery": defaults["nyxmon_notify_warning_delivery"],
+        "nyxmon_warning_digest_on_calendar": defaults[
+            "nyxmon_warning_digest_on_calendar"
+        ],
         "nyxmon_processing_lease_seconds": defaults["nyxmon_processing_lease_seconds"],
         "nyxmon_check_batch_size": defaults["nyxmon_check_batch_size"],
         "nyxmon_opsgate_submit_base_url": "",
@@ -301,6 +305,25 @@ class NotificationPolicyTests(unittest.TestCase):
             main_tasks,
         )
         self.assertIn("nyxmon_notify_consecutive_failures | int <= 100", main_tasks)
+
+
+class WarningDigestTests(unittest.TestCase):
+    def test_warnings_alert_individually_by_default(self) -> None:
+        self.assertEqual(role_defaults()["nyxmon_notify_warning_delivery"], "individual")
+        self.assertIn("NYXMON_NOTIFY_WARNING_DELIVERY=individual", render("nyxmon.env.j2"))
+
+    def test_digest_setting_reaches_the_agent_environment(self) -> None:
+        env = render("nyxmon.env.j2", nyxmon_notify_warning_delivery="digest")
+        self.assertIn("NYXMON_NOTIFY_WARNING_DELIVERY=digest", env)
+
+    def test_timer_catches_up_and_service_runs_the_command(self) -> None:
+        timer = render("nyxmon-warning-digest.timer.j2")
+        self.assertIn("OnCalendar=Mon *-*-* 09:00:00", timer)
+        self.assertIn("Persistent=true", timer)
+        service = render("nyxmon-warning-digest.service.j2")
+        self.assertIn("manage.py send_warning_digest", service)
+        self.assertIn("Restart=on-failure", service)
+        self.assertIn("UMask=0077", service)
 
 
 class RequireLoginTests(unittest.TestCase):

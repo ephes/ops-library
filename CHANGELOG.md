@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `nyxmon_deploy`: add `nyxmon_notify_warning_delivery` (`individual` by default)
+  and `nyxmon_warning_digest_on_calendar`. With `digest` (Rust agent 0.1.2),
+  warnings send nothing of their own and a timer sends all open warnings in one
+  silent message, Mondays at 09:00. `nyxmon_remove` removes the timer. The new
+  `.env` line restarts both Nyxmon units once on the next deploy.
+
 - `software_live`: retire the Python collector (rust/software-live/PLAN.md S12,
   after the 7-day soak of the Rust port on all four hosts). The base units now
   run the pinned Rust release `releases/<version>/software-live` directly;

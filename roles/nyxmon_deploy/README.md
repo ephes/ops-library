@@ -106,6 +106,7 @@ Monitoring reliability defaults are rendered into the shared `.env`:
 | `nyxmon_notify_consecutive_failures` | `2` | `NYXMON_NOTIFY_CONSECUTIVE_FAILURES` | Consecutive non-OK samples before the first alert (1..100) |
 | `nyxmon_notify_repeat_interval_seconds` | `21600` | `NYXMON_NOTIFY_REPEAT_INTERVAL_SECONDS` | Elapsed time between reminders for an open **error** incident (60..2592000) |
 | `nyxmon_notify_warning_repeat_interval_seconds` | `86400` | `NYXMON_NOTIFY_WARNING_REPEAT_INTERVAL_SECONDS` | Elapsed time between reminders for an open **warning** incident (60..2592000) |
+| `nyxmon_notify_warning_delivery` | `individual` | `NYXMON_NOTIFY_WARNING_DELIVERY` | `individual` alerts per check, `digest` sends warnings only through the digest timer (needs Rust agent 0.1.2) |
 | `nyxmon_processing_lease_seconds` | `900` | `NYXMON_PROCESSING_LEASE_SECONDS` | Processing lease before a claimed check is reclaimed |
 | `nyxmon_check_batch_size` | `5` | `NYXMON_CHECK_BATCH_SIZE` | Maximum checks claimed per collector iteration (1..100) |
 
@@ -128,6 +129,17 @@ throughput gain is worth a longer batch deadline.
 All five settings are validated before anything is written: each must be a whole
 number, and each is range-checked. A typo fails the deploy instead of landing in
 the worker environment.
+
+#### Warning digest
+
+With `nyxmon_notify_warning_delivery: digest` a warning sends nothing of its
+own. The role installs `nyxmon-warning-digest.timer`, which runs
+`manage.py send_warning_digest` at `nyxmon_warning_digest_on_calendar` (default
+`Mon *-*-* 09:00:00`). It sends all open warnings in one silent message, or
+nothing when none are open. A missed run happens at the next boot, and a failed
+delivery retries every 15 minutes, at most eight times a day. Errors still
+alert at once. Back on `individual`, the role stops the timer and removes both
+units. The setting needs Rust agent 0.1.2 and a Nyxmon source with the command.
 
 #### Removed: `nyxmon_notify_repeat_failures`
 

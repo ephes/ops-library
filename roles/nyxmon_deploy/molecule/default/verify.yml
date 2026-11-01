@@ -119,6 +119,7 @@
           - >-
             nyxmon_env_text is
             regex('(?m)^NYXMON_NOTIFY_WARNING_REPEAT_INTERVAL_SECONDS=86400$')
+          - nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_WARNING_DELIVERY=individual$')
           - nyxmon_env_text is regex('(?m)^NYXMON_PROCESSING_LEASE_SECONDS=900$')
           - nyxmon_env_text is regex('(?m)^NYXMON_CHECK_BATCH_SIZE=5$')
           - not (nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_REPEAT_FAILURES='))

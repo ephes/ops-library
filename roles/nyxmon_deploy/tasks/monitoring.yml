@@ -46,3 +46,52 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: monitoring | Install the warning digest units
+  ansible.builtin.template:
+    src: "nyxmon-warning-digest.{{ item }}.j2"
+    dest: "/etc/systemd/system/nyxmon-warning-digest.{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - service
+    - timer
+  notify:
+    - reload systemd
+    - restart nyxmon warning digest timer
+  when: nyxmon_notify_warning_delivery == 'digest'
+
+- name: monitoring | Enable the warning digest timer
+  ansible.builtin.systemd:
+    name: nyxmon-warning-digest.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: nyxmon_notify_warning_delivery == 'digest'
+
+- name: monitoring | Check for warning digest units to retire
+  ansible.builtin.stat:
+    path: /etc/systemd/system/nyxmon-warning-digest.timer
+    follow: false
+  register: nyxmon_warning_digest_timer_stat
+  when: nyxmon_notify_warning_delivery != 'digest'
+
+- name: monitoring | Stop the warning digest timer
+  ansible.builtin.systemd:
+    name: nyxmon-warning-digest.timer
+    enabled: false
+    state: stopped
+  when:
+    - nyxmon_notify_warning_delivery != 'digest'
+    - nyxmon_warning_digest_timer_stat.stat.exists
+
+- name: monitoring | Remove the warning digest units
+  ansible.builtin.file:
+    path: "/etc/systemd/system/nyxmon-warning-digest.{{ item }}"
+    state: absent
+  loop:
+    - timer
+    - service
+  notify: reload systemd
+  when: nyxmon_notify_warning_delivery != 'digest'

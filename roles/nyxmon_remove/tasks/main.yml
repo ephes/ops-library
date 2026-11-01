@@ -35,6 +35,14 @@
     daemon_reload: yes
   ignore_errors: yes
 
+- name: Stop and disable the Nyxmon warning digest timer
+  systemd:
+    name: nyxmon-warning-digest.timer
+    state: stopped
+    enabled: no
+    daemon_reload: yes
+  ignore_errors: yes
+
 - name: Remove systemd service files
   file:
     path: "{{ item }}"
@@ -42,6 +50,8 @@
   loop:
     - "/etc/systemd/system/{{ nyxmon_service_name }}.service"
     - "/etc/systemd/system/{{ nyxmon_monitor_service_name }}.service"
+    - /etc/systemd/system/nyxmon-warning-digest.timer
+    - /etc/systemd/system/nyxmon-warning-digest.service
   notify: reload systemd
 
 # nyxmon_deploy installs a UMask=0077 drop-in for both services

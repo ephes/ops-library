@@ -99,6 +99,11 @@ nyxmon_notify_consecutive_failures: 2
 nyxmon_notify_repeat_interval_seconds: 21600
 # Elapsed time between reminders for an open warning incident (seconds).
 nyxmon_notify_warning_repeat_interval_seconds: 86400
+# individual: warnings alert per check. digest (needs Rust agent 0.1.2): they
+# send nothing, and a timer reports all open warnings in one silent message.
+nyxmon_notify_warning_delivery: individual
+# When the digest goes out (systemd OnCalendar); only used with digest.
+nyxmon_warning_digest_on_calendar: "Mon *-*-* 09:00:00"
 # DEPRECATED: nyxmon_notify_repeat_failures (sample-count reminders) is ignored.
 # Set nyxmon_notify_repeat_interval_seconds instead.
 nyxmon_processing_lease_seconds: 900
