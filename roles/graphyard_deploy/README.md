@@ -74,6 +74,7 @@ core Django runtime plus automation-owned InfluxDB and Grafana containers.
 | `graphyard_healthcheck_enabled` | `true` | Enable post-deploy health verification |
 | `graphyard_skip_django_manage` | `false` | Skip migrate/collectstatic in rollback workflows |
 | `graphyard_agent_impl` | `python` | `python` or `rust`; see [Agent implementation](#agent-implementation-python-or-rust) |
+| `graphyard_require_bound_ingest_tokens` | `false` | `true` adds `GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true` to the env file; see [Bound ingest tokens](#bound-ingest-tokens) |
 
 See `defaults/main.yml` for the full variable set.
 
@@ -341,6 +342,22 @@ Rust port.
   `graphyard_agent_rust_sha256` again and deploy. Its directory is still
   installed (pruning keeps the previously selected version), the drop-in
   changes and the unit restarts.
+
+## Bound ingest tokens
+
+Graphyard (migration `0012`) can bind an ingest token to one subject. With
+`graphyard_require_bound_ingest_tokens: true` the env file gets
+`GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true`, and Graphyard rejects every
+ingest token without a binding with `403`. Turn it on only after every active
+producer pushes with a bound token and the shared unbound tokens are disabled
+(Graphyard's README, "Roll out in this order").
+
+With the default `false` the role writes no line at all, so the env file is
+byte-identical to the one earlier versions wrote and a deploy neither changes
+it nor restarts anything; Graphyard then uses its own default (unbound tokens
+accepted). Switching the value changes the env file, which restarts
+`graphyard-web` and `graphyard-agent` once. To roll back, set it to `false`
+and deploy again.
 
 ## Restart behavior
 

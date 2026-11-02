@@ -61,6 +61,15 @@
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.
 
+## [2.75.5] - 2026-11-02
+
+- `graphyard_deploy`: add `graphyard_require_bound_ingest_tokens` (default
+  `false`). `true` adds `GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true` to
+  `graphyard.env`, so Graphyard rejects ingest tokens without a subject
+  binding. With `false` the env file stays byte-identical to earlier versions
+  (no line, no restart). Changing the value restarts `graphyard-web` and
+  `graphyard-agent` once.
+
 ## [2.75.3] - 2026-10-31
 
 - Fix Wyoming STT/TTS entity auto-detection in declarative Assist pipelines and

@@ -145,6 +145,12 @@ graphyard_sqlite_busy_timeout_ms: 30000
 graphyard_sqlite_journal_mode: "WAL"
 graphyard_sqlite_synchronous: "NORMAL"
 
+# Ingest token binding (Graphyard migration 0012). true writes
+# GRAPHYARD_REQUIRE_BOUND_INGEST_TOKENS=true, which rejects every ingest token
+# without a subject binding with 403. false (the default) writes no line, so
+# Graphyard keeps its own default (unbound tokens accepted).
+graphyard_require_bound_ingest_tokens: false
+
 # Systemd service config
 graphyard_web_service_name: "graphyard-web"
 graphyard_agent_service_name: "graphyard-agent"
