@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+- `homeassistant_deploy`: optional pinned GPS Timeline integration
+  (`homeassistant_gps_timeline_enabled`, 0.1.0-beta.3) and Location Timeline
+  Card (`homeassistant_timeline_card_enabled`, 1.9.3), both off by default.
+  Downloads are sha256-verified before they replace anything; only
+  `custom_components/gps_timeline` is installed (stamp `.ops-pinned-version`,
+  shared with ops-deploy) and the card is `config/www/timeline_card.js`
+  (`www/` 0755, owner `homeassistant_user`). `restart homeassistant` is
+  notified only when one of them changed; a repeat run changes nothing. The
+  tasks never touch `config/gps_timeline` (the integration's data) or
+  `configuration.yaml`/`automations.yaml`/`scripts.yaml`.
+
+- `homeassistant_backup` and the Echoport Home Assistant runner
+  (`echoport_backup` `homeassistant_backup.py.j2`): new
+  `homeassistant_backup_config_sqlite_databases` (default
+  `gps_timeline/gps_timeline.db`). Each existing database is copied with
+  `sqlite3 .backup` (with the busy timeout and retries) to its path in the
+  snapshot's `config/`, and the live file with its `-wal`/`-shm`/`-journal`
+  stays out of the config rsync. A restore brings it back with the config
+  directory unchanged (an older archive's copied `-wal` stays with it).
+
 - `hdparm_tune`: apply the settings at every boot with a new systemd oneshot
   (`hdparm-tune.service`, script `/usr/local/sbin/hdparm-tune-apply`).
   Ubuntu's udev hook skips `-B` and `-S` from `/etc/hdparm.conf` for disks

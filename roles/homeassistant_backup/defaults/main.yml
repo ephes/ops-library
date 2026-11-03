@@ -13,6 +13,12 @@ homeassistant_data_path: /home/homeassistant/site/data
 homeassistant_logs_path: /home/homeassistant/site/logs
 homeassistant_backup_sqlite_path: "{{ homeassistant_config_path }}/home-assistant_v2.db"
 homeassistant_backup_use_sqlite_backup: true
+# Further live SQLite databases below the config directory (relative paths),
+# copied with sqlite3 .backup like the main database; the live file and its
+# -wal/-shm/-journal stay out of the config rsync. GPS Timeline keeps its
+# long-term location history here.
+homeassistant_backup_config_sqlite_databases:
+  - gps_timeline/gps_timeline.db
 
 # Matter/Thread state paths (used for optional backups)
 homeassistant_matter_server_storage_path: "{{ homeassistant_data_path }}/matter-server"

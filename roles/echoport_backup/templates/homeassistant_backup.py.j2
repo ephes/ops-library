@@ -3,7 +3,8 @@
 Home Assistant backup/restore runner for FastDeploy.
 
 Service-owned same-host script for Home Assistant:
-- Backup: SQLite snapshots (main + optional zigbee), selective file copies,
+- Backup: SQLite snapshots (main + optional zigbee + further config databases
+  such as GPS Timeline's), selective file copies,
   tarball + manifest + checksum manifest, upload to MinIO.
 - Restore: download + checksum verify, safe extract, optional host/disk checks,
   safety snapshot, stop services, restore files then DBs, ownership fix,
@@ -78,6 +79,14 @@ HEALTH_DELAY_RAW = "{{ homeassistant_backup_health_delay | default(5) }}"
 HEALTH_EXPECTED_STATUS_RAW = "{{ homeassistant_backup_health_expected_status | default(200) }}"
 
 ALLOWED_ROOTS_RAW = "{{ homeassistant_backup_allowed_roots | join(',') }}"
+
+# Further live SQLite databases below CONFIG_PATH (relative paths), e.g. GPS
+# Timeline's long-term location history. Each is snapshotted with
+# sqlite_backup() into the staged config tree at the same path; the live file
+# and its -wal/-shm/-journal stay out of the config rsync. A restore puts them
+# back with the config directory as it is in the archive (rsync --delete drops
+# stale live sidecars; an older archive's copied -wal stays with its database).
+CONFIG_SQLITE_DATABASES = {{ homeassistant_backup_config_sqlite_databases | default(['gps_timeline/gps_timeline.db']) | to_json }}
 
 # Config exclusions for backup (DB files are backed up separately)
 CONFIG_EXCLUDES = [
@@ -267,6 +276,11 @@ def validate_config_paths() -> None:
     for req in required_paths:
         if not Path(req).exists():
             raise ValueError(f"Required path does not exist: {req}")
+
+    for rel in CONFIG_SQLITE_DATABASES:
+        parts = str(rel).split("/")
+        if not rel or any(not part or part.startswith(".") for part in parts):
+            raise ValueError(f"Config SQLite database must be a path below the config directory: {rel}")
 
     if not Path(MAIN_DB_PATH).is_file():
         raise ValueError(f"Main database path is not a file: {MAIN_DB_PATH}")
@@ -569,7 +583,19 @@ def backup(cenv: Dict) -> int:
             emit_step("backup_zigbee_db", "success", "Zigbee database not present, skipped")
 
         emit_step("copy_config", "running", "Copying config directory with exclusions")
-        rsync_dir(Path(CONFIG_PATH), stage_dir / "config", delete=True, excludes=CONFIG_EXCLUDES)
+        config_db_excludes = []
+        for rel in CONFIG_SQLITE_DATABASES:
+            live_db = Path(CONFIG_PATH) / rel
+            if live_db.is_file():
+                db_copy = stage_dir / "config" / rel
+                db_copy.parent.mkdir(parents=True, exist_ok=True)
+                sqlite_backup(str(live_db), db_copy)
+                # The copy is complete; drop sidecars its integrity check may leave.
+                remove_sqlite_wal_shm(str(db_copy))
+            # Anchored to the path; rsync never deletes excluded files, so the
+            # snapshot above survives --delete.
+            config_db_excludes += [f"/{rel}{suffix}" for suffix in ("", "-wal", "-shm", "-journal")]
+        rsync_dir(Path(CONFIG_PATH), stage_dir / "config", delete=True, excludes=CONFIG_EXCLUDES + config_db_excludes)
         emit_step("copy_config", "success", "Config directory copied")
 
         emit_step("copy_data", "running", "Copying data directory")

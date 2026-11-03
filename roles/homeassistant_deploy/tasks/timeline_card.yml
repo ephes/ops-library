@@ -1,0 +1,33 @@
+---
+# Pinned Location Timeline Card (iamyacin/timeline_card). The file name stays
+# the same across upgrades; the dashboard resource carries the version
+# (/local/timeline_card.js?v=<version>). Home Assistant serves /local only when
+# www/ existed at startup, so the restart after the first install covers it.
+- name: "timeline_card | Validate Location Timeline Card install variables"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_timeline_card_version | length > 0
+      - homeassistant_timeline_card_sha256 | length == 64
+    quiet: true
+    fail_msg: >-
+      homeassistant_timeline_card_enabled is true but the pinned version and/or
+      sha256 are unset. Change homeassistant_timeline_card_version and
+      homeassistant_timeline_card_sha256 together.
+
+- name: "timeline_card | Ensure Home Assistant www directory exists"
+  ansible.builtin.file:
+    path: "{{ homeassistant_config_path }}/www"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0755"
+
+- name: "timeline_card | Download pinned Location Timeline Card"
+  ansible.builtin.get_url:
+    url: "{{ homeassistant_timeline_card_download_url }}"
+    dest: "{{ homeassistant_config_path }}/www/timeline_card.js"
+    checksum: "sha256:{{ homeassistant_timeline_card_sha256 }}"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+  notify: restart homeassistant

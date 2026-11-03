@@ -138,6 +138,45 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 
 See the defaults file for recorder, logger, timezone, and UniFi integration settings.
 
+## GPS Timeline and Location Timeline Card
+
+Optional and off by default. The recorder's retention (`purge_keep_days`) is
+global, so long-term location history lives in the custom integration
+[GPS Timeline](https://github.com/iamyacin/gps-timeline) instead (its own
+SQLite WAL database `config/gps_timeline/gps_timeline.db`), shown by the
+[Location Timeline Card](https://github.com/iamyacin/timeline_card) with
+`history_source: gps_timeline`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `homeassistant_gps_timeline_enabled` | `false` | Install the pinned GPS Timeline integration |
+| `homeassistant_gps_timeline_version` | `0.1.0-beta.3` | Release tag (commit `688f1b094c58c652bc9a49702486cd9d86b05376`) |
+| `homeassistant_gps_timeline_sha256` | `feb29bc1…1ee34e` | sha256 of the tag archive; change it together with the version |
+| `homeassistant_gps_timeline_download_url` | GitHub tag archive | Download URL of the archive |
+| `homeassistant_timeline_card_enabled` | `false` | Install the pinned Location Timeline Card |
+| `homeassistant_timeline_card_version` | `1.9.3` | Release of `iamyacin/timeline_card` |
+| `homeassistant_timeline_card_sha256` | `d81404bc…987a5` | sha256 of `timeline_card.js` (1,732,646 bytes); change it together with the version |
+| `homeassistant_timeline_card_download_url` | GitHub release asset | Download URL of `timeline_card.js` |
+
+- The archive is downloaded to `<site>/downloads/` and checksum-verified before
+  it replaces anything. Only `custom_components/gps_timeline` is installed
+  (owner `homeassistant_user`, 0755/0644), with the stamp
+  `.ops-pinned-version` (`<version> <sha256>`); a matching stamp skips the
+  install. ops-deploy's `services.homeassistant` writes the same stamp.
+- The card is `config/www/timeline_card.js` (0644) in `www/` (0755), both owned
+  by `homeassistant_user`. The file name never changes; the dashboard resource
+  is `/local/timeline_card.js?v=<version>`, so an upgrade only bumps `?v=`.
+- `restart homeassistant` is notified only when the component or the card
+  changed (Home Assistant serves `/local` only when `www/` existed at startup).
+- The integration is set up in the UI (config flow, no YAML, no pip
+  requirements, Home Assistant 2026.9.0 or newer). The tasks never write
+  `configuration.yaml`, `automations.yaml` or `scripts.yaml`, and never delete
+  or write `config/gps_timeline`. `homeassistant_backup` and the Echoport
+  runner copy its database with `sqlite3 .backup`.
+- GitHub tag archives are usually but not guaranteed byte-stable: if the hash
+  drifts for the same tag, compare the contents with the tag commit instead of
+  loosening the pin.
+
 ## Example Usage
 
 ```yaml

@@ -1,0 +1,93 @@
+---
+# Pinned GPS Timeline integration (iamyacin/gps-timeline). Only the archive's
+# custom_components/gps_timeline is installed; the integration's data directory
+# (config/gps_timeline, its SQLite history) is never touched here. The stamp
+# `.ops-pinned-version` ("<version> <sha256>") is the same one ops-deploy's
+# services.homeassistant writes, so either tool sees the other's install.
+- name: "gps_timeline | Validate GPS Timeline install variables"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_gps_timeline_version | length > 0
+      - homeassistant_gps_timeline_sha256 | length == 64
+    quiet: true
+    fail_msg: >-
+      homeassistant_gps_timeline_enabled is true but the pinned version and/or
+      sha256 are unset. Change homeassistant_gps_timeline_version and
+      homeassistant_gps_timeline_sha256 together.
+
+- name: "gps_timeline | Set GPS Timeline component paths"
+  ansible.builtin.set_fact:
+    _ha_gps_archive: >-
+      {{ homeassistant_site_path }}/downloads/gps-timeline-{{ homeassistant_gps_timeline_version }}.tar.gz
+    _ha_gps_component_dir: "{{ homeassistant_config_path }}/custom_components/gps_timeline"
+    _ha_gps_stamp_path: "{{ homeassistant_config_path }}/custom_components/gps_timeline/.ops-pinned-version"
+    _ha_gps_expected_stamp: "{{ homeassistant_gps_timeline_version }} {{ homeassistant_gps_timeline_sha256 }}"
+
+- name: "gps_timeline | Ensure Home Assistant custom_components and downloads directories exist"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0755"
+  loop:
+    - "{{ homeassistant_config_path }}/custom_components"
+    - "{{ homeassistant_site_path }}/downloads"
+
+# get_url verifies the checksum before it replaces the archive, and downloads
+# nothing when the existing archive already matches.
+- name: "gps_timeline | Download pinned GPS Timeline release archive"
+  ansible.builtin.get_url:
+    url: "{{ homeassistant_gps_timeline_download_url }}"
+    dest: "{{ _ha_gps_archive }}"
+    checksum: "sha256:{{ homeassistant_gps_timeline_sha256 }}"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+
+- name: "gps_timeline | Read installed GPS Timeline version stamp"
+  ansible.builtin.slurp:
+    path: "{{ _ha_gps_stamp_path }}"
+  register: _ha_gps_stamp
+  failed_when: false
+  changed_when: false
+
+- name: "gps_timeline | Install GPS Timeline component from the pinned archive"
+  when: >-
+    _ha_gps_stamp.content is not defined
+    or (_ha_gps_stamp.content | b64decode | trim) != _ha_gps_expected_stamp
+  block:
+    - name: "gps_timeline | Remove the previously installed GPS Timeline component"
+      ansible.builtin.file:
+        path: "{{ _ha_gps_component_dir }}"
+        state: absent
+
+    - name: "gps_timeline | Unpack the GPS Timeline custom component"
+      ansible.builtin.unarchive:
+        src: "{{ _ha_gps_archive }}"
+        dest: "{{ homeassistant_config_path }}/custom_components"
+        remote_src: true
+        owner: "{{ homeassistant_user }}"
+        group: "{{ homeassistant_group }}"
+        extra_opts:
+          - "--strip-components=2"
+          - "gps-timeline-{{ homeassistant_gps_timeline_version }}/custom_components/gps_timeline"
+      notify: restart homeassistant
+
+    - name: "gps_timeline | Normalize GPS Timeline component modes"
+      ansible.builtin.file:
+        path: "{{ _ha_gps_component_dir }}"
+        state: directory
+        recurse: true
+        owner: "{{ homeassistant_user }}"
+        group: "{{ homeassistant_group }}"
+        mode: "u=rwX,go=rX"
+
+    - name: "gps_timeline | Record installed GPS Timeline version"
+      ansible.builtin.copy:
+        dest: "{{ _ha_gps_stamp_path }}"
+        content: "{{ _ha_gps_expected_stamp }}\n"
+        owner: "{{ homeassistant_user }}"
+        group: "{{ homeassistant_group }}"
+        mode: "0644"
+      notify: restart homeassistant

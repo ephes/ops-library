@@ -13,6 +13,12 @@ with existing playbooks and legacy/manual workflows.
 - Validates key paths (config, data, logs, systemd unit, Traefik dynamic file).
 - Creates a timestamped directory under `/opt/backups/homeassistant` (configurable).
 - Copies configuration, data, and optionally logs via `rsync`.
+- Copies the recorder database and each path in
+  `homeassistant_backup_config_sqlite_databases` (default
+  `gps_timeline/gps_timeline.db`, GPS Timeline's long-term location history)
+  with `sqlite3 .backup`. For those further databases the live file and its
+  `-wal`/`-shm`/`-journal` stay out of the rsync, so the snapshot holds one
+  consistent database file.
 - Optionally snapshots Thread (OTBR) and Matter Server state directories.
 - Captures the active systemd unit and Traefik router definition.
 - Writes `metadata.yml` and a `manifest.sha256` file for integrity verification.
@@ -39,6 +45,8 @@ homeassistant_config_path: /home/homeassistant/site/config
 homeassistant_data_path: /home/homeassistant/site/data
 homeassistant_logs_path: /home/homeassistant/site/logs
 homeassistant_backup_include_logs: true
+homeassistant_backup_config_sqlite_databases:
+  - gps_timeline/gps_timeline.db
 homeassistant_backup_use_delete: true
 homeassistant_backup_generate_checksums: true
 homeassistant_backup_create_archive: true

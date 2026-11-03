@@ -17,6 +17,7 @@ Creates on-host and off-host snapshots of Home Assistant configuration, data, lo
 - `homeassistant_backup_include_logs` – include/exclude logs.
 - `homeassistant_backup_create_archive` / `homeassistant_backup_fetch_local` – enable tarball generation + download.
 - `homeassistant_backup_sqlite_path` / `homeassistant_backup_use_sqlite_backup` – database snapshot behaviour.
+- `homeassistant_backup_config_sqlite_databases` – further live SQLite databases below the config directory (default `gps_timeline/gps_timeline.db`, GPS Timeline's long-term location history), copied with `sqlite3 .backup` (same timeout and retries) to the same path in the snapshot; the live file and its `-wal`/`-shm`/`-journal` are excluded from the config rsync. A restore brings them back with the config directory.
 - `homeassistant_backup_extra_dirs` – additional directories to include in the snapshot.
 
 Usage example:

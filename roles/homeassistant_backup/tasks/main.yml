@@ -129,11 +129,72 @@
     - _ha_backup_exists[homeassistant_backup_sqlite_path] | default(false)
   changed_when: true
 
+- name: "Validate further SQLite database paths"
+  ansible.builtin.assert:
+    that:
+      - item is match('^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$')
+    quiet: true
+    fail_msg: >-
+      homeassistant_backup_config_sqlite_databases entries must be paths below
+      the config directory: {{ item }}
+  loop: "{{ homeassistant_backup_config_sqlite_databases | default([]) }}"
+  when: homeassistant_backup_use_sqlite_backup | bool
+
+- name: "Check further SQLite databases"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_config_path }}/{{ item }}"
+  register: _ha_backup_config_db_stats
+  loop: "{{ homeassistant_backup_config_sqlite_databases | default([]) }}"
+  when: homeassistant_backup_use_sqlite_backup | bool
+
+- name: "Ensure directories for further SQLite backups"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_dir }}/config/{{ item.item | dirname }}"
+    state: directory
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_dir_mode }}"
+  loop: "{{ _ha_backup_config_db_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('') }}"
+  when:
+    - item.stat is defined
+    - item.stat.isreg | default(false)
+    - item.item | dirname | length > 0
+
+- name: "Create further SQLite backups using .backup"
+  ansible.builtin.command:
+    cmd: >
+      sqlite3 "{{ homeassistant_config_path }}/{{ item.item }}" ".timeout 30000"
+      ".backup '{{ homeassistant_backup_dir }}/config/{{ item.item }}'"
+  register: _ha_backup_config_db_result
+  retries: 2
+  delay: 5
+  until: _ha_backup_config_db_result.rc == 0
+  loop: "{{ _ha_backup_config_db_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('') }}"
+  when:
+    - item.stat is defined
+    - item.stat.isreg | default(false)
+  changed_when: true
+
+# Anchored to their paths below the config directory; rsync never deletes
+# excluded files, so the .backup copies above survive --delete.
+- name: "Exclude further live SQLite databases and their sidecars"
+  ansible.builtin.set_fact:
+    _ha_backup_config_db_excludes: >-
+      {% for db in (homeassistant_backup_config_sqlite_databases | default([])
+                    if homeassistant_backup_use_sqlite_backup | bool else []) %}
+      {% for suffix in ['', '-wal', '-shm', '-journal'] %}--exclude '/{{ db }}{{ suffix }}' {% endfor %}
+      {% endfor %}
+
 - name: "Rsync Home Assistant directories"
   ansible.builtin.command:
     cmd: >
       rsync -a{{ ' --delete' if homeassistant_backup_use_delete else '' }}
       {{ "--exclude '" ~ (homeassistant_backup_sqlite_path | basename) ~ "'" if item.exclude_db and homeassistant_backup_use_sqlite_backup else '' }}
+      {{ _ha_backup_config_db_excludes if item.exclude_db else '' }}
       "{{ item.src }}/"
       "{{ item.dest }}/"
   loop:
