@@ -119,6 +119,11 @@
     - vibe_coding_chezmoi_source_dir | length > 0
 
 # ── common: init, check status, and apply ───────────────────────────────
+#
+# Status and apply skip chezmoi externals (`.chezmoiexternal.*`): the dotfiles
+# pull agent-stuff as a git-repo external over SSH and the vibe user has no
+# GitHub key of its own (the deploy runs without the owner's forwarded agent).
+# The next interactive `chezmoi update` as vibe fetches the externals.
 
 - name: chezmoi | Initialize chezmoi (renders config from template)
   ansible.builtin.command:
@@ -139,6 +144,7 @@
     argv:
       - /usr/local/bin/chezmoi
       - status
+      - --exclude=externals
       - --source
       - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
   become: true
@@ -154,6 +160,7 @@
       - /usr/local/bin/chezmoi
       - apply
       - --force
+      - --exclude=externals
       - --source
       - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
   become: true

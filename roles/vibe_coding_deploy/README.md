@@ -121,7 +121,7 @@ vibe_coding_sshd_hardening: true
 1. Create group and user
 2. Configure `authorized_keys`, deploy `~/.ssh/rc` and agent-forwarding fish snippet
 3. Run `shell_basics_deploy` (fish config disabled)
-4. Initialize/update chezmoi
+4. Initialize/update chezmoi and apply the dotfiles without externals
 5. Deploy secrets to `~/.config/fish/conf.d/secrets.fish`
 6. Configure GitHub CLI auth in `~/.config/gh/hosts.yml` (optional)
 7. Ensure `~/projects` directory
@@ -137,6 +137,7 @@ vibe_coding_sshd_hardening: true
 
 - The user's home directory must be on an existing mount (e.g. `/mnt/cryptdata`).
 - When `vibe_coding_dotfiles_repo` is set, the repo is git-cloned to the target via SSH agent forwarding. The vibe user can then run `chezmoi update` or `git pull` independently. Requires `ansible_ssh_extra_args: "-o ForwardAgent=yes"` in the playbook.
+- `chezmoi status` and `chezmoi apply --force` run with `--exclude=externals`: entries from the dotfiles' `.chezmoiexternal.*` (such as the `projects/agent-stuff` git-repo external, cloned over SSH) are not fetched by the deploy. The apply runs as the vibe user, which has no GitHub key and no forwarded agent during the deploy. The next interactive `chezmoi update` (or `chezmoi apply`) as the vibe user, with the owner's forwarded agent, fetches them; until then symlinks into those paths dangle.
 - Legacy: when only `vibe_coding_chezmoi_source_dir` is set, chezmoi source is rsynced from local machine (no `.git` on target).
 - Node.js is pinned to a major version via NodeSource (e.g. `22`); minor updates come via apt.
 - Intended for Ubuntu targets. MIT licensed.

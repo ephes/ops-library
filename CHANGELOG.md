@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- `vibe_coding_deploy`: the dotfiles apply skips chezmoi externals
+  (`chezmoi status`/`apply --force` with `--exclude=externals`). The dotfiles
+  pull `projects/agent-stuff` as a git-repo external over SSH, and the vibe
+  user has no GitHub key and no forwarded agent during the deploy, so the
+  apply failed with `Permission denied (publickey)`. The next interactive
+  `chezmoi update` as vibe fetches the externals. `changed_when` still follows
+  the status, which now leaves the externals out too, so a repeat run reports
+  no change.
+
 - `homeassistant_deploy`: optional pinned GPS Timeline integration
   (`homeassistant_gps_timeline_enabled`, 0.1.0-beta.3) and Location Timeline
   Card (`homeassistant_timeline_card_enabled`, 1.9.3), both off by default.
