@@ -6,3 +6,14 @@ hdparm_tune_devices: []
 # Apply settings immediately via hdparm after updating /etc/hdparm.conf.
 # Note: this can spin up standby disks.
 hdparm_tune_apply_now: false
+
+# Install and enable a systemd oneshot that applies the settings with hdparm
+# at every boot. Ubuntu's udev hook skips APM (-B) and spindown (-S) for disks
+# that udev does not flag with ID_ATA_FEATURE_SET_APM=1, so /etc/hdparm.conf
+# alone is lost on reboot for those disks. false (or an empty device list)
+# removes the unit and script.
+hdparm_tune_apply_on_boot: true
+hdparm_tune_boot_service_name: hdparm-tune.service
+hdparm_tune_boot_script_path: /usr/local/sbin/hdparm-tune-apply
+# Seconds the boot script waits for each device node to appear.
+hdparm_tune_boot_device_wait_sec: 60

@@ -64,6 +64,71 @@
       {% endfor %}
   when: hdparm_tune_devices | length > 0
 
+- name: Install hdparm boot apply script
+  ansible.builtin.template:
+    src: hdparm-tune-apply.sh.j2
+    dest: "{{ hdparm_tune_boot_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - hdparm_tune_apply_on_boot | bool
+    - hdparm_tune_devices | length > 0
+
+- name: Install hdparm boot apply unit
+  ansible.builtin.template:
+    src: hdparm-tune.service.j2
+    dest: "/etc/systemd/system/{{ hdparm_tune_boot_service_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: hdparm_tune_boot_unit
+  when:
+    - hdparm_tune_apply_on_boot | bool
+    - hdparm_tune_devices | length > 0
+
+# Enabled only: starting it would run hdparm now and can wake standby disks.
+# Immediate application stays with hdparm_tune_apply_now.
+- name: Enable hdparm boot apply unit
+  ansible.builtin.systemd:
+    name: "{{ hdparm_tune_boot_service_name }}"
+    enabled: true
+    daemon_reload: "{{ hdparm_tune_boot_unit is changed }}"
+  when:
+    - hdparm_tune_apply_on_boot | bool
+    - hdparm_tune_devices | length > 0
+
+- name: Check for hdparm boot apply unit to remove
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ hdparm_tune_boot_service_name }}"
+  register: hdparm_tune_boot_unit_stat
+  when: not (hdparm_tune_apply_on_boot | bool) or hdparm_tune_devices | length == 0
+
+- name: Disable hdparm boot apply unit
+  ansible.builtin.systemd:
+    name: "{{ hdparm_tune_boot_service_name }}"
+    enabled: false
+  when:
+    - not (hdparm_tune_apply_on_boot | bool) or hdparm_tune_devices | length == 0
+    - hdparm_tune_boot_unit_stat.stat.exists
+
+- name: Remove hdparm boot apply unit and script
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/systemd/system/{{ hdparm_tune_boot_service_name }}"
+    - "{{ hdparm_tune_boot_script_path }}"
+  register: hdparm_tune_boot_removed
+  when: not (hdparm_tune_apply_on_boot | bool) or hdparm_tune_devices | length == 0
+
+- name: Reload systemd after removing hdparm boot apply unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - not (hdparm_tune_apply_on_boot | bool) or hdparm_tune_devices | length == 0
+    - hdparm_tune_boot_removed is changed
+
 - name: Apply hdparm APM settings now
   ansible.builtin.command:
     argv:

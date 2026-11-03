@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- `hdparm_tune`: apply the settings at every boot with a new systemd oneshot
+  (`hdparm-tune.service`, script `/usr/local/sbin/hdparm-tune-apply`).
+  Ubuntu's udev hook skips `-B` and `-S` from `/etc/hdparm.conf` for disks
+  without `ID_ATA_FEATURE_SET_APM=1`. That hit fractal's WD120EFGX pair: after
+  each reboot the drives ran with factory APM 128 and no standby timer and
+  never spun down by themselves. New `hdparm_tune_apply_on_boot` (default
+  `true`; `false` or an empty device list removes the unit and script),
+  `hdparm_tune_boot_service_name`, `hdparm_tune_boot_script_path` and
+  `hdparm_tune_boot_device_wait_sec`. The deploy enables the unit without
+  starting it, so it wakes no disk; `hdparm_tune_apply_now` is unchanged.
+
 - `minio_deploy` backup accounts also allow `s3:GetObjectVersion` on the
   objects they may read. `mc cp` downloads the version its HEAD returned
   (`GET ...?versionId=`); RustFS checks that request against
