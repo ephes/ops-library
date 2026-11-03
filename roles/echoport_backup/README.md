@@ -137,6 +137,19 @@ the runner has its own entry: a key without one then fails instead of
 falling back to `echoport_backup_minio_alias`. Leave it `false` while a target
 still uses the shared alias, or to roll a target back to it.
 
+### Other S3 stores
+
+Nothing in the runners is MinIO-specific: they use `mc cp`, `mc stat` and
+`mc alias list` (rclone for the media runners), which speak plain S3. The
+store is whatever URL the alias (or the media runner's
+`<service>_media_backup_minio_url`) names, so a target moves to another store
+(RustFS) by giving its alias that store's URL and an account there; no runner
+changes. `tests/integration/test_echoport_s3_backends.py`
+(`just test-echoport-s3-backends`) runs the generic and the homepage media
+runner against MinIO and RustFS 1.0.3. On RustFS the account needs
+`s3:GetObjectVersion`, because `mc cp` downloads a pinned version; the
+`minio_deploy` backup-account policy grants it.
+
 ## Dependencies
 
 Includes `local.ops_library.fastdeploy_runner` (runner installation and

@@ -475,6 +475,14 @@ lint: venv
     @echo "Linting roles..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/ 2>&1 | tail -3 || true
 
+# Echoport runners and backup-account policy against MinIO and RustFS containers (needs Docker)
+test-echoport-s3-backends: venv
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(just _export-docker-host)"
+    echo "Testing the Echoport runners' S3 data path against MinIO and RustFS..."
+    UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/integration/test_echoport_s3_backends.py
+
 # Static check: tasks that send credentials over HTTP (uri headers, url_password,
 # curl -H Authorization) must set no_log: true so -vvv output cannot print them.
 test-minio-backup-accounts: venv

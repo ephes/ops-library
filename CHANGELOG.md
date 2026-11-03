@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- `minio_deploy` backup accounts also allow `s3:GetObjectVersion` on the
+  objects they may read. `mc cp` downloads the version its HEAD returned
+  (`GET ...?versionId=`); RustFS checks that request against
+  `s3:GetObjectVersion` as AWS does and refused every restore of a
+  prefix-scoped account, while MinIO accepts `s3:GetObject` alone. An existing
+  account gets the new document on its next `backup_account` run (the
+  register playbooks). New `just test-echoport-s3-backends`
+  (`tests/integration/test_echoport_s3_backends.py`, Docker): the generic
+  runner (multipart upload, stat, restore) and the rclone media runner (copy,
+  size, manifest, restore) run with a prefix-scoped account against pinned
+  MinIO RELEASE.2025-01-20 and RustFS 1.0.3 containers, with mc
+  RELEASE.2025-08-13 and rclone 1.71.1, and the account is refused outside its
+  prefix, delete and the admin API on both stores. The provisioning itself
+  (`mc admin`) stays MinIO-only: against RustFS `mc admin info` fails and
+  `mc admin policy info` returns another shape (see the `minio_deploy` README).
+
 - `nyxmon_deploy`: add `nyxmon_notify_warning_delivery` (`individual` by default)
   and `nyxmon_warning_digest_on_calendar`. With `digest` (Rust agent 0.1.2),
   warnings send nothing of their own and a timer sends all open warnings in one

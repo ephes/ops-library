@@ -191,10 +191,15 @@ target, after the bootstrap has configured the admin alias
 | `minio_backup_account_whole_bucket` | `false` | Grant the object actions and listing on the whole bucket instead of the prefixes. |
 | `minio_backup_account_policy_dir` | `/etc/minio/policies` | Where the policy document is kept on the host. |
 
-The policy allows `s3:GetObject` and `s3:PutObject` on
+The policy allows `s3:GetObject`, `s3:GetObjectVersion` and `s3:PutObject` on
 `<bucket>/<prefix>/*`, `s3:ListBucket` on the bucket for keys below the
 prefixes, and `s3:GetBucketLocation`. That covers `mc cp` in both directions
-(including multipart uploads), `mc stat` and `mc ls` of the own prefix. The
+(including multipart uploads), `mc stat` and `mc ls` of the own prefix.
+`s3:GetObjectVersion` is there because `mc cp` (and `mc cat`) download the
+version the preceding HEAD returned (`GET ...?versionId=`): S3 stores that
+follow AWS's rules, RustFS among them, check that request against
+`s3:GetObjectVersion` and refuse a restore without it, while MinIO accepts
+`s3:GetObject` alone. The same document therefore works on both. The
 account cannot list or read another prefix or bucket, delete anything, or use
 the admin API. It can overwrite its own objects; enable bucket versioning if
 that matters.
@@ -212,6 +217,14 @@ by hand and a rotated secret are all corrected,
 and the run ends by proving that the user is enabled, holds exactly
 `backup-<name>` and belongs to no group. The secret is passed to mc on stdin
 in a `no_log` task and never appears in a command line.
+
+Only the provisioning is MinIO-specific: it uses MinIO's admin API through
+`mc admin`. The policy document and the runners' data path (`mc cp`, `mc stat`,
+`mc ls`, `mc rm`, rclone) work against RustFS 1.0.3 as well
+(`tests/integration/test_echoport_s3_backends.py`). Against RustFS,
+`mc admin policy create`, `user add` and `policy attach` work, but
+`mc admin info` fails and `mc admin policy info --json` wraps the document
+differently, so these tasks do not provision a RustFS account yet.
 
 ## Bootstrap Features
 

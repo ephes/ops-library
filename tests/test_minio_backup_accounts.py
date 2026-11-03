@@ -68,7 +68,7 @@ class BackupAccountPolicyTests(unittest.TestCase):
         self.assertEqual(listing["Action"], ["s3:ListBucket"])
         self.assertEqual(listing["Resource"], ["arn:aws:s3:::backups"])
         self.assertEqual(listing["Condition"], {"StringLike": {"s3:prefix": ["delve/*"]}})
-        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:PutObject"])
+        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"])
         self.assertEqual(objects["Resource"], ["arn:aws:s3:::backups/delve/*"])
         self.assertTrue(all(statement["Effect"] == "Allow" for statement in policy["Statement"]))
 
@@ -79,7 +79,7 @@ class BackupAccountPolicyTests(unittest.TestCase):
 
     def test_delete_is_opt_in(self):
         objects = render_policy(minio_backup_account_allow_delete=True)["Statement"][2]
-        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"])
+        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject"])
 
     def test_several_prefixes_render_valid_json(self):
         policy = render_policy(minio_backup_account_prefixes=["a", "b/c"])
@@ -98,7 +98,7 @@ class BackupAccountPolicyTests(unittest.TestCase):
         location, listing, objects = policy["Statement"]
         self.assertEqual(location["Action"], ["s3:GetBucketLocation"])
         self.assertEqual(listing, {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": ["arn:aws:s3:::backups"]})
-        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:DeleteObject"])
+        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:GetObjectVersion", "s3:DeleteObject"])
         self.assertEqual(objects["Resource"], ["arn:aws:s3:::backups/*"])
         actions = [action for statement in policy["Statement"] for action in statement["Action"]]
         self.assertFalse([action for action in actions if "*" in action or "admin" in action])
