@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- `homeassistant_deploy`: `homeassistant_additional_packages` lists
+  `libfreetype-dev` instead of `libfreetype6-dev`. On Ubuntu 24.04 (and Debian
+  12) `libfreetype6-dev` is only a virtual package provided by
+  `libfreetype-dev`, which Ansible's apt module resolves but pyinfra's apt
+  check does not; naming the real package keeps the ops-deploy port, which
+  mirrors this default, from planning an install on every run. Hosts that
+  already have the FreeType headers see no change.
+
 - `vibe_coding_deploy`: the dotfiles apply skips chezmoi externals
   (`chezmoi status`/`apply --force` with `--exclude=externals`). The dotfiles
   pull `projects/agent-stuff` as a git-repo external over SSH, and the vibe
