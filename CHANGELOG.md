@@ -41,7 +41,9 @@
   preserving explicit old pins, verified default instructions and operator lists.
   Let the real options schema supply absent ignored-intent defaults. Apply a
   source-bound selector correction for the exact 1.7.0 archive so unregistered
-  exclusion names remain valid; include patch identity/hash in convergence.
+  exclusion names remain valid; include patch identity/hash in convergence. The
+  patch helper runs as `homeassistant_user`, like every other command that
+  executes the service virtualenv.
 
 - Resolve Assist STT/TTS auto-detection from the live entity registry instead of
   its delayed persistence snapshot, in both declarative and standalone paths.
