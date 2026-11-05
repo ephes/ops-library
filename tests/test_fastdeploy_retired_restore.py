@@ -2,8 +2,9 @@
 
 Stage 1 of the FastDeploy privilege reduction unregistered `fastdeploy-self`
 and `apt_upgrade_*` and removed their sudoers rules (`deploy ALL=(root) ALL`
-among them). Archives taken before that still contain them; the Echoport
-restore runner skips them.
+among them). The `fastdeploy_register_service` deployment runners
+(`fastdeploy`, `nyxmon`, `test_dummy`) followed. Archives taken before that
+still contain them; the Echoport restore runner skips them.
 """
 
 from __future__ import annotations
@@ -70,12 +71,34 @@ class RetiredEntriesAreNotRestored(unittest.TestCase):
     def test_defaults_name_the_retired_services_and_rules(self) -> None:
         self.assertEqual(
             set(self.runner.RETIRED_ENTRIES),
-            {"fastdeploy-self", "fastdeploy-self-playbook.yml", "apt_upgrade_local", "apt_upgrade_staging"},
+            {
+                "fastdeploy-self",
+                "fastdeploy-self-playbook.yml",
+                "apt_upgrade_local",
+                "apt_upgrade_staging",
+                "fastdeploy",
+                "nyxmon",
+                "test_dummy",
+            },
         )
         self.assertEqual(
             set(self.runner.RETIRED_SUDOERS),
-            {"fastdeploy", "fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users"},
+            {
+                "fastdeploy",
+                "fastdeploy_fastdeploy-self",
+                "fastdeploy_self_deploy_users",
+                "fastdeploy_fastdeploy",
+                "fastdeploy_nyxmon",
+                "fastdeploy_test_dummy",
+            },
         )
+
+    def test_runner_and_role_retire_the_same_names(self) -> None:
+        import yaml
+
+        defaults = yaml.safe_load((ROOT / "roles" / "fastdeploy_restore" / "defaults" / "main.yml").read_text())
+        self.assertEqual(self.runner.RETIRED_ENTRIES, defaults["fastdeploy_restore_retired_entries"])
+        self.assertEqual(self.runner.RETIRED_SUDOERS, defaults["fastdeploy_restore_retired_sudoers"])
 
     def test_restorable_check_matches_the_role_script(self) -> None:
         import importlib.util
@@ -92,7 +115,14 @@ class RetiredEntriesAreNotRestored(unittest.TestCase):
     def test_retired_sudoers_files_are_skipped(self) -> None:
         stage = self.tmp / "sudoers"
         stage.mkdir()
-        for name in ("fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users", "fastdeploy_backup"):
+        # Retired by name even with a narrow rule (fastdeploy_register_service runners).
+        for name in (
+            "fastdeploy_fastdeploy-self",
+            "fastdeploy_self_deploy_users",
+            "fastdeploy_backup",
+            "fastdeploy_fastdeploy",
+            "fastdeploy_test_dummy",
+        ):
             (stage / f"{name}.rule").write_text(
                 "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/b/backup.py *\n"
             )

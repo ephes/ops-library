@@ -10,6 +10,20 @@
   and reported success (only the pre-restore media snapshot kept the files).
   Archives without a `media/` directory and non-local storage are unchanged.
 
+- `fastdeploy_restore` and the Echoport FastDeploy runner (`echoport_backup`
+  `fastdeploy_backup.py.j2`, also the weeknotes-home runner): the retired
+  lists now also name the `fastdeploy_register_service` deployment runners
+  that ops-control retired (`fastdeploy`, `nyxmon`, `test_dummy`). A restore of
+  an older FastDeploy archive skips their top-level entries in `services/` and
+  the deploy runner root (`fastdeploy_restore_retired_entries`,
+  `fastdeploy_echoport_backup_retired_entries`) and does not copy back their
+  sudoers files `fastdeploy_fastdeploy`, `fastdeploy_nyxmon` and
+  `fastdeploy_test_dummy` (`fastdeploy_restore_retired_sudoers`,
+  `fastdeploy_echoport_backup_retired_sudoers`). Backup runner services such as
+  `fastdeploy-backup` are not affected (entries match by exact top-level
+  name). Live runners get the new lists when they are
+  re-registered.
+
 - `homeassistant_deploy`: `homeassistant_additional_packages` lists
   `libfreetype-dev` instead of `libfreetype6-dev`. On Ubuntu 24.04 (and Debian
   12) `libfreetype6-dev` is only a virtual package provided by

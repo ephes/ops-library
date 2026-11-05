@@ -442,7 +442,9 @@ The work dir is not one of `unifi_echoport_backup_allowed_roots`; a
 
 The FastDeploy runner (`fastdeploy_backup.py.j2`) does not restore the
 services, runner entries and sudoers files retired by the FastDeploy privilege
-reduction (`fastdeploy_echoport_backup_retired_entries`,
+reduction and with the `fastdeploy_register_service` deployment runners
+(`fastdeploy`, `nyxmon`, `test_dummy` and their `fastdeploy_<service>` sudoers
+files; `fastdeploy_echoport_backup_retired_entries`,
 `fastdeploy_echoport_backup_retired_sudoers`), even from older archives, and it restores other archived sudoers files only when they hold nothing but
 narrow per-script rules (older `fastdeploy_register_service` files with
 `deploy ALL=(root) NOPASSWD: ALL` are skipped).
