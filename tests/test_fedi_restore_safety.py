@@ -12,6 +12,7 @@ with stub binaries, so nothing touches a host or a database.
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -177,62 +178,214 @@ class FediRestoreOrderTests(unittest.TestCase):
                 self.assertEqual(scripts["mastodon"], scripts["takahe"])
 
 
+GUARD_TASKS = (
+    "Look for the archive's manifest",
+    "Refuse a manifest that is no regular file",
+    "Read the archive's manifest",
+    "Find the media excludes line in the archive's manifest",
+    "Refuse more than one media excludes line",
+    "Record the media excludes from the archive's manifest",
+    "Check the media excludes",
+    "Count the archive's media files outside the excludes",
+    "Look for the live media",
+    "Count the live media files outside the excludes",
+    "Refuse an archive whose media directory is empty",
+)
+MANIFEST = (
+    'version: "4.3.0"\n'
+    'timestamp: "20261104T120000"\n'
+    'archive: "manual-20261104T120000.tar.gz"\n'
+    'database_dump: "mastodon.dump"\n'
+    'media_root: "/home/mastodon/live/public/system"\n'
+    "{excludes}"
+    'env_file: "/home/mastodon/live/.env.production"\n'
+)
+DEFAULT_EXCLUDES = 'media_rsync_excludes: ["/cache/***"]\n'
+
+
 class MastodonEmptyMediaGuardTests(unittest.TestCase):
-    """An archive whose media/ holds no files is refused before anything stops."""
+    """Media excludes from the manifest; an archive without media files is refused before anything stops."""
 
     def setUp(self) -> None:
         self.tasks = load_tasks("mastodon")
         self.main = flatten(self.tasks, ("block",))
-        self.look = find(self.tasks, "Look for media files in the archive")
-        self.refuse = find(self.tasks, "Refuse an archive whose media directory is empty")
 
     def test_guard_runs_after_validation_and_before_any_change(self) -> None:
         validate = index_of(self.main, "Validate the database dump table of contents")
-        look = index_of(self.main, "Look for media files in the archive")
-        refuse = index_of(self.main, "Refuse an archive whose media directory is empty")
         first_change = index_of(self.main, "Ensure media directory exists")
         stop = index_of(self.main, "Stop Mastodon services before restore")
-        self.assertLess(validate, look)
-        self.assertLess(look, refuse)
-        self.assertLess(refuse, first_change)
-        self.assertLess(refuse, stop)
+        indexes = [index_of(self.main, name) for name in GUARD_TASKS]
+        self.assertEqual(indexes, sorted(indexes))
+        self.assertLess(validate, indexes[0])
+        self.assertLess(indexes[-1], first_change)
+        self.assertLess(indexes[-1], stop)
+        for name in GUARD_TASKS:
+            task = find(self.tasks, name)
+            when = task["when"] if isinstance(task["when"], list) else [task["when"]]
+            self.assertEqual(when[0], "mastodon_restore_media_enabled | bool", name)
+            if "ansible.builtin.command" in task:
+                self.assertIs(task["changed_when"], False, name)
 
-    def test_guard_conditions_and_override(self) -> None:
-        self.assertEqual(self.look["when"], "mastodon_restore_media_enabled | bool")
-        self.assertEqual(self.look["register"], "mastodon_restore_media_files")
-        self.assertIs(self.look["changed_when"], False)
-        self.assertEqual(
-            self.refuse["when"],
-            [
-                "mastodon_restore_media_enabled | bool",
-                "mastodon_restore_media_files is not skipped",
-                "mastodon_restore_media_files.stdout | length == 0",
-                "not (mastodon_restore_empty_media_confirmed | bool)",
-            ],
-        )
-        message = self.refuse["ansible.builtin.fail"]["msg"]
+    def test_override_and_default(self) -> None:
+        refuse = find(self.tasks, "Refuse an archive whose media directory is empty")
+        self.assertEqual(refuse["when"][-1], "not (mastodon_restore_empty_media_confirmed | bool)")
+        message = refuse["ansible.builtin.fail"]["msg"]
         self.assertIn("mastodon_restore_empty_media_confirmed=true", message)
         self.assertIn("MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true", message)
         defaults = yaml.safe_load((ROOT / "roles/mastodon_restore/defaults/main.yml").read_text(encoding="utf-8"))
         self.assertIs(defaults["mastodon_restore_empty_media_confirmed"], False)
 
-    def test_find_prints_only_when_media_holds_a_file(self) -> None:
-        argv = self.look["ansible.builtin.command"]["argv"]
-        with tempfile.TemporaryDirectory() as tmp:
-            payload = Path(tmp)
-            media = payload / "media"
-            media.mkdir()
+    def test_the_media_restore_uses_the_excludes(self) -> None:
+        argv = find(self.tasks, "Restore media directory")["ansible.builtin.command"]["argv"]
+        self.assertIn("mastodon_restore_media_excludes | map('regex_replace', '^', '--exclude=')", argv)
 
-            def run() -> str:
-                command = [arg.replace("{{ mastodon_restore_payload_dir }}", str(payload)) for arg in argv]
-                done = subprocess.run(command, capture_output=True, text=True, check=True)
-                return done.stdout
 
-            self.assertEqual(run(), "")
-            (media / "accounts" / "avatars").mkdir(parents=True)
-            self.assertEqual(run(), "")
-            (media / "accounts" / "avatars" / "me.png").write_text("x", encoding="utf-8")
-            self.assertNotEqual(run(), "")
+@unittest.skipUnless(shutil.which("ansible-playbook") and shutil.which("rsync"), "needs ansible-playbook and rsync")
+class MastodonMediaExcludesEngineTests(unittest.TestCase):
+    """The guard tasks and the media restore run by ansible-playbook (local connection) on temp trees."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.payload = self.base / "staging" / "manual-20261104T120000"
+        (self.payload / "media").mkdir(parents=True)
+        self.media = self.base / "live" / "public" / "system"
+        (self.media / "cache" / "remote").mkdir(parents=True)
+        (self.media / "cache" / "remote" / "x.png").write_text("cache\n", encoding="utf-8")
+        self.manifest(DEFAULT_EXCLUDES)
+
+    def manifest(self, excludes: str | None) -> None:
+        path = self.payload / "manifest.yml"
+        if excludes is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(MANIFEST.format(excludes=excludes), encoding="utf-8")
+
+    def run_guard(self, *, restore: bool = False, confirmed: bool = False) -> subprocess.CompletedProcess[str]:
+        tasks = [find(load_tasks("mastodon"), name) for name in GUARD_TASKS]
+        if restore:
+            tasks.append(find(load_tasks("mastodon"), "Restore media directory"))
+        play = [
+            {
+                "hosts": "localhost",
+                "gather_facts": False,
+                "vars_files": [str(ROOT / "roles/mastodon_restore/vars/main.yml")],
+                "vars": {
+                    "mastodon_restore_media_enabled": True,
+                    "mastodon_restore_payload_dir": str(self.payload),
+                    "mastodon_media_path": str(self.media),
+                    "mastodon_restore_empty_media_confirmed": confirmed,
+                },
+                "tasks": tasks,
+            }
+        ]
+        playbook = self.base / "play.yml"
+        playbook.write_text(yaml.safe_dump(play), encoding="utf-8")
+        env = {**os.environ, "ANSIBLE_NOCOLOR": "1", "ANSIBLE_LOCALHOST_WARNING": "0"}
+        return subprocess.run(
+            ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300,
+            check=False,
+        )
+
+    def live(self) -> dict[str, str]:
+        return {
+            path.relative_to(self.media).as_posix(): path.read_text(encoding="utf-8")
+            for path in self.media.rglob("*")
+            if path.is_file()
+        }
+
+    def test_cache_only_live_media_needs_no_confirmation_and_keeps_the_cache(self) -> None:
+        done = self.run_guard(restore=True)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n"})
+
+    def test_live_files_outside_the_excludes_are_refused(self) -> None:
+        (self.media / "accounts").mkdir()
+        (self.media / "accounts" / "me.png").write_text("me\n", encoding="utf-8")
+        (self.media / "accounts" / "link.png").symlink_to("me.png")
+
+        done = self.run_guard(restore=True)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("deletes the 2 file(s) outside them in the live media", done.stdout)
+        self.assertEqual(set(self.live()), {"cache/remote/x.png", "accounts/me.png", "accounts/link.png"})
+
+    def test_confirmed_restore_keeps_only_the_excluded_paths(self) -> None:
+        (self.media / "accounts").mkdir()
+        (self.media / "accounts" / "me.png").write_text("me\n", encoding="utf-8")
+
+        done = self.run_guard(restore=True, confirmed=True)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n"})
+
+    def test_archive_media_is_restored_beside_the_kept_cache(self) -> None:
+        (self.payload / "media" / "accounts").mkdir()
+        (self.payload / "media" / "accounts" / "me.png").write_text("archived\n", encoding="utf-8")
+        (self.media / "accounts").mkdir()
+        (self.media / "accounts" / "new.png").write_text("new\n", encoding="utf-8")
+
+        done = self.run_guard(restore=True)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n", "accounts/me.png": "archived\n"})
+
+    def test_without_excludes_the_cache_counts(self) -> None:
+        for case, excludes in (("no manifest", None), ("no line", ""), ("empty list", "media_rsync_excludes: []\n")):
+            with self.subTest(case=case):
+                self.manifest(excludes)
+
+                done = self.run_guard(restore=True)
+
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("deletes the 1 file(s) outside them", done.stdout)
+                self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n"})
+
+    def test_without_excludes_rsync_deletes_the_cache_as_before(self) -> None:
+        self.manifest(None)
+        (self.payload / "media" / "accounts").mkdir()
+        (self.payload / "media" / "accounts" / "me.png").write_text("archived\n", encoding="utf-8")
+
+        done = self.run_guard(restore=True)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.live(), {"accounts/me.png": "archived\n"})
+
+    def test_unreadable_excludes_stop_before_anything_changes(self) -> None:
+        for excludes in (
+            'media_rsync_excludes: "/cache/***"\n',
+            "media_rsync_excludes: [/cache/***]\n",
+            'media_rsync_excludes: [""]\n',
+            "media_rsync_excludes: [1]\n",
+            "media_rsync_excludes: null\n",
+            'media_rsync_excludes: ["/cache/***"]\nmedia_rsync_excludes: []\n',
+        ):
+            with self.subTest(excludes=excludes):
+                self.manifest(excludes)
+
+                done = self.run_guard(restore=True, confirmed=True)
+
+                self.assertNotEqual(done.returncode, 0)
+                self.assertNotIn("Restore media directory", done.stdout)
+                self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n"})
+
+    def test_a_manifest_that_is_no_file_stops(self) -> None:
+        (self.payload / "manifest.yml").unlink()
+        (self.payload / "manifest.yml").symlink_to(self.base / "elsewhere.yml")
+        (self.base / "elsewhere.yml").write_text(MANIFEST.format(excludes="media_rsync_excludes: []\n"))
+
+        done = self.run_guard(restore=True, confirmed=True)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("is not a regular file", done.stdout)
+        self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n"})
 
 
 class FediRestoreScriptTests(unittest.TestCase):

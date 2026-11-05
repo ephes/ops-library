@@ -4,7 +4,11 @@
 # Safety contract:
 # - the database dump is validated (`pg_restore --list` plus a full read into
 #   /dev/null) before any service is stopped;
-# - an archive whose media/ holds no files is refused at that point unless
+# - the media paths the backup excluded (the manifest's media_rsync_excludes)
+#   are excluded from the media restore too, so the live paths they match are
+#   kept;
+# - an archive whose media/ holds no files outside those excludes is refused
+#   at that point while the live media holds files outside them, unless
 #   mastodon_restore_empty_media_confirmed;
 # - the service stop must succeed; otherwise nothing is dropped;
 # - after the stop, a safety `pg_dump -Fc` of the live database, a snapshot of
@@ -180,37 +184,135 @@
         DUMP: "{{ mastodon_restore_payload_dir }}/database/{{ mastodon_restore_postgres_database }}.dump"
       changed_when: false
 
+    # The archive's manifest names the media paths its backup left out
+    # (mastodon_backup_media_rsync_excludes, by default the remote-media cache
+    # /cache/***). The media restore excludes them as well, so its rsync
+    # --delete keeps the live paths they match, and the empty-media guard
+    # below counts only files outside them. They come from the manifest's
+    # media_rsync_excludes line (JSON, as mastodon_backup writes it). No
+    # manifest, or no such line: none, as before the excludes (every live
+    # media file the archive lacks is deleted). A manifest that is no regular
+    # file, more than one such line or a value that is no list of non-empty
+    # strings stops the restore here, before anything stops or changes.
+    - name: Look for the archive's manifest
+      ansible.builtin.stat:
+        path: "{{ mastodon_restore_payload_dir }}/manifest.yml"
+        follow: false
+      register: mastodon_restore_manifest_stat
+      when: mastodon_restore_media_enabled | bool
+
+    - name: Refuse a manifest that is no regular file
+      ansible.builtin.fail:
+        msg: >-
+          Mastodon restore stopped before anything was stopped or changed: the
+          archive's manifest.yml is not a regular file.
+      when:
+        - mastodon_restore_media_enabled | bool
+        - mastodon_restore_manifest_stat.stat.exists
+        - not mastodon_restore_manifest_stat.stat.isreg
+
+    - name: Read the archive's manifest
+      ansible.builtin.slurp:
+        src: "{{ mastodon_restore_payload_dir }}/manifest.yml"
+      register: mastodon_restore_manifest
+      when:
+        - mastodon_restore_media_enabled | bool
+        - mastodon_restore_manifest_stat.stat.exists
+
+    - name: Find the media excludes line in the archive's manifest
+      ansible.builtin.set_fact:
+        mastodon_restore_media_excludes_lines: >-
+          {{ ((mastodon_restore_manifest.content | b64decode)
+               | regex_findall('^media_rsync_excludes:(.*)$', multiline=True))
+             if mastodon_restore_manifest is not skipped else [] }}
+      when: mastodon_restore_media_enabled | bool
+
+    - name: Refuse more than one media excludes line
+      ansible.builtin.fail:
+        msg: >-
+          Mastodon restore stopped before anything was stopped or changed: the
+          archive's manifest.yml has more than one media_rsync_excludes line.
+      when:
+        - mastodon_restore_media_enabled | bool
+        - mastodon_restore_media_excludes_lines | length > 1
+
+    - name: Record the media excludes from the archive's manifest
+      ansible.builtin.set_fact:
+        mastodon_restore_media_excludes: >-
+          {{ (mastodon_restore_media_excludes_lines | first | trim | from_json)
+             if mastodon_restore_media_excludes_lines | length == 1 else [] }}
+      when: mastodon_restore_media_enabled | bool
+
+    - name: Check the media excludes
+      ansible.builtin.assert:
+        that:
+          - mastodon_restore_media_excludes is sequence
+          - mastodon_restore_media_excludes is not string
+          - mastodon_restore_media_excludes is not mapping
+          - mastodon_restore_media_excludes | reject('string') | list | length == 0
+          - mastodon_restore_media_excludes | select('equalto', '') | list | length == 0
+          - mastodon_restore_media_excludes | select('search', '[\r\n]') | list | length == 0
+        fail_msg: >-
+          Mastodon restore stopped before anything was stopped or changed:
+          media_rsync_excludes in the archive's manifest.yml is not a list of
+          non-empty strings.
+        quiet: true
+      when: mastodon_restore_media_enabled | bool
+
     # A backup taken without media still has an empty media/; its rsync
-    # --delete would empty the live media. Refuse it before anything stops
-    # unless the operator confirms (only directories, or nothing, is empty).
-    - name: Look for media files in the archive
+    # --delete would delete the live media. Only files outside the excludes
+    # count: an archive that holds none (only directories, excluded paths or
+    # nothing) is refused before anything stops while the live media holds
+    # files outside the excludes, unless the operator confirms. A failing
+    # count stops the restore here.
+    - name: Count the archive's media files outside the excludes
       ansible.builtin.command:
-        argv:
-          - find
-          - "{{ mastodon_restore_payload_dir }}/media/"
-          - -mindepth
-          - "1"
-          - "!"
-          - -type
-          - d
-          - -print
-          - -quit
+        argv: >-
+          {{ ['bash', '-c', mastodon_restore_count_media_files, 'mastodon-media-count',
+              mastodon_restore_payload_dir ~ '/media/']
+             + (mastodon_restore_media_excludes | map('regex_replace', '^', '--exclude=') | list) }}
       register: mastodon_restore_media_files
       changed_when: false
       when: mastodon_restore_media_enabled | bool
+
+    - name: Look for the live media
+      ansible.builtin.stat:
+        path: "{{ mastodon_media_path }}"
+        follow: false
+      register: mastodon_restore_live_media_stat
+      when:
+        - mastodon_restore_media_enabled | bool
+        - (mastodon_restore_media_files.stdout | int) == 0
+
+    - name: Count the live media files outside the excludes
+      ansible.builtin.command:
+        argv: >-
+          {{ ['bash', '-c', mastodon_restore_count_media_files, 'mastodon-media-count',
+              mastodon_media_path ~ '/']
+             + (mastodon_restore_media_excludes | map('regex_replace', '^', '--exclude=') | list) }}
+      register: mastodon_restore_live_media_files
+      changed_when: false
+      when:
+        - mastodon_restore_media_enabled | bool
+        - (mastodon_restore_media_files.stdout | int) == 0
+        - mastodon_restore_live_media_stat.stat.exists
 
     - name: Refuse an archive whose media directory is empty
       ansible.builtin.fail:
         msg: >-
           Mastodon restore refused before anything was stopped or changed: the
-          archive's media/ holds no files, so restoring it deletes every file in
-          the live media {{ mastodon_media_path }}. Restore an archive taken with
-          media, or confirm with -e mastodon_restore_empty_media_confirmed=true
+          archive's media/ holds no files outside the media excludes
+          ({{ mastodon_restore_media_excludes | join(', ') if mastodon_restore_media_excludes else 'none' }}),
+          so restoring it deletes the {{ mastodon_restore_live_media_files.stdout | int }}
+          file(s) outside them in the live media {{ mastodon_media_path }}.
+          Restore an archive taken with media, or confirm with
+          -e mastodon_restore_empty_media_confirmed=true
           (ops-control: MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true).
       when:
         - mastodon_restore_media_enabled | bool
-        - mastodon_restore_media_files is not skipped
-        - mastodon_restore_media_files.stdout | length == 0
+        - (mastodon_restore_media_files.stdout | int) == 0
+        - mastodon_restore_live_media_files is not skipped
+        - (mastodon_restore_live_media_files.stdout | int) > 0
         - not (mastodon_restore_empty_media_confirmed | bool)
 
     - name: Ensure media directory exists
@@ -694,15 +796,15 @@
         # --ignore-times makes rsync rewrite every file to a new inode (temp file
         # + rename). Without it, a file whose content is unchanged would get
         # its owner/mode updated in place, which would also change the
+        # hard-linked media snapshot. The media excludes keep the live paths
+        # they match (rsync does not delete excluded files on the receiving
+        # side).
         - name: Restore media directory  # noqa: command-instead-of-module
           ansible.builtin.command:
-            argv:
-              - rsync
-              - -a
-              - --delete
-              - --ignore-times
-              - "{{ mastodon_restore_payload_dir }}/media/"
-              - "{{ mastodon_media_path }}/"
+            argv: >-
+              {{ ['rsync', '-a', '--delete', '--ignore-times']
+                 + (mastodon_restore_media_excludes | map('regex_replace', '^', '--exclude=') | list)
+                 + [mastodon_restore_payload_dir ~ '/media/', mastodon_media_path ~ '/'] }}
           changed_when: true
           when: mastodon_restore_media_enabled | bool
 

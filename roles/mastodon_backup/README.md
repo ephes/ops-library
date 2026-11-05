@@ -28,8 +28,8 @@ Creates on-host backups of the Mastodon database, media, and configuration with 
 | `mastodon_backup_root` | `/opt/backups/mastodon` | Remote backup root. |
 | `mastodon_backup_prefix` | `manual` | Prefix for backup directory/archive names. |
 | `mastodon_backup_stop_services` | `true` | Stop services during backup for consistency. The stop and the payload capture share one block whose `always` section restarts the services, even when a step fails. |
-| `mastodon_backup_include_media` | `true` | Include local media directory. With `false` the archive still has an empty `media/`, which `mastodon_restore` refuses unless `mastodon_restore_empty_media_confirmed: true`. |
-| `mastodon_backup_media_rsync_excludes` | `["/cache/***"]` | Rsync exclude patterns for local media backups. |
+| `mastodon_backup_include_media` | `true` | Include local media directory. With `false` the archive still has an empty `media/`, which `mastodon_restore` refuses while the live media holds files outside the excludes, unless `mastodon_restore_empty_media_confirmed: true`. |
+| `mastodon_backup_media_rsync_excludes` | `["/cache/***"]` | Rsync exclude patterns for local media backups. The manifest records them; `mastodon_restore` excludes them too, so a restore keeps the live paths they match. |
 | `mastodon_backup_fetch_local` | `true` | Fetch archive to the controller (the local copy is set to 0600). |
 | `mastodon_backup_fetch_become` | `true` | Use privilege escalation while fetching. Set to `false` when the SSH user can read the archive directly so Ansible streams large archives instead of using its in-memory become fallback. |
 | `mastodon_backup_retain` | `7` | Number of newest archives and payload directories (by mtime) kept on the host after each backup; `0` disables pruning. |
