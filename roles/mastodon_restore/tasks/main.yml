@@ -4,6 +4,8 @@
 # Safety contract:
 # - the database dump is validated (`pg_restore --list` plus a full read into
 #   /dev/null) before any service is stopped;
+# - an archive whose media/ holds no files is refused at that point unless
+#   mastodon_restore_empty_media_confirmed;
 # - the service stop must succeed; otherwise nothing is dropped;
 # - after the stop, a safety `pg_dump -Fc` of the live database, a snapshot of
 #   the media directory and copies of the env, systemd, Traefik and nginx
