@@ -12,7 +12,8 @@ Restores Mastodon from archives produced by `mastodon_backup`, including databas
   the media restore as well, so its `rsync --delete` keeps the live paths they match. An archive
   without a manifest (or without that line) has no excludes, as before: every live media file the
   archive lacks is deleted. A manifest that is no regular file, more than one such line or a value
-  that is no JSON list of non-empty strings stops the restore before anything stops.
+  that is no JSON list of non-empty strings stops the restore before anything stops (the manifest
+  is read only when media is restored: a `media/` in the archive and local storage).
 - Refuses, before anything stops, an archive whose `media/` holds no files outside those excludes
   (a backup taken with `mastodon_backup_include_media: false` still has an empty `media/`, and its
   `rsync --delete` would empty the live media) while the live media holds files outside them,

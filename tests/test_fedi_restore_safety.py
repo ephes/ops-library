@@ -406,6 +406,7 @@ class MastodonMediaExcludesEngineTests(unittest.TestCase):
 
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-0 directory")
     def test_an_unreadable_live_media_stops(self) -> None:
         locked = self.media / "accounts"
         locked.mkdir()
