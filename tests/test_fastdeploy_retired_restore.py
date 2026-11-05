@@ -122,6 +122,7 @@ class RetiredEntriesAreNotRestored(unittest.TestCase):
             "fastdeploy_backup",
             "fastdeploy_fastdeploy",
             "fastdeploy_test_dummy",
+            "fastdeploy_nyxmon",
         ):
             (stage / f"{name}.rule").write_text(
                 "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/b/backup.py *\n"
@@ -132,7 +133,7 @@ class RetiredEntriesAreNotRestored(unittest.TestCase):
             "deploy ALL=(root) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/l/backup.py *\n"
         )
         # Older fastdeploy_register_service output: a narrow rule plus a blanket one.
-        (stage / "fastdeploy_nyxmon.rule").write_text(
+        (stage / "fastdeploy_oldrunner.rule").write_text(
             "fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/nyxmon/deploy.py\n"
             "deploy ALL=(root) NOPASSWD: ALL\n"
         )
