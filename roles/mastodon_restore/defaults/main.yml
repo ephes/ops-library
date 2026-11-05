@@ -12,7 +12,9 @@ mastodon_restore_safety_root: /var/backups/mastodon-pre-restore
 mastodon_restore_media_safety_root: "{{ mastodon_home_path }}/media-pre-restore"
 mastodon_restore_postgres_dump_binary: pg_dump
 mastodon_restore_postgres_psql_binary: psql
-# An archive whose media/ holds no files (a backup taken with
-# mastodon_backup_include_media: false) would empty the live media; the role
-# refuses it before anything stops unless this is true.
+# An archive whose media/ holds no files outside the manifest's media
+# excludes (a backup taken with mastodon_backup_include_media: false) would
+# delete the live media files outside those excludes; while the live media
+# holds any, the role refuses it before anything stops unless this is true.
+# Live paths the excludes match (the remote-media cache) are always kept.
 mastodon_restore_empty_media_confirmed: false

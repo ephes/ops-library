@@ -1,9 +1,11 @@
 ---
 # bash -c SCRIPT NAME DIR [--exclude=PATTERN ...]: the number of non-directories
-# (files, links, ...) below DIR outside the excludes, as the media restore's
-# rsync sees them. A failing rsync fails the task (pipefail).
+# (files, links, devices, ...; the listing lines whose permission string starts
+# with -, l, c, b, p or s) below DIR outside the excludes, as the media
+# restore's rsync sees them. A failing rsync fails the task (pipefail), except
+# for exit 24 (files vanished while listing a running instance's media).
 mastodon_restore_count_media_files: |
   set -euo pipefail
   dir=$1
   shift
-  rsync -a --list-only "$@" "$dir" | awk 'substr($0, 1, 1) != "d" { n++ } END { print n + 0 }'
+  { rsync -a --list-only "$@" "$dir" || [ "$?" = 24 ]; } | awk '/^[-lcbps][-r][-w]/ { n++ } END { print n + 0 }'

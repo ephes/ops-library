@@ -264,7 +264,10 @@
     # count: an archive that holds none (only directories, excluded paths or
     # nothing) is refused before anything stops while the live media holds
     # files outside the excludes, unless the operator confirms. A failing
-    # count stops the restore here.
+    # count stops the restore here. The counts read only and run in check
+    # mode too. The live media is counted while Mastodon still runs: a file
+    # uploaded outside the excludes between the count and the stop is
+    # deleted by the restore (the media snapshot keeps it).
     - name: Count the archive's media files outside the excludes
       ansible.builtin.command:
         argv: >-
@@ -273,6 +276,7 @@
              + (mastodon_restore_media_excludes | map('regex_replace', '^', '--exclude=') | list) }}
       register: mastodon_restore_media_files
       changed_when: false
+      check_mode: false
       when: mastodon_restore_media_enabled | bool
 
     - name: Look for the live media
@@ -292,6 +296,7 @@
              + (mastodon_restore_media_excludes | map('regex_replace', '^', '--exclude=') | list) }}
       register: mastodon_restore_live_media_files
       changed_when: false
+      check_mode: false
       when:
         - mastodon_restore_media_enabled | bool
         - (mastodon_restore_media_files.stdout | int) == 0

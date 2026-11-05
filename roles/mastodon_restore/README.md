@@ -18,7 +18,9 @@ Restores Mastodon from archives produced by `mastodon_backup`, including databas
   `rsync --delete` would empty the live media) while the live media holds files outside them,
   unless `mastodon_restore_empty_media_confirmed: true`. An archive that is empty only because the
   live media holds nothing but excluded paths (a staging host whose media is all remote cache)
-  restores without confirmation and keeps that cache.
+  restores without confirmation and keeps that cache. The live media is counted before the
+  services stop; a file uploaded outside the excludes in between is deleted by the restore (the
+  media snapshot keeps it).
 - Stops the services and fails closed if a stop does not take.
 - Takes safety copies before the first overwrite (see below), then drops and recreates the
   database and restores the dump with `--single-transaction`.

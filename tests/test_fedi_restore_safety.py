@@ -262,7 +262,9 @@ class MastodonMediaExcludesEngineTests(unittest.TestCase):
         else:
             path.write_text(MANIFEST.format(excludes=excludes), encoding="utf-8")
 
-    def run_guard(self, *, restore: bool = False, confirmed: bool = False) -> subprocess.CompletedProcess[str]:
+    def run_guard(
+        self, *, restore: bool = False, confirmed: bool = False, enabled: bool = True, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         tasks = [find(load_tasks("mastodon"), name) for name in GUARD_TASKS]
         if restore:
             tasks.append(find(load_tasks("mastodon"), "Restore media directory"))
@@ -272,7 +274,7 @@ class MastodonMediaExcludesEngineTests(unittest.TestCase):
                 "gather_facts": False,
                 "vars_files": [str(ROOT / "roles/mastodon_restore/vars/main.yml")],
                 "vars": {
-                    "mastodon_restore_media_enabled": True,
+                    "mastodon_restore_media_enabled": enabled,
                     "mastodon_restore_payload_dir": str(self.payload),
                     "mastodon_media_path": str(self.media),
                     "mastodon_restore_empty_media_confirmed": confirmed,
@@ -284,7 +286,7 @@ class MastodonMediaExcludesEngineTests(unittest.TestCase):
         playbook.write_text(yaml.safe_dump(play), encoding="utf-8")
         env = {**os.environ, "ANSIBLE_NOCOLOR": "1", "ANSIBLE_LOCALHOST_WARNING": "0"}
         return subprocess.run(
-            ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+            ["ansible-playbook", "-i", "localhost,", "-c", "local", *(["--check"] if check else []), str(playbook)],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -374,7 +376,57 @@ class MastodonMediaExcludesEngineTests(unittest.TestCase):
 
                 self.assertNotEqual(done.returncode, 0)
                 self.assertNotIn("Restore media directory", done.stdout)
+                # Stopped by one of the excludes tasks (a value that is no JSON fails from_json).
+                failed = [line for line in done.stdout.splitlines() if line.startswith("TASK [")][-1]
+                self.assertIn(
+                    failed.rstrip("* "),
+                    {
+                        "TASK [Refuse more than one media excludes line]",
+                        "TASK [Record the media excludes from the archive's manifest]",
+                        "TASK [Check the media excludes]",
+                    },
+                )
                 self.assertEqual(self.live(), {"cache/remote/x.png": "cache\n"})
+
+    def test_without_media_every_task_skips(self) -> None:
+        (self.media / "accounts").mkdir()
+        (self.media / "accounts" / "me.png").write_text("me\n", encoding="utf-8")
+        self.manifest('media_rsync_excludes: "not a list"\n')
+
+        done = self.run_guard(restore=True, enabled=False)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("skipped=12", done.stdout)
+        self.assertEqual(set(self.live()), {"cache/remote/x.png", "accounts/me.png"})
+
+    def test_without_live_media_nothing_is_refused(self) -> None:
+        shutil.rmtree(self.media)
+
+        done = self.run_guard()
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_an_unreadable_live_media_stops(self) -> None:
+        locked = self.media / "accounts"
+        locked.mkdir()
+        (locked / "me.png").write_text("me\n", encoding="utf-8")
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o755)
+
+        done = self.run_guard(restore=True, confirmed=True)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("TASK [Count the live media files outside the excludes]", done.stdout)
+        self.assertNotIn("TASK [Restore media directory]", done.stdout)
+
+    def test_check_mode_counts_and_refuses(self) -> None:
+        (self.media / "accounts").mkdir()
+        (self.media / "accounts" / "me.png").write_text("me\n", encoding="utf-8")
+
+        done = self.run_guard(check=True)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("deletes the 1 file(s) outside them in the live media", done.stdout)
 
     def test_a_manifest_that_is_no_file_stops(self) -> None:
         (self.payload / "manifest.yml").unlink()

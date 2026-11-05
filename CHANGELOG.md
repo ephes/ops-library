@@ -8,11 +8,13 @@
   `/cache/***`) and passes them to its `rsync --delete` as `--exclude`, so the
   live paths they match are kept instead of deleted. The empty-media guard
   counts only files outside the excludes, in the archive and in the live
-  media: an archive whose `media/` is empty because the live media holds
-  nothing but excluded paths (every staging archive since May, whose media
-  is all remote cache) restores without confirmation; one that would delete
-  live files outside the excludes is still refused unless
-  `mastodon_restore_empty_media_confirmed: true`. An archive without a
+  media (counted when the restore runs): an archive whose `media/` holds no
+  files outside the excludes restores without confirmation while the live
+  media holds nothing but excluded paths (every staging archive since May;
+  staging's media is all remote cache), and is still refused while the live
+  media holds files outside the excludes, unless
+  `mastodon_restore_empty_media_confirmed: true`. The counts run in check
+  mode too. An archive without a
   manifest, or a manifest without the line, has no excludes (the previous
   behaviour, and the guard then counts every live file); a manifest that is
   no regular file, more than one line or a value that is no JSON list of
@@ -20,7 +22,9 @@
   `vars/main.yml` (`mastodon_restore_count_media_files`).
 
 - `mastodon_restore`: refuses an archive whose `media/` holds no files (only
-  directories or nothing) before any service stops, unless
+  directories or nothing; narrowed to files outside the media excludes, and
+  only while the live media holds such files, by the entry above) before any
+  service stops, unless
   `mastodon_restore_empty_media_confirmed: true` (default `false`). A backup
   taken with `mastodon_backup_include_media: false` still contains an empty
   `media/`; restoring it ran `rsync --delete` over the live media, emptied it
