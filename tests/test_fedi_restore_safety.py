@@ -177,6 +177,64 @@ class FediRestoreOrderTests(unittest.TestCase):
                 self.assertEqual(scripts["mastodon"], scripts["takahe"])
 
 
+class MastodonEmptyMediaGuardTests(unittest.TestCase):
+    """An archive whose media/ holds no files is refused before anything stops."""
+
+    def setUp(self) -> None:
+        self.tasks = load_tasks("mastodon")
+        self.main = flatten(self.tasks, ("block",))
+        self.look = find(self.tasks, "Look for media files in the archive")
+        self.refuse = find(self.tasks, "Refuse an archive whose media directory is empty")
+
+    def test_guard_runs_after_validation_and_before_any_change(self) -> None:
+        validate = index_of(self.main, "Validate the database dump table of contents")
+        look = index_of(self.main, "Look for media files in the archive")
+        refuse = index_of(self.main, "Refuse an archive whose media directory is empty")
+        first_change = index_of(self.main, "Ensure media directory exists")
+        stop = index_of(self.main, "Stop Mastodon services before restore")
+        self.assertLess(validate, look)
+        self.assertLess(look, refuse)
+        self.assertLess(refuse, first_change)
+        self.assertLess(refuse, stop)
+
+    def test_guard_conditions_and_override(self) -> None:
+        self.assertEqual(self.look["when"], "mastodon_restore_media_enabled | bool")
+        self.assertEqual(self.look["register"], "mastodon_restore_media_files")
+        self.assertIs(self.look["changed_when"], False)
+        self.assertEqual(
+            self.refuse["when"],
+            [
+                "mastodon_restore_media_enabled | bool",
+                "mastodon_restore_media_files is not skipped",
+                "mastodon_restore_media_files.stdout | length == 0",
+                "not (mastodon_restore_empty_media_confirmed | bool)",
+            ],
+        )
+        message = self.refuse["ansible.builtin.fail"]["msg"]
+        self.assertIn("mastodon_restore_empty_media_confirmed=true", message)
+        self.assertIn("MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true", message)
+        defaults = yaml.safe_load((ROOT / "roles/mastodon_restore/defaults/main.yml").read_text(encoding="utf-8"))
+        self.assertIs(defaults["mastodon_restore_empty_media_confirmed"], False)
+
+    def test_find_prints_only_when_media_holds_a_file(self) -> None:
+        argv = self.look["ansible.builtin.command"]["argv"]
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = Path(tmp)
+            media = payload / "media"
+            media.mkdir()
+
+            def run() -> str:
+                command = [arg.replace("{{ mastodon_restore_payload_dir }}", str(payload)) for arg in argv]
+                done = subprocess.run(command, capture_output=True, text=True, check=True)
+                return done.stdout
+
+            self.assertEqual(run(), "")
+            (media / "accounts" / "avatars").mkdir(parents=True)
+            self.assertEqual(run(), "")
+            (media / "accounts" / "avatars" / "me.png").write_text("x", encoding="utf-8")
+            self.assertNotEqual(run(), "")
+
+
 class FediRestoreScriptTests(unittest.TestCase):
     """Run the snapshot and rollback snippets against temp directories."""
 

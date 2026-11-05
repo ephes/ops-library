@@ -178,6 +178,39 @@
         DUMP: "{{ mastodon_restore_payload_dir }}/database/{{ mastodon_restore_postgres_database }}.dump"
       changed_when: false
 
+    # A backup taken without media still has an empty media/; its rsync
+    # --delete would empty the live media. Refuse it before anything stops
+    # unless the operator confirms (only directories, or nothing, is empty).
+    - name: Look for media files in the archive
+      ansible.builtin.command:
+        argv:
+          - find
+          - "{{ mastodon_restore_payload_dir }}/media/"
+          - -mindepth
+          - "1"
+          - "!"
+          - -type
+          - d
+          - -print
+          - -quit
+      register: mastodon_restore_media_files
+      changed_when: false
+      when: mastodon_restore_media_enabled | bool
+
+    - name: Refuse an archive whose media directory is empty
+      ansible.builtin.fail:
+        msg: >-
+          Mastodon restore refused before anything was stopped or changed: the
+          archive's media/ holds no files, so restoring it deletes every file in
+          the live media {{ mastodon_media_path }}. Restore an archive taken with
+          media, or confirm with -e mastodon_restore_empty_media_confirmed=true
+          (ops-control: MASTODON_RESTORE_EMPTY_MEDIA_CONFIRMED=true).
+      when:
+        - mastodon_restore_media_enabled | bool
+        - mastodon_restore_media_files is not skipped
+        - mastodon_restore_media_files.stdout | length == 0
+        - not (mastodon_restore_empty_media_confirmed | bool)
+
     - name: Ensure media directory exists
       ansible.builtin.file:
         path: "{{ mastodon_media_path }}"

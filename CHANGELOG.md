@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- `mastodon_restore`: refuses an archive whose `media/` holds no files (only
+  directories or nothing) before any service stops, unless
+  `mastodon_restore_empty_media_confirmed: true` (default `false`). A backup
+  taken with `mastodon_backup_include_media: false` still contains an empty
+  `media/`; restoring it ran `rsync --delete` over the live media, emptied it
+  and reported success (only the pre-restore media snapshot kept the files).
+  Archives without a `media/` directory and non-local storage are unchanged.
+
 - `homeassistant_deploy`: `homeassistant_additional_packages` lists
   `libfreetype-dev` instead of `libfreetype6-dev`. On Ubuntu 24.04 (and Debian
   12) `libfreetype6-dev` is only a virtual package provided by

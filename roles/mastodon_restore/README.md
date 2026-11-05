@@ -7,6 +7,9 @@ Restores Mastodon from archives produced by `mastodon_backup`, including databas
 - Unpacks the archive into a staging directory (removed afterwards, also on failure).
 - Validates the dump with `pg_restore --list` (it must contain `TABLE DATA`) and a full
   `pg_restore --file=/dev/null` read **before** any service is stopped.
+- Refuses, before anything stops, an archive whose `media/` holds no files (a backup taken with
+  `mastodon_backup_include_media: false` still has an empty `media/`, and its `rsync --delete`
+  would empty the live media) unless `mastodon_restore_empty_media_confirmed: true`.
 - Stops the services and fails closed if a stop does not take.
 - Takes safety copies before the first overwrite (see below), then drops and recreates the
   database and restores the dump with `--single-transaction`.
@@ -54,6 +57,7 @@ instance is verified.
 | `mastodon_restore_cleanup` | `true` | Remove the staging directory (also after a failure). |
 | `mastodon_restore_safety_root` | `/var/backups/mastodon-pre-restore` | Parent of the timestamped safety dump and config copies. |
 | `mastodon_restore_media_safety_root` | `/home/mastodon/media-pre-restore` | Parent of the timestamped media snapshots (same filesystem as the media). |
+| `mastodon_restore_empty_media_confirmed` | `false` | Allow restoring an archive whose `media/` holds no files (local storage), which empties the live media (the media snapshot keeps it). |
 | `mastodon_restore_postgres_become_user` | `postgres` | Postgres OS user for running restore commands. |
 
 Restore keeps `mastodon_restore_postgres_become_user` defaulting to `postgres` so `dropdb`, `createdb`, and

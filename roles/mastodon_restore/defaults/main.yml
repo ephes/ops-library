@@ -12,3 +12,7 @@ mastodon_restore_safety_root: /var/backups/mastodon-pre-restore
 mastodon_restore_media_safety_root: "{{ mastodon_home_path }}/media-pre-restore"
 mastodon_restore_postgres_dump_binary: pg_dump
 mastodon_restore_postgres_psql_binary: psql
+# An archive whose media/ holds no files (a backup taken with
+# mastodon_backup_include_media: false) would empty the live media; the role
+# refuses it before anything stops unless this is true.
+mastodon_restore_empty_media_confirmed: false
