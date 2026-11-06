@@ -33,6 +33,54 @@
       delve_public_url, delve_port, a >=16 char delve_session_secret, and (when
       Traefik is enabled) delve_traefik_host are required.
 
+- name: validate | Validate the /admin source allowlist
+  ansible.builtin.assert:
+    that:
+      - delve_traefik_admin_ip_allowlist is sequence
+      - delve_traefik_admin_ip_allowlist is not string
+      - delve_traefik_admin_ip_allowlist | select('string') | select('match', '^[0-9A-Fa-f:.]+/[0-9]{1,3}$') | list | length == delve_traefik_admin_ip_allowlist | length
+    fail_msg: >-
+      delve_traefik_admin_ip_allowlist must be a list of CIDR networks
+      (empty serves /admin to every client).
+
+# Exact parsing, not a pattern (as in unifi_deploy): 192.168.1.0/33,
+# 999.999.999.999/24 or fd7a::/129 look like networks, but Traefik cannot build
+# the ipAllowList from them, drops the admin router, and /admin would then only
+# be kept off the internet by the public router's exclusion.
+- name: validate | Verify the /admin allowlist entries parse as networks
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "-c"
+      - |
+        import ipaddress, json, sys
+        invalid = []
+        for entry in json.loads(sys.argv[1]):
+            try:
+                prefix = entry.partition("/")[2]
+                if not (prefix.isascii() and prefix.isdigit()) or prefix != str(int(prefix)):
+                    raise ValueError("prefix length is not a plain number")
+                ipaddress.ip_network(entry, strict=False)
+            except ValueError:
+                invalid.append(entry)
+        if invalid:
+            print(
+                "delve_traefik_admin_ip_allowlist entries are not CIDR networks: "
+                + ", ".join(repr(entry) for entry in invalid)
+            )
+            sys.exit(1)
+      - "{{ delve_traefik_admin_ip_allowlist | to_json }}"
+  # Per host, not run_once: each host's own allowlist ends up in its Traefik file.
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  register: delve_traefik_admin_ip_allowlist_check
+  failed_when: delve_traefik_admin_ip_allowlist_check.rc != 0
+  when:
+    - delve_traefik_enabled | bool
+    - delve_traefik_admin_ip_allowlist | length > 0
+
 - name: validate | Validate Delve Discovery collector configuration
   ansible.builtin.assert:
     that:

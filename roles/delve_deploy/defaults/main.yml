@@ -29,6 +29,17 @@ delve_traefik_host: "delve.home.xn--wersdrfer-47a.de"
 delve_traefik_entrypoints: ["web-secure"]
 delve_traefik_cert_resolver: ""   # empty -> use the loaded wildcard cert (tls: {})
 delve_traefik_config_path: /etc/traefik/dynamic/delve.yml
+# Source networks allowed to reach the operator dashboard (/admin) through
+# Traefik: the homelab LAN and tailnet ranges (homelab_internal_ip_ranges).
+# Other clients get 403 before the admin login; the app API stays public.
+# Empty serves /admin to every client that reaches Traefik.
+delve_traefik_admin_ip_allowlist:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+  - "fd50:3e45:c454:0::/64"
 
 # Session HMAC secret (ADR 0012). Mandatory: the binary refuses to boot without a
 # >=16 char secret, since it makes session tokens forgeable.

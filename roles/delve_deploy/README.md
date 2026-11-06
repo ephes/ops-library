@@ -42,6 +42,16 @@ the control node rather than an upstream release.
   `delve.home.xn--wersdrfer-47a.de` (the IDNA/punycode form of
   `delve.home.wersdörfer.de`, so the Traefik router and TLS SNI match).
 - `delve_port` — loopback port Traefik proxies to (default `10026`).
+- `delve_traefik_admin_ip_allowlist` — source networks that may reach the
+  operator dashboard (`/admin`, `/admin/…`) through Traefik. Default: the
+  homelab LAN and tailnet ranges (`homelab_internal_ip_ranges`). A second router
+  (priority 200) with an `ipAllowList` middleware answers every other source
+  with `403` before the admin login, while the app API on the same host stays
+  public. The public router excludes those paths, so if Traefik ever drops the
+  admin router (for example over an invalid entry, which the role refuses
+  before deploying), `/admin` answers `404` rather than the login. A LAN client that reaches the host over its public IPv6 address is
+  outside the list; use the tailnet. Empty drops that router and serves
+  `/admin` to every client.
 - `delve_dogfood_token` — enables the interim `dogfoodGrant` path.
 - `delve_apple_client_id` — enables `POST /v1/accounts/apple` (the app bundle id).
 - `delve_apple_server_notifications` — `DELVE_APPLE_SERVER_NOTIFICATIONS`:

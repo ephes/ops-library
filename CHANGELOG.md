@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- `delve_deploy`: the operator dashboard (`/admin`) only answers the LAN and
+  the tailnet. New `delve_traefik_admin_ip_allowlist` (default: the
+  `homelab_internal_ip_ranges` networks) adds a `delve-admin` router for
+  `Path(/admin) || PathPrefix(/admin/)` at priority 200 with an `ipAllowList`
+  middleware, so other sources get `403` before the admin login, and the
+  public router excludes those paths (fail closed: a dropped admin router
+  leaves `/admin` a `404`). The app API stays public for TestFlight testers.
+  Every entry is parsed as a CIDR network before deploying (as in
+  `unifi_deploy`). An empty list renders the previous single-router file.
+
 - `mastodon_restore`: the media restore honours the archive's media excludes.
   It reads `media_rsync_excludes` from the archive's `manifest.yml` (the
   paths `mastodon_backup` left out, by default the remote-media cache
