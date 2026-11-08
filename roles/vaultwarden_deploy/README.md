@@ -58,6 +58,7 @@ This role installs Vaultwarden using pre-built `.deb` packages from [vaultwarden
 | `vaultwarden_smtp_from` | `""` | From email address |
 | `vaultwarden_traefik_enabled` | `true` | Deploy Traefik config |
 | `vaultwarden_traefik_entrypoint` | `websecure` | Traefik entrypoint |
+| `vaultwarden_traefik_ip_allowlist` | `[]` | Source networks (`address/prefix`, each parsed before deploying). Non-empty puts the `vaultwarden-ipallowlist` `ipAllowList` on the router, so every other client gets `403` (web vault, API, live sync and `/admin` alike); the HTTP router only redirects. Empty serves everyone. The maintenance freeze route (`vaultwarden_maintenance`) is a separate file and is not affected. The route template is byte-identical to ops-deploy's `services.vaultwarden`. |
 
 ### SSH Key Support
 

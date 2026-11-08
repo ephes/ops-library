@@ -84,3 +84,58 @@
     vaultwarden_debian_codename: >-
       {{ 'bookworm' if ansible_distribution_release in ['jammy', 'noble'] else vaultwarden_debian_codename }}
   when: ansible_distribution == 'Ubuntu'
+
+- name: "validate | Ensure Traefik IP allowlist is a list of networks"
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_traefik_ip_allowlist is not string
+      - vaultwarden_traefik_ip_allowlist is not mapping
+      - vaultwarden_traefik_ip_allowlist is iterable
+      - >-
+        vaultwarden_traefik_ip_allowlist
+        | reject('string') | list | length == 0
+    fail_msg: >-
+      vaultwarden_traefik_ip_allowlist must be a list of CIDR networks (address/prefix); an empty list leaves the route open to every client.
+    quiet: true
+
+# Exact parsing, not a pattern (as in unifi_deploy): Traefik cannot build the
+# middleware from 192.168.1.0/33 or fd7a::/129, and the route would vanish
+# after a deploy that reported success.
+- name: "validate | Verify Traefik IP allowlist entries parse as networks"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "-c"
+      - |
+        import ipaddress, json, sys
+        invalid = []
+        for entry in json.loads(sys.argv[1]):
+            try:
+                if entry != "".join(entry.split()) or "%" in entry:
+                    raise ValueError("whitespace or zone")
+                if "/" not in entry:
+                    raise ValueError("no prefix length")
+                if "/" in entry:
+                    prefix = entry.partition("/")[2]
+                    if not (prefix.isascii() and prefix.isdigit()):
+                        raise ValueError("prefix length is not a number")
+                    ipaddress.ip_network(entry, strict=False)
+                else:
+                    ipaddress.ip_address(entry)
+            except ValueError:
+                invalid.append(entry)
+        if invalid:
+            print(
+                "vaultwarden_traefik_ip_allowlist entries are not CIDR networks: "
+                + ", ".join(repr(entry) for entry in invalid)
+            )
+            sys.exit(1)
+      - "{{ vaultwarden_traefik_ip_allowlist | to_json }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  register: vaultwarden_traefik_ip_allowlist_check
+  failed_when: vaultwarden_traefik_ip_allowlist_check.rc != 0
+  when:
+    - vaultwarden_traefik_ip_allowlist | length > 0

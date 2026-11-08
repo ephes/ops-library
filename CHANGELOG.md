@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+- `snappymail_shared`/`snappymail_deploy`: SnappyMail 3.0.0 (was 2.38.2, which
+  has published advisories, among them an unauthenticated SSRF), with the
+  SHA-256 of the signed upstream archive
+  (`ac495fb8eb95a27c3f2bfab74db0d15b12079c35ef1c533dc70504865f21d000`, the
+  value ops-deploy's 3.0.0 release manifest verified against the SnappyMail
+  release key). The role refuses PHP older than 8.2 for 3.x before it unpacks the release (the previous `index.php` stays in place). The nginx site
+  serves below `/snappymail/` only the selected release's `static/` and
+  `themes/` (`403` for everything else there, so an older release tree left
+  on disk cannot run) and passes `fastcgi_param HTTPS on` (3.0.0 no longer
+  trusts `X-Forwarded-Proto`; the site is loopback-only behind Traefik's TLS
+  router). New `snappymail_traefik_ip_whitelist_enabled` (default `true`) and
+  `snappymail_traefik_ip_whitelist` (default: the Tailscale ranges) put the
+  `snappymail-ipwhitelist` `ipAllowList` on the router; an enabled empty list
+  and entries that do not parse as addresses or networks are refused. Both
+  templates are now byte-identical to ops-deploy `services.snappymail`.
+
+- `vaultwarden_deploy`: new `vaultwarden_traefik_ip_allowlist` (default `[]`,
+  the previous route bytes). Non-empty puts the `vaultwarden-ipallowlist`
+  `ipAllowList` on the HTTPS router, so other sources get `403`; entries must
+  parse as CIDR networks. The route template is now byte-identical to
+  ops-deploy `services.vaultwarden`.
+
 - `delve_deploy`: the operator dashboard (`/admin`) only answers the LAN and
   the tailnet. New `delve_traefik_admin_ip_allowlist` (default: the
   `homelab_internal_ip_ranges` networks) adds a `delve-admin` router for

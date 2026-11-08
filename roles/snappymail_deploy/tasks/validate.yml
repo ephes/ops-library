@@ -9,3 +9,57 @@
       - (not snappymail_traefik_enabled | bool) or (snappymail_traefik_host | length > 0)
     quiet: false
     fail_msg: "SnappyMail validation failed - check required variables (version, data dir, admin password, traefik host)."
+
+- name: "Validate | Ensure Traefik IP allowlist is a list of networks"
+  ansible.builtin.assert:
+    that:
+      - snappymail_traefik_ip_whitelist is not string
+      - snappymail_traefik_ip_whitelist is not mapping
+      - snappymail_traefik_ip_whitelist is iterable
+      - >-
+        snappymail_traefik_ip_whitelist
+        | reject('string') | list | length == 0
+      - (not snappymail_traefik_ip_whitelist_enabled | bool) or (snappymail_traefik_ip_whitelist | length > 0)
+    fail_msg: >-
+      snappymail_traefik_ip_whitelist must be a list of IP addresses or CIDR ranges; an enabled allowlist needs at least one entry (an empty one would refuse every client), set snappymail_traefik_ip_whitelist_enabled: false to serve everyone.
+    quiet: true
+
+# Exact parsing, not a pattern (as in unifi_deploy): Traefik cannot build the
+# middleware from 192.168.1.0/33 or fd7a::/129, and the route would vanish
+# after a deploy that reported success.
+- name: "Validate | Verify Traefik IP allowlist entries parse as networks"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "-c"
+      - |
+        import ipaddress, json, sys
+        invalid = []
+        for entry in json.loads(sys.argv[1]):
+            try:
+                if entry != "".join(entry.split()) or "%" in entry:
+                    raise ValueError("whitespace or zone")
+                if "/" in entry:
+                    prefix = entry.partition("/")[2]
+                    if not (prefix.isascii() and prefix.isdigit()):
+                        raise ValueError("prefix length is not a number")
+                    ipaddress.ip_network(entry, strict=False)
+                else:
+                    ipaddress.ip_address(entry)
+            except ValueError:
+                invalid.append(entry)
+        if invalid:
+            print(
+                "snappymail_traefik_ip_whitelist entries are not IP addresses or CIDR ranges: "
+                + ", ".join(repr(entry) for entry in invalid)
+            )
+            sys.exit(1)
+      - "{{ snappymail_traefik_ip_whitelist | to_json }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  register: snappymail_traefik_ip_whitelist_check
+  failed_when: snappymail_traefik_ip_whitelist_check.rc != 0
+  when:
+    - snappymail_traefik_ip_whitelist | length > 0

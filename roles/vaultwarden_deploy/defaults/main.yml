@@ -96,6 +96,11 @@ vaultwarden_log_level: "info"  # trace, debug, info, warn, error, off
 vaultwarden_traefik_enabled: true
 vaultwarden_traefik_entrypoint: "websecure"
 vaultwarden_traefik_certresolver: ""  # leave empty if using certbot_dns
+# Source networks (address/prefix) that may reach Vaultwarden through Traefik.
+# Non-empty puts a vaultwarden-ipallowlist ipAllowList on the router, so every
+# other client gets 403 (web vault, API, live sync and /admin alike). Empty
+# serves everyone.
+vaultwarden_traefik_ip_allowlist: []
 
 # Service management
 vaultwarden_service_enabled: true

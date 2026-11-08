@@ -11,6 +11,11 @@
 - name: Prepare SnappyMail directories
   ansible.builtin.import_tasks: directories.yml
 
+# Before the release is unpacked: a PHP too old for it must stop the run
+# while the previous release's index.php is still in place.
+- name: Detect PHP version
+  ansible.builtin.import_tasks: php_version.yml
+
 - name: Install SnappyMail application
   ansible.builtin.import_tasks: install.yml
 
