@@ -2,15 +2,6 @@
 
 ## [Unreleased]
 
-- `paperless_deploy`: upgrade from 3.2.1 to 3.4.2 with the verified official
-  release checksum. Stop requesting `imagemagick` and remove
-  `PAPERLESS_CONVERT_MEMORY_LIMIT`, `PAPERLESS_CONVERT_TMPDIR` and `MAGICK_TMPDIR`
-  from the environment. Document migrations, root-only search schema/rebuild,
-  Poppler thumbnails and removed settings. Explicit pre-3.4 recovery on rebuilt
-  hosts needs `imagemagick` added to `paperless_system_packages` and the matching
-  pre-upgrade backup. Typed runtime changes are maintained in ops-deploy.
-  No deployment or database downgrade is implied.
-
 - `snappymail_shared`/`snappymail_deploy`: SnappyMail 3.0.0 (was 2.38.2, which
   has published advisories, among them an unauthenticated SSRF), with the
   SHA-256 of the signed upstream archive
@@ -220,6 +211,17 @@
 - Document the software-live pyinfra port's deliberate change-gated
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.
+
+## [2.76.0] - 2026-11-09
+
+- `paperless_deploy`: upgrade from 3.2.1 to 3.4.2 with the verified official
+  release checksum. Stop requesting `imagemagick` and remove
+  `PAPERLESS_CONVERT_MEMORY_LIMIT`, `PAPERLESS_CONVERT_TMPDIR` and `MAGICK_TMPDIR`
+  from the environment. Document migrations, root-only search schema/rebuild,
+  Poppler thumbnails and removed settings. Explicit pre-3.4 recovery on rebuilt
+  hosts needs `imagemagick` added to `paperless_system_packages` and the matching
+  pre-upgrade backup. Typed runtime changes are maintained in ops-deploy.
+  No deployment or database downgrade is implied.
 
 ## [2.75.6] - 2026-11-09
 
