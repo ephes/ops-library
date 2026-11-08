@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `graphyard_deploy`: pin the Grafana default to the recorded 12.4.0 image
+  with its registry-verified SHA-256 (was untagged `grafana/grafana-oss`).
+  Override `graphyard_grafana_image` with a verified release pin to upgrade.
+  Add `just test-graphyard-image-pin` to require a release tag and digest.
+
 - `snappymail_shared`/`snappymail_deploy`: SnappyMail 3.0.0 (was 2.38.2, which
   has published advisories, among them an unauthenticated SSRF), with the
   SHA-256 of the signed upstream archive
