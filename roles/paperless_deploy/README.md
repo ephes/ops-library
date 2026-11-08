@@ -1,5 +1,83 @@
 # Paperless Deploy Role
 
+## Paperless-ngx 3.4.2 upgrade (from 3.2.1)
+
+Source review: official releases [3.3.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.0),
+[3.3.1](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.1),
+[3.3.2](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.2),
+[3.3.3](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.3),
+[3.3.4](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.4),
+[3.4.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.4.0),
+[3.4.1](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.4.1) and
+[3.4.2](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.4.2),
+plus the released source and dependency metadata. No host qualification or deployment
+has been performed for this upgrade.
+
+The official `paperless-ngx-v3.4.2.tar.xz` SHA-256 is
+`599be82cd8fc184436b757f9b193101fb71a90bf0facf5695dcda43152fffc85`.
+It was verified by downloading the release asset and hashing its bytes against
+GitHub's release asset `digest` (release API `/repos/paperless-ngx/paperless-ngx/releases/tags/v3.4.2`).
+
+- **Database:** run the existing `manage.py migrate` stage. New application
+  migrations since 3.2.1 are `paperless.0017_applicationconfiguration_llm_embedding_api_key`
+  (nullable embedding key), `paperless.0018_applicationconfiguration_barcode_store_values`
+  (nullable barcode storage toggle) and `documents.0027_documentbarcode`
+  (barcode table with document foreign key, page, value and format). There is no
+  database-engine version increase; the deployment keeps PostgreSQL 17.
+- **Search:** schema version changes from 2 to 4, adding stored barcode JSON and
+  indexing only live root documents with effective version content. Rebuild the
+  index after migration with all four Paperless units stopped. The typed deploy
+  counts only `deleted_at IS NULL AND root_document_id IS NULL`, validates the
+  new schema fingerprint, and retries indexes carrying `.rebuilding`. The
+  Ansible rollback role already rebuilds unconditionally with those units paused.
+  The new fingerprint was generated from unmodified released `_fields.py` and
+  `_schema.py` with whoosh-compat 0.3.0 and Tantivy 0.26.0, without starting Django.
+- **Runtime:** upstream still requires Python >=3.11; deployed Python 3.14 and
+  uv 0.13.5 remain suitable. The release ships compiled UI assets, so neither
+  deploy path requires Node/pnpm or a frontend build. No new Node floor is
+  declared by these release notes. Python dependencies change through the
+  release's editable `[postgres]` install, including Django 5.2.18+, allauth
+  65.20, guardian 3.5.2+, turbohtml replacing bleach, and psycopg-pool 3.3.3
+  (psycopg and psycopg-c remain 3.3.4). The runtime probe follows that pool pin.
+  3.3.4 includes dependency security fixes for certifi, Pillow and aiohttp;
+  3.4.0 and 3.4.2 include further dependency security fixes.
+- **System dependencies:** 3.4 switches PDF thumbnails to Poppler and drops
+  ImageMagick. Both deploy paths retain `poppler-utils` and stop requesting
+  `imagemagick`; existing host packages are not uninstalled. Ghostscript is
+  still required for OCRmyPDF; keep it and the existing OCR dependencies.
+- **Environment:** removed (without replacement aliases)
+  `PAPERLESS_CONVERT_BINARY`, `PAPERLESS_CONVERT_MEMORY_LIMIT`,
+  `PAPERLESS_CONVERT_TMPDIR`, `PAPERLESS_GS_BINARY`; the environment also drops
+  `MAGICK_TMPDIR`. Neither managed environment
+  emits these. New optional variables are `PAPERLESS_AI_LLM_EMBEDDING_API_KEY`,
+  `PAPERLESS_AI_LLM_EXTRA_PARAMS`, `PAPERLESS_CONSUMER_STORE_BARCODE_VALUES`,
+  and `PAPERLESS_SOCIAL_ACCOUNT_MFA_TRUSTED_AMR`; none is needed by this install.
+  Trusted OIDC `amr=mfa` can bypass local second-factor prompting in 3.4;
+  review the trusted-AMR setting before enabling OIDC. JSON settings now validate
+  expected types and invalid `PAPERLESS_URL` hostnames fail configuration.
+- **Rollback:** take and verify a full database/media/config backup before the
+  upgrade. Returning to the Ansible engine uses the same 3.4.2 release by default;
+  it is not a database downgrade. To return to 3.2.1, restore its pre-upgrade
+  database/media/config backup and matching code/dependencies, then rebuild the
+  old search index. On a rebuilt host using this role with an explicit release
+  older than 3.4, add `imagemagick` to `paperless_system_packages` before
+  deployment: those releases still need it for thumbnails. If ImageMagick
+  temporary paths were customized, use the matching pre-upgrade role checkout
+  or template; restoring the environment file alone is insufficient because
+  this role regenerates it.
+  Do not merely point the symlink at old code after migration.
+
+From ops-control, after the dependent pins are reviewed and merged, the owner
+runs these commands in order (not executed during this change):
+
+```bash
+just backup-now paperless macmini
+just deploy-one paperless macmini
+```
+
+`backup-now` is the synchronous, verified Echoport backup recipe. Confirm its
+success before starting the deployment; allow time for migration and reindexing.
+
 Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare metal hosts using uv-managed Python, encrypted storage, Redis, and systemd units.
 
 ## Features
@@ -23,8 +101,8 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `paperless_version` | Paperless-ngx release to install. Add a matching `paperless_release_checksums` entry in the same change. | `3.2.1` |
-| `paperless_release_checksum` | Required SHA-256 checksum passed to `get_url`; known releases are looked up from `paperless_release_checksums` | `sha256:e9bfb6...` |
+| `paperless_version` | Paperless-ngx release to install. Add a matching `paperless_release_checksums` entry in the same change. | `3.4.2` |
+| `paperless_release_checksum` | Required SHA-256 checksum passed to `get_url`; known releases are looked up from `paperless_release_checksums` | `sha256:599be8...` |
 | `paperless_external_storage_root` | Path to encrypted storage mount | `/mnt/cryptdata/paperless` |
 | `paperless_postgres_version` | PostgreSQL major version | `17` |
 | `paperless_postgres_repo_enabled` | Add the official PGDG repo | `true` |
@@ -137,10 +215,12 @@ cause, and rerun deployment; the existing index may be incomplete until recovery
 ### Typed pyinfra deployment and intentional index-policy difference
 
 The separate public [Paperless typed contract](https://github.com/ephes/ops-deploy/blob/main/docs/services/paperless.md)
-is native-qualified and adopted for the normal private macmini deployment.
+was native-qualified at 3.2.1 and adopted for the normal private macmini deployment.
+The 3.4.2 upgrade has only the local checks described above; host qualification
+has not been performed.
 It retains the original release/dependency/scanner/secret precedence and
-UV 0.13.5 manager defaults. This Ansible role's tasks and defaults are unchanged,
-including the unconditional reindex described above.
+UV 0.13.5 manager defaults. This Ansible role retains the unconditional reindex
+policy described above.
 
 The typed deployment uses two bounded index metadata/sentinel files plus a
 validated read-only SQL count. Release/package/migration/schema/language changes,
