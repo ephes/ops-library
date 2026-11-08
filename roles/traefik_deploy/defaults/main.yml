@@ -3,7 +3,7 @@
 # All variables with safe/required values
 
 # Traefik version to install
-traefik_version: "3.7.13"
+traefik_version: "3.7.17"
 
 # Platform configuration (auto-detected from ansible_system and ansible_architecture)
 # Override these if auto-detection fails or for cross-platform deployment
@@ -103,7 +103,7 @@ traefik_conflicting_web_services:
   - lighttpd.service
 
 # Guarded transaction entry (see TRANSACTIONS.md). The full role refuses managed
-# hosts until it shares the transaction workflow; Heis/default pins are unchanged.
+# hosts until it shares the transaction workflow.
 traefik_transaction_required: false
 traefik_transaction_request: {}
 traefik_transaction_result_path: ""

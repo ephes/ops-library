@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `traefik_deploy`: default to 3.7.17, including the Ansible rollback path,
+  matching the companion ops-deploy default change. Document verified official
+  Linux archive checksums and the 3.7.14–3.7.17 migration review (no template
+  change required). These releases include security fixes, most recently
+  [GHSA-xv5x-242w-7hf7](https://github.com/traefik/traefik/security/advisories/GHSA-xv5x-242w-7hf7).
+
 - `snappymail_shared`/`snappymail_deploy`: SnappyMail 3.0.0 (was 2.38.2, which
   has published advisories, among them an unauthenticated SSRF), with the
   SHA-256 of the signed upstream archive

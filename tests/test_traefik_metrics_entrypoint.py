@@ -36,6 +36,16 @@ def _render(**overrides: object) -> str:
 
 
 class TraefikMetricsEntrypointTests(unittest.TestCase):
+    def test_default_release_is_the_security_patch(self) -> None:
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        self.assertEqual(defaults["traefik_version"], "3.7.17")
+        readme = (ROLE / "README.md").read_text()
+        self.assertIn('traefik_version: "3.7.17"', readme)
+        self.assertIn(
+            'traefik_checksum: "sha256:a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393"',
+            readme,
+        )
+
     def test_acme_directory_is_never_temporarily_world_traversable(self) -> None:
         tasks = yaml.safe_load((ROLE / "tasks/main.yml").read_text())
         create_directories = next(
