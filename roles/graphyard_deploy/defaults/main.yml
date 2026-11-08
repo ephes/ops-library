@@ -105,7 +105,7 @@ graphyard_influx_config_dir_group: "0"
 
 # Grafana base URL for Graphyard UI links
 graphyard_grafana_base_url: ""
-graphyard_grafana_image: "grafana/grafana-oss"
+graphyard_grafana_image: "grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20"
 graphyard_grafana_container_name: "graphyard-grafana"
 graphyard_grafana_host_bind_address: "127.0.0.1"
 graphyard_grafana_host_port: 3300
