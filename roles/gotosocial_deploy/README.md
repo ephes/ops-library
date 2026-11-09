@@ -32,7 +32,7 @@ runbook and the migration plan.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `gotosocial_version` | `0.22.2` | Bump together with `gotosocial_release_checksums` (from the release's `checksums.txt`). |
+| `gotosocial_version` | `0.22.3` | Bump together with `gotosocial_release_checksums` (from the release's `checksums.txt`). |
 | `gotosocial_release_checksums` | amd64 + arm64 | `sha256:<hex>` per architecture. |
 | `gotosocial_host` | `CHANGEME` | DNS name the instance is served on (required). |
 | `gotosocial_account_domain` | `""` | Handle domain (`@user@<domain>`); empty = host. |

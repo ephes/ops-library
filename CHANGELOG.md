@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `gotosocial_deploy`: release 0.22.2 -> 0.22.3 (2026-10-21; Go 1.26.10 for
+  CVE-2026-111943 and a fix for remote accounts masquerading as other remote
+  accounts in the dereferencer). No migrations and no config changes; both
+  linux checksums come from the release's `checksums.txt`, matching ops-deploy's
+  `GotosocialConfig` defaults.
+
 - `unifi_deploy`: keep the controller logs private. UniFi 9.5 writes its
   MongoDB connection URI with the password to `/var/log/unifi/server.log` on
   every start, and the role left the directory `0755` (the log directory
