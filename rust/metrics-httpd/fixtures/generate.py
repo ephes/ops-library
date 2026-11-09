@@ -19,8 +19,12 @@ one of the rendered Python endpoint scripts produces. The Rust tests
 ``auth`` (templates, ``htpasswd``)
     ``auth.json``: the decision of the rendered backup script's
     ``_check_auth`` (``htpasswd -vi``) and of ``metrics_endpoint``'s
-    (``htpasswd -vb``) for header and htpasswd-file cases, run with the real
-    ``htpasswd`` binary against the committed test-only ``htpasswd*`` files.
+    (``htpasswd -vi`` plus the legacy argv-semantics input gate) for header
+    and htpasswd-file cases, run with the real ``htpasswd`` binary against the
+    committed test-only ``htpasswd*`` files. ``vb`` remains the historical key:
+    its bcrypt decisions are unchanged; NUL now fails closed instead of raising.
+    A CR/LF suffix beyond byte 72 is admitted only for actual bcrypt records;
+    other schemes reject CR/LF and the old 255-byte bound still applies.
 ``http_common`` (templates, ``htpasswd``)
     ``http_common.json``: the rendered scripts' handlers served on loopback
     and driven with raw requests: the 501/404/401 gate of PLAN.md 4.1 for
