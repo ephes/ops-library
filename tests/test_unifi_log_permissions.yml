@@ -1,0 +1,181 @@
+---
+# Runs the real unifi_deploy directory and log tasks against a temporary tree
+# shaped like the vendor layout (unifi_logs_dir is a link to the real log
+# directory): check mode selects the open entries and changes nothing, the
+# real run leaves the directory 0750 and no entry readable by others
+# (directories at most 0750, files at most 0640), symlinks are not followed,
+# and a second run changes nothing. The test runs unprivileged as the owner
+# of the tree, so unifi_logs_runas is empty here (root runs use runuser).
+
+- name: Test that unifi_deploy keeps UniFi logs private
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../roles/unifi_deploy/defaults/main.yml
+
+  vars:
+    unifi_role: "{{ playbook_dir }}/../roles/unifi_deploy"
+    unifi_log_files:
+      server.log: "0644"
+      mongod.log: "0600"
+      private.log: "0640"
+      group-writable.log: "0660"
+      executable.log: "0740"
+      remote/device.log: "0644"
+    unifi_expected_modes:
+      server.log: "0640"
+      mongod.log: "0600"
+      private.log: "0640"
+      group-writable.log: "0640"
+      executable.log: "0640"
+      remote/device.log: "0640"
+      remote: "0750"
+
+  tasks:
+    - name: Create a temporary root
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: unifi-logs
+      register: unifi_tmp
+
+    - name: Run the checks and always remove the temporary root
+      block:
+        - name: Read the current account
+          ansible.builtin.command: id -un
+          register: unifi_test_user
+          changed_when: false
+
+        - name: Read the current primary group
+          ansible.builtin.command: id -gn
+          register: unifi_test_group
+          changed_when: false
+
+        - name: Set the layout below the temporary root
+          ansible.builtin.set_fact:
+            unifi_user: "{{ unifi_test_user.stdout }}"
+            unifi_logs_runas: []
+            unifi_group: "{{ unifi_test_group.stdout }}"
+            unifi_real_logs: "{{ unifi_tmp.path }}/var-log-unifi"
+            unifi_outside: "{{ unifi_tmp.path }}/outside.txt"
+            unifi_cache_dir: "{{ unifi_tmp.path }}/cache"
+            unifi_install_dir: "{{ unifi_tmp.path }}/install"
+            unifi_data_dir: "{{ unifi_tmp.path }}/install/data"
+            unifi_logs_dir: "{{ unifi_tmp.path }}/install/logs"
+            unifi_run_dir: "{{ unifi_tmp.path }}/install/run"
+            unifi_backup_dir: "{{ unifi_tmp.path }}/install/data/backup"
+
+        - name: Create the real log directory and its remote subdirectory open
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - "{{ unifi_install_dir }}"
+            - "{{ unifi_real_logs }}"
+            - "{{ unifi_real_logs }}/remote"
+
+        - name: Link the role's log directory to it, as the vendor package does
+          ansible.builtin.file:
+            src: "{{ unifi_real_logs }}"
+            dest: "{{ unifi_logs_dir }}"
+            state: link
+
+        - name: Create log files with their starting modes
+          ansible.builtin.copy:
+            dest: "{{ unifi_real_logs }}/{{ item.key }}"
+            content: "fixture log line\n"
+            mode: "{{ item.value }}"
+          loop: "{{ unifi_log_files | dict2items }}"
+
+        - name: Create a world-readable file outside the log directory
+          ansible.builtin.copy:
+            dest: "{{ unifi_outside }}"
+            content: "outside\n"
+            mode: "0644"
+
+        - name: Link to it from inside the log directory
+          ansible.builtin.file:
+            src: "{{ unifi_outside }}"
+            dest: "{{ unifi_real_logs }}/link.log"
+            state: link
+
+        - name: Run the log tasks in check mode
+          ansible.builtin.include_tasks:
+            file: "{{ unifi_role }}/tasks/logs.yml"
+            apply:
+              check_mode: true
+
+        - name: Check mode selected exactly the open entries
+          ansible.builtin.assert:
+            that:
+              - unifi_loose_log_dirs | map('regex_replace', '^' ~ (unifi_logs_dir | regex_escape) ~ '/', '') | list == ['remote']
+              - >-
+                unifi_loose_log_files | map('regex_replace', '^' ~ (unifi_logs_dir | regex_escape) ~ '/', '') | sort
+                == ['executable.log', 'group-writable.log', 'remote/device.log', 'server.log']
+
+        - name: Read modes after check mode
+          ansible.builtin.stat:
+            path: "{{ unifi_real_logs }}/server.log"
+          register: unifi_after_check
+
+        - name: Check mode changed nothing
+          ansible.builtin.assert:
+            that:
+              - unifi_after_check.stat.mode == "0644"
+
+        - name: Run the directory tasks
+          ansible.builtin.include_tasks:
+            file: "{{ unifi_role }}/tasks/directories.yml"
+
+        - name: Run the log tasks
+          ansible.builtin.include_tasks:
+            file: "{{ unifi_role }}/tasks/logs.yml"
+
+        - name: Read the log directory
+          ansible.builtin.stat:
+            path: "{{ unifi_real_logs }}"
+          register: unifi_dir_stat
+
+        - name: Read the log entries
+          ansible.builtin.stat:
+            path: "{{ unifi_real_logs }}/{{ item }}"
+            follow: false
+          loop: "{{ unifi_expected_modes.keys() | list }}"
+          register: unifi_entry_stats
+
+        - name: Read the file outside the log directory
+          ansible.builtin.stat:
+            path: "{{ unifi_outside }}"
+          register: unifi_outside_stat
+
+        - name: The directory is 0750, the entries are private, the link target is untouched
+          ansible.builtin.assert:
+            that:
+              - unifi_dir_stat.stat.isdir
+              - unifi_dir_stat.stat.mode == "0750"
+              - unifi_dir_stat.stat.pw_name == unifi_user
+              - unifi_outside_stat.stat.mode == "0644"
+              - >-
+                unifi_entry_stats.results | map(attribute='stat.mode') | list
+                == unifi_expected_modes.values() | list
+
+        - name: Run the directory tasks again
+          ansible.builtin.include_tasks:
+            file: "{{ unifi_role }}/tasks/directories.yml"
+
+        - name: Run the log tasks again
+          ansible.builtin.include_tasks:
+            file: "{{ unifi_role }}/tasks/logs.yml"
+
+        - name: The second run changed nothing
+          ansible.builtin.assert:
+            that:
+              - unifi_loose_log_dirs == []
+              - unifi_loose_log_files == []
+      always:
+        - name: Remove the temporary root
+          ansible.builtin.file:
+            path: "{{ unifi_tmp.path }}"
+            state: absent

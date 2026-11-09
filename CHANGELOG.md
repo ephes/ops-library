@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+- `unifi_deploy`: keep the controller logs private. UniFi 9.5 writes its
+  MongoDB connection URI with the password to `/var/log/unifi/server.log` on
+  every start, and the role left the directory `0755` (the log directory
+  task follows the vendor's `unifi_logs_dir` link) with world-readable files.
+  The unit template sets `UMask=0027` (byte-identical to ops-deploy
+  `services.unifi`), `directories.yml` creates `unifi_logs_dir` as `0750`,
+  and the new `logs.yml` tightens existing entries that are readable by
+  others or group-writable (directories to at most `0750`, files to at most
+  `0640`; links are skipped, ownership is unchanged). Root never changes
+  modes inside that tree: the `chmod` of existing entries runs as the log
+  owner through the new
+  `unifi_logs_runas` (default `runuser -u <unifi_user> --`), so a path the
+  unifi user redirects with a symbolic link fails instead of changing a
+  system file. The first run with
+  the new unit restarts the controller. Tests:
+  `just test-unifi-log-permissions`.
+
 - `snappymail_shared`/`snappymail_deploy`: SnappyMail 3.0.0 (was 2.38.2, which
   has published advisories, among them an unauthenticated SSRF), with the
   SHA-256 of the signed upstream archive

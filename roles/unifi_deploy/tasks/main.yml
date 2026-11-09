@@ -23,6 +23,9 @@
 - name: Configure systemd unit
   ansible.builtin.import_tasks: systemd.yml
 
+- name: Keep UniFi logs private
+  ansible.builtin.import_tasks: logs.yml
+
 - name: Configure Traefik integration
   ansible.builtin.import_tasks: traefik.yml
   when: unifi_traefik_enabled | bool

@@ -141,6 +141,9 @@ unifi_controller_status_url: "https://127.0.0.1:{{ unifi_port_https }}/status"
 unifi_systemd_extra_env: []
 
 # Log + monitoring
+# Command prefix that runs the chmod of existing log entries (tasks/logs.yml)
+# as their owner, never as root: the log tree is writable by the unifi user.
+unifi_logs_runas: ["runuser", "-u", "{{ unifi_user }}", "--"]
 unifi_logrotate_owner: "root"
 unifi_logrotate_group: "root"
 

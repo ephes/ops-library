@@ -1,0 +1,60 @@
+---
+# UniFi 9.5 writes its MongoDB connection URI, password included, to
+# server.log on every start. Logback has no file-mode setting: the unit's
+# UMask=0027 keeps new files at 0640 and new directories at 0750, and
+# directories.yml locks unifi_logs_dir to 0750 (in the vendor layout it links
+# to /var/log/unifi). These tasks tighten entries that already exist.
+#
+# The tree is writable by the unifi user, so root never changes modes in it:
+# a path find reported could be redirected (a component swapped for a
+# symbolic link) before root's chmod. find only reads; chmod runs as the
+# owner of the logs (unifi_logs_runas), which cannot change files it does not
+# own, so a redirected path fails instead of loosening or tightening a
+# system file.
+- name: "logs | Find existing UniFi log entries"
+  ansible.builtin.find:
+    paths: "{{ unifi_logs_dir }}/"
+    recurse: true
+    file_type: any
+    hidden: true
+    follow: false
+  register: unifi_log_entries
+
+# Directories wider than 0750, regular files wider than 0640; links skipped.
+- name: "logs | Select UniFi log entries readable by others"
+  ansible.builtin.set_fact:
+    unifi_loose_log_dirs: >-
+      {{ unifi_log_entries.files
+         | rejectattr('islnk') | selectattr('isdir')
+         | selectattr('path', 'in', unifi_log_entries.files
+             | selectattr('roth') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('woth') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('xoth') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('wgrp') | map(attribute='path') | list)
+         | map(attribute='path') | sort }}
+    unifi_loose_log_files: >-
+      {{ unifi_log_entries.files
+         | rejectattr('islnk') | selectattr('isreg')
+         | selectattr('path', 'in', unifi_log_entries.files
+             | selectattr('roth') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('woth') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('xoth') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('wgrp') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('xgrp') | map(attribute='path') | list
+           + unifi_log_entries.files | selectattr('xusr') | map(attribute='path') | list)
+         | map(attribute='path') | sort }}
+
+# Symbolic modes only remove bits: directories at most 0750, files at most
+# 0640; ownership stays as it is. find returns absolute paths, so none
+# starts with "-".
+- name: "logs | Remove group write and other access from existing UniFi log directories"
+  ansible.builtin.command:
+    argv: "{{ unifi_logs_runas + ['chmod', 'g-w,o-rwx'] + unifi_loose_log_dirs }}"
+  changed_when: true
+  when: unifi_loose_log_dirs | length > 0
+
+- name: "logs | Remove group write and other access from existing UniFi log files"
+  ansible.builtin.command:
+    argv: "{{ unifi_logs_runas + ['chmod', 'u-x,g-wx,o-rwx'] + unifi_loose_log_files }}"
+  changed_when: true
+  when: unifi_loose_log_files | length > 0
