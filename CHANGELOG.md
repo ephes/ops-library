@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
+  the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
+  no release assets or checksum manifest for this Git-based installation.
+
 - `snappymail_shared`/`snappymail_deploy`: SnappyMail 3.0.0 (was 2.38.2, which
   has published advisories, among them an unauthenticated SSRF), with the
   SHA-256 of the signed upstream archive

@@ -54,6 +54,7 @@
           - mastodon_shared_defaults.mastodon_web_concurrency == 2
           - mastodon_shared_defaults.mastodon_max_threads == 5
           - mastodon_shared_defaults.mastodon_sidekiq_concurrency == 25
+          - mastodon_shared_defaults.mastodon_nvm_version == "v0.41.0"
           - mastodon_shared_defaults.mastodon_db_pool == 25
           - mastodon_shared_defaults.mastodon_backup_retain == 7
           - not mastodon_shared_defaults.mastodon_backup_retain_all_prefixes

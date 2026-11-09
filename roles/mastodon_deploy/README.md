@@ -1,5 +1,9 @@
 # Mastodon Deploy Role
 
+The default nvm Git tag is [v0.41.0](https://github.com/nvm-sh/nvm/releases/tag/v0.41.0).
+The pyinfra release path and Ansible rollback use the same tag. nvm is checked
+out from Git; this release has no uploaded assets or checksum manifest.
+
 Deploys Mastodon from source with rbenv + nvm runtimes, systemd services, and Traefik routing. The role provisions PostgreSQL via `postgres_install` and can optionally install Redis via `redis_install` when `mastodon_redis_manage: true`. It supports rsync (dev) or git (staging/production) deployment modes.
 
 ## Features
