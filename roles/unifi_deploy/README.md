@@ -7,6 +7,7 @@ Installs the UniFi Network Application on the macmini controller (or any Debian/
 - Installs MongoDB 8.0 from the upstream repo, enables authentication, configures quiet logging, logrotate, and an optional cron-based log monitor.
 - Creates the `unifi` unix user, directory layout, cache path, and version-pinned UniFi `.deb` download/install logic.
 - Ships a hardened custom systemd service that passes the Mongo URI and JVM tuning on the Java command line to avoid `system.properties` corruption. The Mongo URI (with the password) lives in a Java `@argfile` at `unifi_mongodb_jvm_args_path` (default `/etc/unifi-secrets/mongodb.jvmargs`, `root:unifi` `0640`, directory `0750`), so it is not in the world-readable unit file, `systemctl show`, or `ps` output.
+- Keeps the controller logs private: UniFi 9.5 writes its MongoDB connection URI, password included, to `server.log` on every start. The unit sets `UMask=0027` (logback has no file-mode setting, so new log files are `0640` and new directories `0750`), `unifi_logs_dir` (in the vendor layout a link to `/var/log/unifi`) is `unifi:unifi` `0750`, and existing entries readable by others are tightened (directories to at most `0750`, files to at most `0640`; symbolic links are skipped, ownership is unchanged). Root never changes modes inside that tree: the `chmod` of existing entries runs as the log owner through `unifi_logs_runas` (default `runuser -u <unifi_user> --`), so a path the unifi user redirects with a symbolic link fails instead of changing a system file. Adding the `UMask` changes the unit, so the first run with it restarts the controller.
 - Emits a Traefik dynamic configuration file (and optional static entrypoint tweak) that matches the production router/service layout.
 - Opens the canonical UniFi ports with `ufw` and optionally reconciles a read-only Home Assistant account inside Mongo/UniFi.
 
@@ -24,6 +25,7 @@ All tunables live in `defaults/main.yml`. The highlights:
 | `unifi_jvm_min_heap_mb` / `unifi_jvm_max_heap_mb` | `1024 / 2048` | Heap sizes used in the systemd service. |
 | `unifi_external_domain` | `home.xn--wersdrfer-47a.de` | External domain used in the Traefik router + debug output. |
 | `unifi_traefik_enabled` | `true` | Toggle Traefik dynamic file management. |
+| `unifi_logs_runas` | `["runuser", "-u", "{{ unifi_user }}", "--"]` | Command prefix for the `chmod` that tightens existing log entries. It runs as the owner of the logs, never as root, because the log tree is writable by the unifi user. |
 | `unifi_traefik_ip_allowlist` | `[]` | Source networks (IPs or CIDR ranges) allowed to reach the controller UI through Traefik. Empty leaves the route open to every client that reaches Traefik; set the trusted LAN and tailnet ranges so the admin login is not offered to the internet (other clients get 403). Every entry must parse as an address or `address/prefix`; anything else fails the role during validation. |
 | `unifi_manage_firewall` | `true` | When true, open the standard UniFi TCP/UDP ports via `ufw`. |
 | `unifi_create_homeassistant_user` | `false` | Generate or reconcile a read-only UniFi admin for Home Assistant integration. |
