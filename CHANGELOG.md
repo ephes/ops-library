@@ -229,6 +229,12 @@
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.
 
+## [2.76.2] - 2026-11-09
+
+- Mastodon: upgrade the nvm Git tag from v0.40.8 to v0.41.0, keeping
+  the pyinfra release and Ansible rollback defaults aligned. Upstream publishes
+  no release assets or checksum manifest for this Git-based installation.
+
 ## [2.76.1] - 2026-11-09
 
 - `graphyard_deploy`: pin the Grafana default to the recorded 12.4.0 image
