@@ -63,7 +63,7 @@ core Django runtime plus automation-owned InfluxDB and Grafana containers.
 | `graphyard_influx_container_name` | `graphyard-influxdb` | Container used for `influx bucket list/update` |
 | `graphyard_influx_data_dir` | `/var/lib/graphyard/influxdb2` | Persistent InfluxDB engine data path |
 | `graphyard_influx_config_dir` | `/var/lib/graphyard/influxdb2-config` | Persistent InfluxDB config/init path |
-| `graphyard_grafana_image` | `grafana/grafana-oss` | Production Grafana image |
+| `graphyard_grafana_image` | `grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20` | Production Grafana image |
 | `graphyard_grafana_container_name` | `graphyard-grafana` | Stable Grafana container name |
 | `graphyard_grafana_data_dir` | `/var/lib/graphyard/grafana` | Persistent Grafana data path |
 | `graphyard_grafana_admin_password` | `CHANGEME` | Required when `graphyard_runtime_enabled=true`; used for first-boot Grafana init |
@@ -412,3 +412,12 @@ Set `graphyard_ca_store_root` to the prepared per-container CA root to mount
 replacement native trust stores; prepare with `container_ca_remediate` before
 deploying and refresh after image/custom CA changes. The empty default leaves
 image trust unchanged. Verify actual runtime TLS before claiming protection.
+
+### Grafana image pin
+
+The default preserves the repository-recorded Grafana OSS 12.4.0 image. On
+2026-11-08, Docker Hub's registry manifest for `grafana/grafana-oss:12.4.0`
+returned `sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20`;
+the manifest body's SHA-256 matched. No host inspection was performed.
+Keep a stable release tag plus the verified registry digest when updating this
+default, and update the ops-control inventory and rollback fallbacks together.

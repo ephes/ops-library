@@ -91,7 +91,7 @@
               - graphyard_deploy_defaults.graphyard_influx_container_name == "graphyard-influxdb"
               - graphyard_deploy_defaults.graphyard_influx_data_dir == "/var/lib/graphyard/influxdb2"
               - graphyard_deploy_defaults.graphyard_influx_config_dir == "/var/lib/graphyard/influxdb2-config"
-              - graphyard_deploy_defaults.graphyard_grafana_image == "grafana/grafana-oss"
+              - graphyard_deploy_defaults.graphyard_grafana_image == "grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20"
               - graphyard_deploy_defaults.graphyard_grafana_container_name == "graphyard-grafana"
               - graphyard_deploy_defaults.graphyard_grafana_data_dir == "/var/lib/graphyard/grafana"
               - graphyard_deploy_defaults.graphyard_grafana_admin_password == "CHANGEME"

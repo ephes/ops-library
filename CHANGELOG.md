@@ -212,6 +212,13 @@
   collection behavior and the unchanged Ansible role's unconditional collection.
   No role task, default, unit or program changes.
 
+## [2.76.1] - 2026-11-09
+
+- `graphyard_deploy`: pin the Grafana default to the recorded 12.4.0 image
+  with its registry-verified SHA-256 (was untagged `grafana/grafana-oss`).
+  Override `graphyard_grafana_image` with a verified release pin to upgrade.
+  Add `just test-graphyard-image-pin` to require a release tag and digest.
+
 ## [2.76.0] - 2026-11-09
 
 - `paperless_deploy`: upgrade from 3.2.1 to 3.4.2 with the verified official
