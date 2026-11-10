@@ -8,7 +8,8 @@
   (the released 0.1.0 and 0.1.1 binaries contain the yanked 1.54.0). Both
   crates now require `tokio` >= 1.54.1 in their `Cargo.toml`. Exposure was
   low: the race is in `tokio::time::Interval` on the multi-threaded runtime,
-  and both binaries run current-thread runtimes only.
+  and both binaries run current-thread runtimes only. Released from
+  `e317ef13`; the archive sha256s are in the crates' README release tables.
 
 - README: `opsgate_deploy` and `opsgate_ingress_deploy` are marked retired.
   The reference homelab stopped and disabled OpsGate on 2026-11-10 and keeps
