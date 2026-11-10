@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `dns_deploy`: `ddns-update.timer` adds `OnActiveSec=1min` and an
+  `OnCalendar` backstop (`dns_ddns_on_calendar`, default `*:0/5`). With only
+  `OnBootSec`/`OnUnitActiveSec` a timer started after `OnBootSec` whose last
+  run predates the boot stalls at `NEXT n/a`. Byte-identical to ops-deploy's
+  `services/dns` template.
+
 - `rust/` releases for RUSTSEC-2026-0384: `metrics-httpd` 0.1.0 -> 0.1.1 and
   `software-live` 0.1.1 -> 0.1.2 (with its helper `software-live-apt`), the
   same code built with `tokio` 1.54.1

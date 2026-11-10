@@ -220,6 +220,7 @@ Notes:
 | `dns_ddns_update_wildcard` | `true` | Also update `*.subdomain` |
 | `dns_ddns_ttl` | `300` | DNS record TTL in seconds |
 | `dns_ddns_interval` | `"5min"` | Update check interval |
+| `dns_ddns_on_calendar` | `"*:0/5"` | `OnCalendar=` backstop; with `OnActiveSec=1min` and `Persistent=true` the timer keeps firing after a reboot or a late timer restart |
 | `dns_ddns_ipv4_enabled` | `true` | Update IPv4 (A records) |
 | `dns_ddns_ipv6_enabled` | `true` | Update IPv6 (AAAA records) |
 | `dns_ddns_ipv4_source_url` / `dns_ddns_ipv6_source_url` | icanhazip | WAN address detection |
