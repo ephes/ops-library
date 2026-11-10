@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- README: `opsgate_deploy` and `opsgate_ingress_deploy` are marked retired.
+  The reference homelab stopped and disabled OpsGate on 2026-11-10 and keeps
+  its data; both roles stay as library code, unchanged. The stop switch lives
+  in ops-deploy (`OpsGateConfig.opsgate_retired`), not in these roles.
+
 - `gotosocial_deploy`: release 0.22.2 -> 0.22.3 (2026-10-21; Go 1.26.10 for
   CVE-2026-111943 and a fix for remote accounts masquerading as other remote
   accounts in the dereferencer). No migrations and no config changes; both
