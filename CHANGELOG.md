@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- `rust/` releases for RUSTSEC-2026-0384: `metrics-httpd` 0.1.0 -> 0.1.1 and
+  `software-live` 0.1.1 -> 0.1.2 (with its helper `software-live-apt`), the
+  same code built with `tokio` 1.54.1
+  (the released 0.1.0 and 0.1.1 binaries contain the yanked 1.54.0). Both
+  crates now require `tokio` >= 1.54.1 in their `Cargo.toml`. Exposure was
+  low: the race is in `tokio::time::Interval` on the multi-threaded runtime,
+  and both binaries run current-thread runtimes only.
+
 - README: `opsgate_deploy` and `opsgate_ingress_deploy` are marked retired.
   The reference homelab stopped and disabled OpsGate on 2026-11-10 and keeps
   its data; both roles stay as library code, unchanged. The stop switch lives
