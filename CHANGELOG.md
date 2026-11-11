@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+- `echoport_remote_command_guard`: a restore scratch mode for a second key
+  (`--restore-scratch` before the policy; the fact
+  `echoport_remote_command_guard_scratch_forced_command`, impl `python`
+  only). It allows only the commands of a scratch restore, on paths inside
+  `<root>/.restore-scratch-<YYYYMMDDTHHMMSSZ>[-<id>]` as written and as
+  resolved: no `systemctl`, no live path, no `rsync --delete`; uploads and the
+  verify download (`rsync` sender without `--safe-links`, whole scratch dir
+  only) as the root's owner; `echoport-guard-mode` answers `restore-scratch`;
+  `mkdir <scratch dir>` creates it exclusively; `rm -rf -- <scratch dir>` is
+  a new descriptor-based removal (`rmtree`) as the root's owner. The live key's decisions and log lines are unchanged
+  (the Rust port's Layer-1 fixtures only change their guard checksum); the
+  scratch mode logs ` in restore-scratch mode`. The Rust port has no scratch
+  mode yet.
+- `echoport_backup`: `_restore_scratch.py.j2`, included by
+  `marina_staging_backup.py.j2`: `ECHOPORT_ACTION=restore-scratch` restores
+  the archive into the scratch dir under the live root with the scratch key
+  (`marina_staging_backup_scratch_ssh_config`, `_scratch_ssh_key`,
+  `_live_ssh_key`; `ssh -G` must show that key alone before any connection),
+  verifies it against the archive (exact inventory with
+  SHA-256, database checksum, `PRAGMA integrity_check`) and removes it
+  (`ECHOPORT_RESTORE_KEEP_SCRATCH=1` keeps it); no service stop, no live path.
+  Successful backups report `"capabilities": ["restore-scratch"]`. The live
+  restore is unchanged. See the README, "Restore into a scratch destination".
+
 - `homeassistant_deploy`: with `homeassistant_manage_matter_server`, install
   `chip-ota-provider-app` from `home-assistant-libs/matter-linux-ota-provider`
   2025.9.0 (the release python-matter-server's Dockerfile pins) to

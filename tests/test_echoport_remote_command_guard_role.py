@@ -386,7 +386,10 @@ class PlaybookTests(unittest.TestCase):
             "ansible.builtin.copy": {
                 "dest": str(facts),
                 "mode": "0644",
-                "content": "{{ {'command': echoport_remote_command_guard_forced_command | default(None)} | to_json }}",
+                "content": (
+                    "{{ {'command': echoport_remote_command_guard_forced_command | default(None),"
+                    " 'scratch': echoport_remote_command_guard_scratch_forced_command | default(None)} | to_json }}"
+                ),
             },
             "check_mode": False,
             "changed_when": False,
@@ -458,6 +461,21 @@ class PlaybookTests(unittest.TestCase):
         # reports no change with impl python.
         result = self.ok(self.include("forced_command.yml", "python"))
         self.assertEqual(result["facts"]["command"], PYTHON_COMMAND)
+
+    def test_scratch_forced_command_only_with_the_python_guard(self):
+        result = self.ok(self.include("forced_command.yml", "python"))
+        self.assertEqual(
+            result["facts"]["scratch"],
+            PYTHON_COMMAND.replace(" /etc/echoport/", " --restore-scratch /etc/echoport/"),
+        )
+        self.assertTrue(result["facts"]["scratch"].endswith("--restore-scratch /etc/echoport/remote-command-guard.json"))
+        for impl in ("shadow", "rust"):
+            with self.subTest(impl=impl):
+                result = self.ok(
+                    self.include("forced_command.yml", impl, "0.1.0"),
+                    fact_vars={"_echoport_guard_rust_ok": True},
+                )
+                self.assertIsNone(result["facts"]["scratch"])
 
     def test_rust_forced_command_needs_a_checked_binary(self):
         for impl in ("shadow", "rust"):

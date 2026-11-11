@@ -297,6 +297,65 @@ only the commands these templates send are accepted, so:
 The register playbooks must re-run (so macmini gets these versions) before a
 host's key is pinned; the new forms also work unpinned.
 
+## Restore into a scratch destination (`_restore_scratch.py.j2`)
+
+`marina_staging_backup.py.j2` (and ops-deploy's fork of the villakunterbunt
+runner) include `_restore_scratch.py.j2` and handle
+`ECHOPORT_ACTION=restore-scratch` (Echoport: `manage.py restore <target>
+<run> --destination scratch [--keep-scratch]`). It restores the archive next
+to the live data and never touches the live data or the services:
+
+| Context | Meaning |
+|---|---|
+| `ECHOPORT_RESTORE_DESTINATION` | must be `scratch` |
+| `ECHOPORT_RESTORE_SCRATCH_DB_PATH` | the live database path; empty or missing: the runner's own default database path (for a service-owned target, whose Echoport row has no `db_path`); only used as text to find its root and relative path |
+| `ECHOPORT_RESTORE_KEEP_SCRATCH` | `1` keeps the verified copy for inspection, `0` (default) removes it |
+| `ECHOPORT_RESTORE_ID`, `ECHOPORT_KEY`, `ECHOPORT_CHECKSUM`, `ECHOPORT_BUCKET`, `ECHOPORT_RESTORE_OWNER` | as for a restore |
+
+`ECHOPORT_DB_PATH` and `ECHOPORT_SERVICE_NAME` are not read: Echoport sends
+them poisoned with a scratch request, so a runner without this action (which
+runs its backup path for an unknown action) fails at its database path check,
+before any service stop. Every successful backup of these runners reports
+`"capabilities": ["restore-scratch"]` in its `ECHOPORT_RESULT`; Echoport sends
+a scratch request only when the target's newest successful backup carries it.
+
+The steps, all over SSH with the restore scratch key only (`-F
+<prefix>_scratch_ssh_config` plus `IdentityFile=<prefix>_scratch_ssh_key`,
+`IdentitiesOnly`, no agent, no connection sharing; defaults
+`/home/deploy/.ssh/restore-scratch.config` and
+`/home/deploy/.ssh/id_ed25519_restore_scratch`). Both files must be regular
+`0600` files of the runner user, the key must differ from
+`<prefix>_live_ssh_key`, and `ssh -G` with these options must show exactly
+the scratch key as identity, no certificate, no agent and no shared
+connection (identity files add up, so a config naming another key refuses),
+or nothing connects. `ECHOPORT_RESTORE_ID` must be numeric. Then:
+
+1. `echoport-guard-mode` must answer `restore-scratch` (only the guard's
+   `--restore-scratch` mode does), else the run stops;
+2. download, SHA-256 against `ECHOPORT_CHECKSUM` (the run record), safe
+   extraction;
+3. scratch dir `S = <root>/.restore-scratch-<UTC stamp>[-<restore id>]`, where
+   `<root>` is the allowed root holding the database; each live path
+   `<root>/<rel>` (database, manifest `files`) goes to `S/<rel>` (paths
+   checked as text, never resolved on the host; overlapping paths refuse);
+4. `mkdir S` (exclusive: fails when the name exists, so a run never shares or
+   removes a directory it did not create), `chmod 0700 S`;
+5. `scp -t S/<db rel>.tmp`, `mv` into place; `mkdir -p` and `rsync -a --no-D`
+   (no `--delete`) per files dir; `chown` / `chown -R` to the restore owner;
+6. verify: `rsync -a` of the whole `S/` back (symlinks stay symlinks) and an
+   exact comparison with the archive (every entry's path, type, size,
+   SHA-256, link target), the database's SHA-256, `PRAGMA integrity_check`
+   (read-only, on the downloaded copy) and the table count;
+7. `rm -rf -- S` and `test -e S` must fail (unless kept), also after a
+   failure once S exists; a failed cleanup fails the run and names S.
+
+No `systemctl`, no `rm -f -wal/-shm`, no live path. The result carries
+`destination`, `scratch_path`, `kept`, `cleaned` and `verification` (`ok`,
+`archive_sha256`, `db_sha256`, `integrity`, `tables`, `entries`,
+`inventory_sha256`, `differences`). The host's guard must be pinned for the
+scratch key with `echoport_remote_command_guard_scratch_forced_command`
+(see that role's README, "Restore scratch mode").
+
 ## External work dir (`_work_dir.py.j2`)
 
 `templates/_work_dir.py.j2` is the shared fail-closed work dir logic. The

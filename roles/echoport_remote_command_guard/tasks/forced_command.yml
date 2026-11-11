@@ -37,3 +37,15 @@
       {{ echoport_remote_command_guard_policy_path }}
     _echoport_guard_rust_binary: >-
       {{ echoport_remote_command_guard_rust_install_root }}/{{ echoport_remote_command_guard_rust_version }}/echoport-command-guard
+
+# The forced command for the restore scratch key (docs: README "Restore
+# scratch mode"): the same guard and policy with --restore-scratch, which
+# allows only a scratch restore's commands inside <root>/.restore-scratch-*.
+# Only the Python guard has the mode; with shadow or rust the fact stays
+# undefined, so a consumer cannot render a scratch key line without it.
+- name: forced_command | Publish the restore scratch forced command
+  ansible.builtin.set_fact:
+    echoport_remote_command_guard_scratch_forced_command: >-
+      {{ echoport_remote_command_guard_python }} -I {{ echoport_remote_command_guard_path }}
+      --restore-scratch {{ echoport_remote_command_guard_policy_path }}
+  when: echoport_remote_command_guard_impl == 'python'
