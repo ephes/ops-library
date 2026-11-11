@@ -308,7 +308,7 @@ to the live data and never touches the live data or the services:
 | Context | Meaning |
 |---|---|
 | `ECHOPORT_RESTORE_DESTINATION` | must be `scratch` |
-| `ECHOPORT_RESTORE_SCRATCH_DB_PATH` | the live database path; only used as text to find its root and relative path |
+| `ECHOPORT_RESTORE_SCRATCH_DB_PATH` | the live database path; empty or missing: the runner's own default database path (for a service-owned target, whose Echoport row has no `db_path`); only used as text to find its root and relative path |
 | `ECHOPORT_RESTORE_KEEP_SCRATCH` | `1` keeps the verified copy for inspection, `0` (default) removes it |
 | `ECHOPORT_RESTORE_ID`, `ECHOPORT_KEY`, `ECHOPORT_CHECKSUM`, `ECHOPORT_BUCKET`, `ECHOPORT_RESTORE_OWNER` | as for a restore |
 

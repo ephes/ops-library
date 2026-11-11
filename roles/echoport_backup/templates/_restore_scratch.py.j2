@@ -419,8 +419,12 @@ def restore_scratch(
 
 
 def scratch_restore_from_context(cenv: dict, remote_host: str, remote_user: str, default_restore_owner: str,
-                                 default_bucket: str, open_work_dir) -> int:
-    """The restore-scratch action: read its context, refuse anything unclear."""
+                                 default_bucket: str, open_work_dir, default_db_path: str = "") -> int:
+    """The restore-scratch action: read its context, refuse anything unclear.
+
+    The live database path comes from ECHOPORT_RESTORE_SCRATCH_DB_PATH, or, for
+    a target that leaves its paths to the runner (empty db_path), from the
+    runner's own default, as its live restore does."""
     def refuse(message: str) -> int:
         emit_step("init", "failure", message)
         _emit_scratch_result({"success": False, "destination": "scratch", "error": message})
@@ -432,7 +436,7 @@ def scratch_restore_from_context(cenv: dict, remote_host: str, remote_user: str,
     keep_raw = cenv.get("ECHOPORT_RESTORE_KEEP_SCRATCH", "0")
     if keep_raw not in ("0", "1"):
         return refuse(f"ECHOPORT_RESTORE_KEEP_SCRATCH must be 0 or 1, got {keep_raw!r}")
-    db_path = cenv.get("ECHOPORT_RESTORE_SCRATCH_DB_PATH", "")
+    db_path = cenv.get("ECHOPORT_RESTORE_SCRATCH_DB_PATH", "") or default_db_path
     key = cenv.get("ECHOPORT_KEY", "")
     checksum = cenv.get("ECHOPORT_CHECKSUM", "")
     restore_id = cenv.get("ECHOPORT_RESTORE_ID", "")
@@ -440,7 +444,10 @@ def scratch_restore_from_context(cenv: dict, remote_host: str, remote_user: str,
         return refuse("restore-scratch needs ECHOPORT_RESTORE_SCRATCH_DB_PATH, ECHOPORT_KEY and ECHOPORT_CHECKSUM")
     if not _SCRATCH_ID_RE.match(restore_id):
         return refuse(f"restore-scratch needs a numeric ECHOPORT_RESTORE_ID, got {restore_id!r}")
-    work_dir = open_work_dir()
+    try:
+        work_dir = open_work_dir()
+    except Exception as e:  # e.g. mkdtemp failing: still a scratch-shaped result
+        return refuse(f"cannot create the work directory: {e}")
     if work_dir is None:
         return 1
     print(f"  Scratch restore of {key} (database {db_path}), keep={keep_raw}", file=sys.stderr)

@@ -1031,7 +1031,9 @@ def main() -> int:
         return scratch_restore_from_context(
             cenv, remote_host, remote_user,
             "{{ marina_staging_backup_restore_owner | default('marina:marina') }}", DEFAULT_BUCKET,
-            lambda: open_run_dir("marina-restore-", "Restore"),
+            # Raises on a refused work dir (the include reports it scratch-shaped).
+            lambda: create_run_dir("marina-restore-"),
+            "{{ marina_staging_backup_default_db_path | default('/home/marina/site/db.sqlite3') }}",
         )
     db_path = cenv.get("ECHOPORT_DB_PATH", "{{ marina_staging_backup_default_db_path | default('/home/marina/site/db.sqlite3') }}")
     backup_files_str = cenv.get("ECHOPORT_BACKUP_FILES", "")

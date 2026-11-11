@@ -547,6 +547,23 @@ class MarinaScratchRestore(unittest.TestCase):
             for option in ("IdentitiesOnly=yes", "IdentityAgent=none", "ControlMaster=no", "ControlPath=none"):
                 self.assertIn(option, argv)
 
+    def test_an_empty_db_path_uses_the_runners_default(self) -> None:
+        runner = render_runner(
+            "marina_staging_backup.py.j2",
+            marina_staging_backup_default_host="staging.wersdoerfer.de",
+            marina_staging_backup_allowed_roots=[f"{self.root}/"],
+            marina_staging_backup_default_db_path=str(self.live_db),
+            marina_staging_backup_restore_owner=self.owner,
+            marina_staging_backup_scratch_ssh_config=str(self.ssh_dir / "restore-scratch.config"),
+            marina_staging_backup_scratch_ssh_key=str(self.ssh_dir / "id_scratch"),
+            marina_staging_backup_live_ssh_key=str(self.ssh_dir / "id_live"),
+        )
+        self.runner = runner
+        host = ScratchHost(self, self.root, self.policy_data, self.archive)
+        rc, result = self.run_runner(host, self.context(ECHOPORT_RESTORE_SCRATCH_DB_PATH=""))
+        self.assertEqual(rc, 0, result)
+        self.assertTrue(result["verification"]["ok"])
+
     def test_keep_scratch_leaves_the_verified_copy(self) -> None:
         host = ScratchHost(self, self.root, self.policy_data, self.archive)
         rc, result = self.run_runner(host, self.context(ECHOPORT_RESTORE_KEEP_SCRATCH="1"))
@@ -654,11 +671,28 @@ class MarinaScratchRestore(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("unexpected error: AttributeError", result["error"])
 
+    def test_a_refused_work_dir_reports_a_scratch_result(self) -> None:
+        host = ScratchHost(self, self.root, self.policy_data, self.archive)
+        with (
+            mock.patch.object(self.runner, "read_config_file", return_value=self.context()),
+            mock.patch.object(self.runner.subprocess, "run", side_effect=host.run),
+            mock.patch.object(self.runner, "create_run_dir", side_effect=RuntimeError("not on the work mount")),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(self.runner.main(), 1)
+        results = [line for line in out.getvalue().splitlines() if "ECHOPORT_RESULT:" in line]
+        self.assertEqual(len(results), 1)
+        result = json.loads(json.loads(results[0])["message"].split("ECHOPORT_RESULT:", 1)[1])
+        self.assertEqual(result["destination"], "scratch")
+        self.assertIn("cannot create the work directory: not on the work mount", result["error"])
+        self.assertEqual(host.commands, [])
+
     def test_context_refusals(self) -> None:
         for overrides, reason in (
             ({"ECHOPORT_RESTORE_DESTINATION": "live"}, "ECHOPORT_RESTORE_DESTINATION=scratch"),
             ({"ECHOPORT_RESTORE_KEEP_SCRATCH": "yes"}, "must be 0 or 1"),
-            ({"ECHOPORT_RESTORE_SCRATCH_DB_PATH": ""}, "needs ECHOPORT_RESTORE_SCRATCH_DB_PATH"),
+            ({"ECHOPORT_KEY": ""}, "needs ECHOPORT_RESTORE_SCRATCH_DB_PATH"),
             ({"ECHOPORT_RESTORE_SCRATCH_DB_PATH": "/home/other/db.sqlite3"}, "not below an allowed root"),
             ({"ECHOPORT_RESTORE_SCRATCH_DB_PATH": f"{self.root}/../x/db.sqlite3"}, "not a plain absolute path"),
             ({"ECHOPORT_CHECKSUM": "0" * 64}, "Checksum mismatch"),
