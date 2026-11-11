@@ -52,6 +52,7 @@ by this bridge. `homeassistant_llama_cpp_canary_text` defaults to a request for 
 - Stops Home Assistant and Matter server before replacing virtualenvs on Python changes, missing pip, force reinstalls, or legacy Matter package cleanup.
 - Templated systemd service and Traefik dynamic configuration (single-router layout matching production).
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration (`ws://localhost:5580/ws`).
+- With the Matter server, installs the pinned, sha256-checked `chip-ota-provider-app` (root:root 0755, default `/usr/local/bin`). python-matter-server starts it from `PATH` when Home Assistant installs a Matter device firmware update; without it the update fails with `FileNotFoundError: 'chip-ota-provider-app'`. A matching installed file is kept and the Matter server is not restarted.
 - Validates the Matter server after Home Assistant starts so Home Assistant integration requirements cannot leave the shared virtualenv with incompatible Matter server files.
 - Optional Matter integration provisioning via the Home Assistant config entry API.
 - Optional OpenThread Border Router (OTBR) integration provisioning via the Home Assistant config entry API.
@@ -101,6 +102,10 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_matter_server_log_level` | `info` | Log level passed to the Matter server |
 | `homeassistant_matter_server_log_file` | `{{ homeassistant_logs_path }}/matter-server.log` | Optional log file path |
 | `homeassistant_matter_server_restart_on_change` | `true` | Restart the Matter server when templates or packages change |
+| `homeassistant_matter_server_ota_provider_version` | `2025.9.0` | `home-assistant-libs/matter-linux-ota-provider` release (the one python-matter-server's Dockerfile pins). Change it together with the checksums |
+| `homeassistant_matter_server_ota_provider_url_template` | GitHub release asset `chip-ota-provider-app-{arch}` | Download URL; `{version}` and `{arch}` (`x86-64`, `aarch64`) are filled in |
+| `homeassistant_matter_server_ota_provider_checksums` | sha256 for `x86-64` and `aarch64` | Expected sha256 per release asset architecture; a host without one fails |
+| `homeassistant_matter_server_ota_provider_path` | `/usr/local/bin/chip-ota-provider-app` | Install path: the name `chip-ota-provider-app` in `/usr/local/bin`, `/usr/bin` or `/bin` (on the Matter unit's `PATH`); other paths are refused |
 | `homeassistant_matter_server_chip_factory_dir` | `/data` | Directory for Matter SDK factory data (`chip_factory.ini`) |
 | `homeassistant_manage_matter_integration` | `false` | Provision the Matter config entry via the Home Assistant API |
 | `homeassistant_matter_integration_url` | `ws://localhost:5580/ws` | WebSocket URL used for the Matter integration |
