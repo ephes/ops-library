@@ -25,6 +25,22 @@ GoToSocial host before the runner. A retry writes a new file
 (`retry<N>-sqlite.db`) in the same private temp dir. The heis and
 villakunterbunt runners keep their own snapshot code.
 
+The GoToSocial runner archives the media of the local accounts only: it reads
+the IDs of the accounts without a domain from the snapshot (refusing anything
+that is not a ULID) and rsyncs `storage/<account id>/` for each one that has a
+directory (the instance account's directory holds the custom emoji). The rest
+of `storage/` is GoToSocial's cache of remote media, which it fetches again on
+demand and prunes after `media-remote-cache-duration`
+(`gotosocial_media_remote_cache_duration`); on a small instance it is
+nearly all of the storage, and archiving it made every nightly archive ~1.5 GB.
+The manifest records the copied accounts and `"remote_media_cache":
+"excluded"`. After a restore the database still marks the remote media cached
+at backup time as cached. The restore starts the service again, and its
+finish message says what to do: stop the service, run
+`gotosocial-admin media prune all --dry-run=false` (it fixes those cache
+states) and start it. Archives taken before this change
+still contain the whole storage and restore as before.
+
 For media backup services (for example homepage/python-podcast templates in this role), object data is
 stored in a rolling prefix (`<service>/current/objects`) while each run still writes a per-run manifest
 under `ECHOPORT_KEY_PREFIX`.
