@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- `homeassistant_deploy`: with `homeassistant_manage_matter_server`, install
+  `chip-ota-provider-app` from `home-assistant-libs/matter-linux-ota-provider`
+  2025.9.0 (the release python-matter-server's Dockerfile pins) to
+  `/usr/local/bin`, root:root 0755, checked against a sha256 per architecture
+  (`x86-64`, `aarch64`). python-matter-server starts it from `PATH` for device
+  firmware updates; native installs failed with `FileNotFoundError`. New
+  variables `homeassistant_matter_server_ota_provider_{version,url_template,checksums,path}`.
+  A file with the pinned checksum is kept; nothing restarts. `homeassistant_remove`
+  deletes it (`homeassistant_remove_matter_ota_provider`, default `true`).
+  Same behavior as ops-deploy `services.homeassistant`.
+
 - `dns_deploy`: `ddns-update.timer` adds `OnActiveSec=1min` and an
   `OnCalendar` backstop (`dns_ddns_on_calendar`, default `*:0/5`). With only
   `OnBootSec`/`OnUnitActiveSec` a timer started after `OnBootSec` whose last
