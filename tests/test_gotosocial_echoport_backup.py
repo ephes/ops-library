@@ -33,6 +33,13 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ROOT / "roles" / "echoport_backup" / "templates"
 TEMPLATE = "gotosocial_backup.py.j2"
 LAYOUT = "fedi.example.org example.org"
+# GoToSocial account IDs are ULIDs; storage/<account id>/ holds an account's media.
+LOCAL = "01J16HJ2BVC12KV65D4GMEW7TX"
+INSTANCE = "01Q60C0R8JT1P5VSHTKX72XJXA"
+REMOTE = "01M6ZKSEE5AZJS73KCZSKCM89N"
+LOCAL_IMG = f"{LOCAL}/attachment/original/img.png"
+EMOJI = f"{INSTANCE}/emoji/original/blob.png"
+REMOTE_IMG = f"{REMOTE}/attachment/original/cached.jpg"
 
 FAKE_BIN = {
     "runuser": """#!/bin/bash
@@ -83,9 +90,10 @@ def make_db(path: Path, statuses: int) -> None:
     # Same columns GoToSocial 0.22 uses: there is no statuses.local, a local
     # status is one whose account has no domain.
     con.execute("CREATE TABLE statuses (id TEXT PRIMARY KEY, account_id TEXT NOT NULL)")
-    con.executemany("INSERT INTO accounts VALUES (?, ?)", [("a1", None), ("a2", "mastodon.example")])
-    con.executemany("INSERT INTO statuses VALUES (?, 'a1')", [(f"s{i}",) for i in range(statuses)])
-    con.execute("INSERT INTO statuses VALUES ('remote', 'a2')")
+    con.executemany("INSERT INTO accounts VALUES (?, ?)",
+                    [(LOCAL, None), (INSTANCE, None), (REMOTE, "mastodon.example")])
+    con.executemany("INSERT INTO statuses VALUES (?, ?)", [(f"s{i}", LOCAL) for i in range(statuses)])
+    con.execute("INSERT INTO statuses VALUES ('remote', ?)", (REMOTE,))
     con.commit()
     con.close()
 
@@ -93,7 +101,7 @@ def make_db(path: Path, statuses: int) -> None:
 def count_statuses(path: Path) -> int:
     con = sqlite3.connect(path)
     try:
-        return con.execute("SELECT count(*) FROM statuses WHERE account_id = 'a1'").fetchone()[0]
+        return con.execute("SELECT count(*) FROM statuses WHERE account_id = ?", (LOCAL,)).fetchone()[0]
     finally:
         con.close()
 
@@ -109,10 +117,12 @@ class Harness:
         self.marker = self.data / ".ops-domain-layout"
         self.tmp_parent = self.host / "var/tmp"
         self.bin = root / "bin"
-        for d in (self.storage / "acct1/attachment/original", self.config.parent, self.tmp_parent, self.bin, root / "runner-tmp"):
+        for d in (self.storage, self.config.parent, self.tmp_parent, self.bin, root / "runner-tmp"):
             d.mkdir(parents=True, exist_ok=True)
         make_db(self.db, statuses=3)
-        (self.storage / "acct1/attachment/original/img.png").write_bytes(b"\x89PNG fake")
+        for name, body in ((LOCAL_IMG, b"\x89PNG fake"), (EMOJI, b"\x89PNG emoji"), (REMOTE_IMG, b"remote cache")):
+            (self.storage / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.storage / name).write_bytes(body)
         self.config.write_text("host: fedi.example.org\n")
         self.marker.write_text(LAYOUT + "\n")
         (root / "service.running").touch()
@@ -248,11 +258,15 @@ class GoToSocialRunnerTest(unittest.TestCase):
             names = set(tar.getnames())
             manifest = json.load(tar.extractfile("manifest.json"))
         self.assertTrue({"sqlite.db", "config.yaml", "domain-layout", "manifest.json", "manifest.sha256",
-                         "storage/acct1/attachment/original/img.png"} <= names)
+                         f"storage/{LOCAL_IMG}", f"storage/{EMOJI}"} <= names)
+        # The remote media cache stays out: GoToSocial fetches it again on demand.
+        self.assertFalse(any(n.startswith(f"storage/{REMOTE}") for n in names), names)
         self.assertEqual(manifest["domain_layout"], LAYOUT)
-        self.assertEqual(manifest["database"]["local_accounts"], 1)
         self.assertEqual(manifest["database"]["local_statuses"], 3)
-        self.assertEqual(manifest["storage"]["files"], 1)
+        self.assertEqual(manifest["storage"]["files"], 2)
+        self.assertEqual(manifest["storage"]["accounts"], sorted([LOCAL, INSTANCE]))
+        self.assertEqual(manifest["storage"]["remote_media_cache"], "excluded")
+        self.assertEqual(manifest["database"]["local_accounts"], 2)
         # No downtime and no leftovers on the host.
         self.assertEqual(self.h.systemctl_calls(), [])
         self.assertEqual(list(self.h.tmp_parent.iterdir()), [])
@@ -267,7 +281,7 @@ class GoToSocialRunnerTest(unittest.TestCase):
         writer = sqlite3.connect(self.h.db, isolation_level=None, check_same_thread=False)
         self.addCleanup(writer.close)
         writer.execute("BEGIN EXCLUSIVE")
-        writer.execute("INSERT INTO statuses VALUES ('during-backup', 'a1')")
+        writer.execute("INSERT INTO statuses VALUES ('during-backup', ?)", (LOCAL,))
         return writer
 
     def test_snapshot_waits_for_a_committing_writer(self) -> None:
@@ -301,6 +315,24 @@ class GoToSocialRunnerTest(unittest.TestCase):
         self.assertEqual(len(set(targets)), 3, targets)
         self.assertEqual(list(self.h.tmp_parent.iterdir()), [])
 
+    def test_backup_skips_a_local_account_without_media(self) -> None:
+        shutil.rmtree(self.h.storage / INSTANCE)
+        res = self.backup()
+        with tarfile.open(self.h.root / "bucket" / "backups" / res["key"]) as tar:
+            manifest = json.load(tar.extractfile("manifest.json"))
+        self.assertEqual(manifest["storage"]["accounts"], [LOCAL])
+        self.assertEqual(manifest["storage"]["files"], 1)
+
+    def test_backup_refuses_a_local_account_id_that_is_not_a_ulid(self) -> None:
+        con = sqlite3.connect(self.h.db)
+        con.execute("INSERT INTO accounts VALUES ('../../etc', NULL)")
+        con.commit()
+        con.close()
+        rc, events = self.h.run({"ECHOPORT_ACTION": "backup", "ECHOPORT_KEY_PREFIX": "gotosocial/x"})
+        self.assertEqual(rc, 1)
+        self.assertIn("unexpected local account id", self.h.result(events)["error"])
+        self.assertFalse(any(c[:1] == ["test"] and "etc" in c[-1] for c in self.h.remote_commands))
+
     def test_backup_refuses_foreign_key_prefix(self) -> None:
         rc, events = self.h.run({"ECHOPORT_ACTION": "backup", "ECHOPORT_KEY_PREFIX": "vaultwarden/x"})
         self.assertEqual(rc, 1)
@@ -315,11 +347,16 @@ class GoToSocialRunnerTest(unittest.TestCase):
                                  "ECHOPORT_CHECKSUM": res["checksum_sha256"]})
         self.assertEqual(rc, 0, events)
         self.assertEqual(count_statuses(self.h.db), 3)
-        self.assertTrue((self.h.storage / "acct1/attachment/original/img.png").exists())
+        self.assertTrue((self.h.storage / LOCAL_IMG).exists())
+        self.assertTrue((self.h.storage / EMOJI).exists())
+        # The live cache was moved aside with the rest of the storage.
+        self.assertFalse((self.h.storage / REMOTE_IMG).exists())
         asides = sorted(p.name for p in self.h.data.iterdir() if "pre-restore" in p.name)
         self.assertTrue(any(n.startswith("sqlite.db.pre-restore-") for n in asides), asides)
         self.assertTrue(any(n.startswith("storage.pre-restore-") for n in asides), asides)
         self.assertEqual(self.h.systemctl_calls(), ["stop gotosocial", "start gotosocial"])
+        finish = [e for e in events if e.get("event") == "finish"][-1]["message"]
+        self.assertIn("gotosocial-admin media prune all --dry-run=false", finish)
 
     def test_restore_refuses_other_layout_before_stopping(self) -> None:
         res = self.backup()

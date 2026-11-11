@@ -13,6 +13,20 @@
   deletes it (`homeassistant_remove_matter_ota_provider`, default `true`).
   Same behavior as ops-deploy `services.homeassistant`.
 
+- `echoport_backup`: the GoToSocial runner (`gotosocial_backup.py.j2`) archives
+  only the media of the local accounts (`storage/<account id>/` for each
+  account without a domain, read from the snapshot and checked as ULIDs)
+  instead of the whole `storage/`. The rest is GoToSocial's remote media
+  cache, which it re-fetches on demand: on the reference instance 1.5 of
+  1.6 GB per nightly archive, 51 GiB at 30 days' retention. The manifest
+  records the copied accounts and `remote_media_cache: excluded`; restores of
+  older archives are unchanged. The restore starts the service as before;
+  its finish message then asks to stop it, run
+  `gotosocial-admin media prune all --dry-run=false` (which fixes the cache
+  states of the remote media the archive no longer carries) and start it. The
+  guard needs no new rule (`test -e` and the rsync download inside the
+  `/var/lib/gotosocial` root).
+
 - `dns_deploy`: `ddns-update.timer` adds `OnActiveSec=1min` and an
   `OnCalendar` backstop (`dns_ddns_on_calendar`, default `*:0/5`). With only
   `OnBootSec`/`OnUnitActiveSec` a timer started after `OnBootSec` whose last

@@ -288,6 +288,9 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
             "scp -f /etc/gotosocial/config.yaml",
             "scp -f /var/lib/gotosocial/.ops-domain-layout",
             f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/",
+            # Backups copy only the local accounts' media directories.
+            "test -e /var/lib/gotosocial/storage/01J16HJ2BVC12KV65D4GMEW7TX",
+            f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/01J16HJ2BVC12KV65D4GMEW7TX/",
             f"rm -rf -- {tmp}",
             "systemctl stop gotosocial",
             "mv /var/lib/gotosocial/sqlite.db /var/lib/gotosocial/sqlite.db.pre-restore-20261015T020000Z",
@@ -1280,7 +1283,9 @@ class RunnerCommandsAreAllowlisted(unittest.TestCase):
         for recorded in (backup, host.commands):
             self.assert_all_allowed(types.SimpleNamespace(commands=recorded), {"wersdoerfer.de"})
         sent = [c for _, c in backup + host.commands]
-        self.assertIn(f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/", sent)
+        # Only the local accounts' media; the remote media cache stays out.
+        self.assertIn(f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/{GoToSocialHost.LOCAL_ACCOUNT}/", sent)
+        self.assertNotIn(f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/", sent)
         self.assertIn(f"{RSYNC_UPLOAD_DELETE} /var/lib/gotosocial/storage/", sent)
         self.assertTrue(any(c.startswith("cat /var/tmp/gotosocial-echoport.") for c in sent))
         self.assertTrue(any(c.startswith("mv /var/lib/gotosocial/storage ") for c in sent))
@@ -1291,6 +1296,7 @@ class GoToSocialHost:
 
     TMP = "/var/tmp/gotosocial-echoport.Ab12Cd"
     LAYOUT = "fedi.example.org example.org\n"
+    LOCAL_ACCOUNT = "01J16HJ2BVC12KV65D4GMEW7TX"
 
     def __init__(self, work: Path) -> None:
         self.work = work
@@ -1335,6 +1341,8 @@ class GoToSocialHost:
                 (local / "a.png").write_bytes(b"png")
             return subprocess.CompletedProcess(args, 0, "", "")
         if args[0] == "sqlite3":
+            if args[-1].startswith("SELECT id FROM accounts"):
+                return subprocess.CompletedProcess(args, 0, self.LOCAL_ACCOUNT + "\n", "")
             return subprocess.CompletedProcess(args, 0, "ok\n" if "PRAGMA" in args[-1] else "1\n", "")
         if args[1] == "cp":
             source, target = args[-2], args[-1]
