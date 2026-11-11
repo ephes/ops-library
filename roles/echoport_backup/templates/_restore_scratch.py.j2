@@ -10,9 +10,10 @@
 # host. See the role README, "Restore into a scratch destination".
 #
 # The including template defines SSH_OPTS, ALLOWED_ROOTS, MC_PATH,
-# MINIO_ALIAS, SCRATCH_SSH_CONFIG, SCRATCH_SSH_KEY and LIVE_SSH_KEY, and the
+# MINIO_ALIAS, SCRATCH_SSH_CONFIG, SCRATCH_SSH_KEY and LIVE_SSH_KEY, the
 # helpers emit_step, finish_stdout, calculate_sha256, safe_extract_tarball and
-# _validate_ssh_identifier.
+# _validate_ssh_identifier, and includes _sqlite_backup.py.j2 (its integrity
+# check verifies the restored copy).
 import hashlib
 import re as _scratch_re
 import sqlite3 as _scratch_sqlite3
@@ -233,14 +234,15 @@ def _scratch_inventory_digest(entries: dict) -> str:
 
 
 def scratch_sqlite_check(path: Path) -> tuple:
-    """PRAGMA integrity_check (read-only, on the downloaded copy) and the table count."""
+    """The shared integrity check (_sqlite_backup.py.j2, exactly `ok`) on the
+    downloaded copy, and its table count (read-only)."""
+    error = sqlite_integrity_error(path)
     connection = _scratch_sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
     try:
-        rows = [row[0] for row in connection.execute("PRAGMA integrity_check;").fetchall()]
         tables = connection.execute("SELECT count(*) FROM sqlite_master WHERE type = 'table';").fetchone()[0]
     finally:
         connection.close()
-    return ("ok" if rows == ["ok"] else "; ".join(str(r) for r in rows[:5])), tables
+    return ("ok" if error is None else error), tables
 
 
 def _emit_scratch_result(payload: dict) -> None:

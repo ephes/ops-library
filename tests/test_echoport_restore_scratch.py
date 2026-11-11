@@ -333,6 +333,9 @@ def fingerprint(root: Path) -> dict:
     return result
 
 
+_REAL_RUN = subprocess.run  # the runner's subprocess.run is patched below
+
+
 class ScratchHost:
     """Staging as the scratch key sees it: each command is decided by the guard
     in --restore-scratch mode and carried out on a temporary root."""
@@ -379,6 +382,8 @@ class ScratchHost:
 
     def run(self, args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
         assert isinstance(args, list), args
+        if args[0] == "sqlite3":  # the shared integrity check on the downloaded copy
+            return _REAL_RUN(args, **kwargs)
         if args[1] == "cp":  # mc cp minio/<bucket>/<key> <local>
             shutil.copy(self.archive, args[3])
             return subprocess.CompletedProcess(args, 0, "", "")
