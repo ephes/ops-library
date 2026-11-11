@@ -308,7 +308,7 @@ test-heis-production-backup: venv
 # the role's impl selector and confirm_live.yml (localhost ansible-playbook runs).
 test-echoport-remote-command-guard: venv
     @echo "Testing the Echoport remote command guard..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard tests.test_echoport_command_guard_fixtures tests.test_echoport_remote_command_guard_role
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard tests.test_echoport_command_guard_fixtures tests.test_echoport_remote_command_guard_role tests.test_echoport_restore_scratch
 
 # The guard role's molecule scenarios (rust/echoport-command-guard/PLAN.md 6.2):
 # impl python, shadow and rust on Ubuntu 24.04 and Debian 13 against a real

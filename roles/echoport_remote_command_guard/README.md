@@ -25,6 +25,10 @@ and paths named in a per-host policy.
   `shadow` and `rust`);
 - with `echoport_remote_command_guard_rust_version` set, installs the Rust
   port of the guard as well (below).
+- sets the fact `echoport_remote_command_guard_scratch_forced_command` for a
+  second, optional key: the same command with `--restore-scratch` before the
+  policy (impl `python` only; undefined otherwise), see [Restore scratch
+  mode](#restore-scratch-mode).
 
 The role does not touch `authorized_keys`. The consumer pins the key, for
 example with `ssh_authorized_keys_manage`:
@@ -166,6 +170,47 @@ Accepted risk: restores run `pg_restore` in a PostgreSQL superuser session
 Not supported: the opt-in python-podcast private media *restore*
 (`--include-private-media`), whose installer script cannot be matched
 exactly. Restore private media through ops-control instead.
+
+## Restore scratch mode
+
+A second key (the runners' restore scratch key) can be pinned with
+`command="<echoport_remote_command_guard_scratch_forced_command>"`, that is
+`<python> -I <guard> --restore-scratch <policy>`. The policy is the same; the
+mode allows only what `echoport_backup`'s `restore-scratch` action sends
+(`templates/_restore_scratch.py.j2`), and only on paths inside a scratch
+directory `<root>/.restore-scratch-<YYYYMMDDTHHMMSSZ>[-<1..12 digits>]` of a
+`path_roots` entry. A path must name that directory (or something below it)
+as written, with safe characters and no `.`/`..`, and `realpath` must return
+the path itself, so no symlink on the way can lead out of it:
+
+| Shape | Runs as |
+|---|---|
+| `echoport-guard-mode` | the guard prints `restore-scratch` (the live key's guard refuses it; the runner sends it first and stops without that answer) |
+| `test -e\|-d\|-f <p>`, `readlink -f <p>` | root |
+| `mkdir <scratch dir>` (exclusive: fails when it exists), `mkdir -p <p>`, `scp -t <p>.tmp` (or `.restore-tmp`) | the root's owner |
+| `rsync --server -logtpre.iLsfxCIvu . <p>/` (upload, never `--delete`) | the root's owner |
+| `rsync --server --sender -logDtpre.iLsfxCIvu . <scratch dir>/` (verify download of the whole scratch dir, without `--safe-links`, so nothing in it is filtered) | the root's owner |
+| `chmod 0600\|0700 <p>`, `mv <p>.tmp <p>` | the guard, on descriptors, as the root's owner |
+| `chown [-R] <root owner> <p>` | the guard, on descriptors, as root |
+| `rm -rf -- <scratch dir>` | the guard, on descriptors, as the root's owner (`rmtree`) |
+
+Everything else is refused in this mode, with ` in restore-scratch mode` in
+its log line: `systemctl`, `rm -f -wal/-shm`, `scp -f`, the `--delete` and
+`--safe-links` rsync forms, PostgreSQL, sqlite3, every path outside a scratch
+directory (the live data, the root itself), `mv` other than `<p>.tmp -> <p>`.
+The live key's decisions and log lines are unchanged.
+
+`rmtree` walks to the scratch directory's parent from `/` without following a
+symlink, opens the directory with `O_NOFOLLOW`, removes its tree one directory
+descriptor per level (a symlink is unlinked, never entered; a directory on
+another device is refused; a directory without owner `rwx` gets it first) and
+then the directory itself. A missing directory is fine. It runs as the root's
+owner, so it can only remove what that user could remove anyway.
+
+The mode protects the live data from a scratch restore (a runner bug or a
+wrong context), not from the root's owner, who can change the live data
+anyway. The Rust port has no scratch mode yet: with impl `shadow` or `rust`
+the scratch fact is undefined and no scratch key may be pinned.
 
 ## Variables
 
