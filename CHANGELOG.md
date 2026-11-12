@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- `daybook_operations_api_backup`: the bridge (`files/echoport_runner.py`)
+  gives the upload and the verify download their own limit: 300 seconds per
+  attempt, up to three attempts 30 seconds apart, within one shared 900-second
+  budget (the backup, validate and source-copy commands keep 240 seconds, so a
+  run stays below Echoport's 1800 seconds). Only a timeout or a failed `mc`
+  exit is retried, never an interrupt. New result categories `upload_timeout`,
+  `upload_failed`, `verify_timeout`, `verify_failed` and
+  `transfer_budget_exhausted`. Background: on 2026-11-05 the object store
+  proxied the HEAD of each new key to the unreachable replica, and two hourly
+  runs failed with `backup_command_timeout`. See the README.
+
 - `minio_backup`: metadata-only is now the default
   (`minio_backup_include_data: false`); a full cold copy of the object data
   needs `minio_backup_include_data: true`. That full scope now refuses a
@@ -10,6 +21,7 @@
   also with `minio_backup_disk_check_enabled: false`. Callers that relied on
   the old full default must set `minio_backup_include_data: true` and a backup
   root on a separate mount.
+
 - `echoport_remote_command_guard`: a restore scratch mode for a second key
   (`--restore-scratch` before the policy; the fact
   `echoport_remote_command_guard_scratch_forced_command`, impl `python`
