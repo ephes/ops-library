@@ -1,4 +1,12 @@
 ---
+# Redaction applies to the metadata scope only: a full restore puts the env
+# file back, so a full snapshot always keeps it (cold_backup.yml imports this
+# file too).
+- name: Decide whether the env file copy is redacted
+  ansible.builtin.set_fact:
+    minio_backup_env_redacted: >-
+      {{ (minio_backup_redact_env_secrets | bool) and not (minio_backup_include_data | bool) }}
+
 - name: Copy MinIO environment file
   ansible.builtin.copy:
     src: "{{ minio_env_file }}"
@@ -7,6 +15,28 @@
     owner: "{{ minio_backup_owner }}"
     group: "{{ minio_backup_group }}"
     mode: "{{ minio_backup_file_mode }}"
+  when: not minio_backup_env_redacted
+
+# The copy keeps every setting but replaces the values of *PASSWORD*,
+# *SECRET* and *TOKEN* keys; the deployment secrets hold the real ones.
+- name: Copy MinIO environment file with secret values redacted
+  when: minio_backup_env_redacted
+  block:
+    - name: Write redacted MinIO environment file
+      ansible.builtin.script:
+        cmd: >-
+          redact_backup_secrets.py env
+          {{ minio_env_file | quote }}
+          {{ (minio_backup_config_dir ~ '/minio.env') | quote }}
+        executable: "{{ minio_backup_python }}"
+      changed_when: true
+
+    - name: Set ownership and mode of the redacted environment file
+      ansible.builtin.file:
+        path: "{{ minio_backup_config_dir }}/minio.env"
+        owner: "{{ minio_backup_owner }}"
+        group: "{{ minio_backup_group }}"
+        mode: "{{ minio_backup_file_mode }}"
 
 - name: Copy MinIO systemd unit
   ansible.builtin.copy:

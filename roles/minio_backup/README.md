@@ -23,6 +23,16 @@ need the dedicated MinIO backup workflow.
 - Writes `metadata.yml`, generates a checksum manifest (configurable), and produces a `tar.gz` (or `tar.zst`) archive (mode `0600`) that can be fetched back to the control host.
 - With `minio_backup_keep_count: N` (> 0), keeps the N newest `<prefix>-<timestamp>` snapshots (directory and archive) directly under `minio_backup_root` and deletes older ones of the same prefix. Other prefixes and unrelated files are left alone.
 
+Credentials the restore does not need are removed before anything is stored:
+
+- `minio_backup_redact_target_secrets: true` (default) drops every `<bucket>/bucket-targets.json` from the bucket export. MinIO writes each remote target there (XML despite the name) with its access *and secret* key; a replication target set up with root credentials puts the root password in the archive. Without the file a metadata import leaves existing remote targets alone; on a rebuilt MinIO re-run your replication setup to recreate them. An emptied secret is not an option: importing a target without credentials could replace a working one.
+- `minio_backup_redact_env_secrets` (default `true` in metadata scope, `false` in full scope) writes the env file copy with the values of `*PASSWORD*`, `*SECRET*` and `*TOKEN*` keys replaced by `REDACTED-BY-MINIO-BACKUP`. `minio_restore` refuses to put such a file back; write the env file from your deployment secrets instead.
+- The env mode refuses backslash continuations and multi-line quoted values rather than guess where a secret ends.
+- `minio_backup_verify_secret_absent: true` (default) then scans the snapshot (metadata scope: all of it; full scope: the metadata exports) for `minio_root_password` (raw, and as Go's and Python's XML and JSON encoders escape it), including inside ZIP members, and fails the run naming only the files.
+- `metadata.yml` records both under `redacted_secrets`.
+
+The helper is `files/redact_backup_secrets.py` (stdlib only, run with `minio_backup_python`, default `python3`); it prints counts, never values, and fails the run when a targets file would survive.
+
 The IAM export contains the secret keys of every user and service account. Keep `minio_backup_root` root-only (`0700`, the default) on encrypted storage, and think twice before `minio_backup_fetch_local: true`.
 
 ## Key variables
@@ -94,5 +104,6 @@ Metadata-only example:
 ## Testing
 
 `just test-minio-backup-molecule` builds the platform image and runs `just molecule-test minio_backup`. The scenario starts a real MinIO server in Docker, makes a metadata-only backup with retention while MinIO keeps running, deletes a user, and restores it with `minio_restore` from the metadata snapshot. dl.min.io no longer serves the pinned builds, so the image copies `minio` and `mc` from a MinIO container image (`MINIO_TEST_IMAGE`, default `minio/minio:RELEASE.2025-01-20T14-49-07Z`, available locally or pullable for the Docker host's architecture).
+
 - `manifest.sha256` covering every file (when enabled).
 - Optional archive `tar.gz`/`tar.zst` file plus fetched copy on the controller.

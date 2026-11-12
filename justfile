@@ -971,8 +971,8 @@ test-fetched-backup-archive-modes: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_fetched_backup_archive_modes
 
 test-minio-metadata-backup: venv
-    @echo "Testing metadata-only MinIO backup and restore gating..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_minio_metadata_backup
+    @echo "Testing metadata-only MinIO backup and restore gating and secret redaction..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_minio_metadata_backup tests.test_minio_backup_redaction
 
 # MINIO_TEST_IMAGE (default in the Dockerfile) must be available locally or
 # pullable for the Docker host's architecture.

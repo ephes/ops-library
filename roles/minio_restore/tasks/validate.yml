@@ -249,6 +249,36 @@
       Snapshot {{ minio_restore_content_path }} has scope {{ minio_restore_scope }};
       metadata-only snapshots carry no object data and need minio_restore_allow_metadata_only.
 
+# minio_backup redacts secrets in the env file copy of metadata snapshots.
+# Checked here, before preparation and outside the rollback-protected block:
+# putting the placeholder back as /etc/default/minio would lock MinIO out.
+- name: Look for redacted secrets in the snapshot environment file
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -c
+      - -F
+      - REDACTED-BY-MINIO-BACKUP
+      - "{{ minio_restore_content_path }}/config/minio.env"
+  register: minio_restore_env_redacted
+  changed_when: false
+  failed_when: minio_restore_env_redacted.rc not in [0, 1]
+  when: >-
+    minio_restore_scope == 'full'
+    or (minio_restore_metadata_restore_system_files | bool)
+
+- name: Refuse to restore a redacted environment file
+  ansible.builtin.assert:
+    that:
+      - minio_restore_env_redacted.rc == 1
+    fail_msg: >-
+      {{ minio_restore_content_path }}/config/minio.env has redacted secret values
+      (minio_backup redaction). Write {{ minio_env_file }} from the deployment
+      secrets instead (redeploy MinIO) and restore without the system files.
+  when: >-
+    minio_restore_scope == 'full'
+    or (minio_restore_metadata_restore_system_files | bool)
+
 - name: Report metadata-only restore
   ansible.builtin.debug:
     msg: >-

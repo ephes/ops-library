@@ -62,6 +62,25 @@ minio_backup_include_traefik: true
 # storage.
 minio_backup_include_data: false
 
+# Credential redaction. The bucket metadata export carries each remote
+# target's access and secret key (for a replication target set up with root
+# credentials, the root password). true (default): drop every
+# bucket-targets.json from the export before it is stored. A restore then
+# leaves existing remote targets alone; on a rebuilt MinIO re-run the
+# replication setup, which creates the targets from the deployment secrets.
+# The env file copy holds the root password too: with redaction the values of
+# *PASSWORD*, *SECRET* and *TOKEN* keys become REDACTED-BY-MINIO-BACKUP and
+# minio_restore refuses to put such a file back. It applies to the metadata
+# scope only (the default there); a full-scope backup copies the env file
+# unredacted for its full restore.
+minio_backup_redact_target_secrets: true
+minio_backup_redact_env_secrets: "{{ not (minio_backup_include_data | bool) }}"
+minio_backup_python: python3
+# Fail the run when the root password still appears in a snapshot file or
+# ZIP member (metadata scope: the whole snapshot; full scope: the metadata
+# exports). Only active together with the redaction it checks.
+minio_backup_verify_secret_absent: true
+
 # Free space required under minio_backup_root for a metadata-only backup.
 minio_backup_metadata_min_free_bytes: 104857600
 
