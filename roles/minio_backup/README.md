@@ -1,8 +1,10 @@
 # MinIO Backup Role
 
-Create a cold snapshot of a single-node MinIO deployment including IAM/bucket metadata, object data, and all supporting configuration. Snapshots live under `/opt/backups/minio/<prefix>-<timestamp>` and can optionally be archived/fetched to the controller.
+Create a snapshot of a single-node MinIO deployment. Snapshots live under `/opt/backups/minio/<prefix>-<timestamp>` and can optionally be archived/fetched to the controller.
 
-With `minio_backup_include_data: false` the role makes a **metadata-only** snapshot instead: no service stop, no object data, only the IAM and bucket metadata exports plus the configuration files. Use it when object data is already protected elsewhere (for example bucket replication) and only the parts replication does not carry (users, groups, policies, service accounts, bucket settings, the env file) need a copy.
+By default (`minio_backup_include_data: false`) the role makes a **metadata-only** snapshot: no service stop, no object data, only the IAM and bucket metadata exports plus the configuration files. Object data is expected to be protected elsewhere (bucket replication and snapshots of the replica); the snapshot covers what replication does not carry (users, groups, policies, service accounts, bucket settings, the env file).
+
+With `minio_backup_include_data: true` it makes a cold snapshot that also copies the object data (MinIO stopped for the copy). That full scope refuses a `minio_backup_root` on the root filesystem (`df --output=target` is `/`): a copy of every object there can fill the system disk.
 
 ## Disposition
 
@@ -16,8 +18,8 @@ need the dedicated MinIO backup workflow.
 - Verifies MinIO binaries, service health, credentials, and data directories before touching the filesystem.
 - Ensures the MinIO Client (`mc`) is installed (downloads a pinned version if necessary).
 - Exports IAM and bucket metadata via `mc admin cluster iam|bucket export` using ephemeral `MC_HOST_*` environment variables (no credentials written to disk).
-- Full scope (default): stops the MinIO service, rsyncs every configured data directory to `data/<absolute_path>/`, and copies environment files, systemd units, TLS certs, and optional Traefik config.
-- Metadata scope (`minio_backup_include_data: false`): MinIO keeps running; the data directories are neither checked, measured nor copied, the disk check only asks for `minio_backup_metadata_min_free_bytes`, and `metadata.yml` records `scope: metadata` with empty `data_dirs`. The bucket metadata export covers bucket policies, versioning, lifecycle, replication config, tags, quotas and notifications.
+- Full scope (`minio_backup_include_data: true`): refuses a backup root on the root filesystem, stops the MinIO service, rsyncs every configured data directory to `data/<absolute_path>/`, and copies environment files, systemd units, TLS certs, and optional Traefik config.
+- Metadata scope (`minio_backup_include_data: false`, the default): MinIO keeps running; the data directories are neither checked, measured nor copied, the disk check only asks for `minio_backup_metadata_min_free_bytes`, and `metadata.yml` records `scope: metadata` with empty `data_dirs`. The bucket metadata export covers bucket policies, versioning, lifecycle, replication config, tags, quotas and notifications.
 - Writes `metadata.yml`, generates a checksum manifest (configurable), and produces a `tar.gz` (or `tar.zst`) archive (mode `0600`) that can be fetched back to the control host.
 - With `minio_backup_keep_count: N` (> 0), keeps the N newest `<prefix>-<timestamp>` snapshots (directory and archive) directly under `minio_backup_root` and deletes older ones of the same prefix. Other prefixes and unrelated files are left alone.
 
@@ -47,7 +49,7 @@ minio_backup_create_archive: true
 minio_backup_archive_format: tar.gz
 minio_backup_generate_checksums: true
 minio_backup_fetch_local: true
-minio_backup_include_data: true          # false = metadata-only, no service stop
+minio_backup_include_data: false         # true = full cold copy (MinIO stopped; not on the root FS)
 minio_backup_metadata_min_free_bytes: 104857600
 minio_backup_keep_count: 0               # 0 = keep everything
 ```

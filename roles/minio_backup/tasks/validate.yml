@@ -56,3 +56,32 @@
 - name: Install mc client when missing
   ansible.builtin.import_tasks: mc_install.yml
   when: not minio_backup_mc_stat.stat.exists | default(false)
+
+# Runs whether or not minio_backup_disk_check_enabled is set: a full copy of
+# every object must never land on the system disk.
+- name: Ensure backup root exists (full backup)
+  ansible.builtin.file:
+    path: "{{ minio_backup_root }}"
+    state: directory
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_dir_mode }}"
+  when: minio_backup_include_data | bool
+
+- name: Find the filesystem of the backup root (full backup)
+  ansible.builtin.command:
+    cmd: df --output=target "{{ minio_backup_root }}"
+  register: minio_backup_root_mount
+  changed_when: false
+  when: minio_backup_include_data | bool
+
+- name: Refuse a full backup onto the root filesystem
+  ansible.builtin.assert:
+    that:
+      - (minio_backup_root_mount.stdout_lines | last | trim) != '/'
+    fail_msg: >-
+      {{ minio_backup_root }} lies on the root filesystem. A full MinIO backup
+      (minio_backup_include_data: true) copies every object there and can fill
+      the system disk; point minio_backup_root at a separate mount, or make a
+      metadata-only backup (minio_backup_include_data: false, the default).
+  when: minio_backup_include_data | bool

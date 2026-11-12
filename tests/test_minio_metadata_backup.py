@@ -36,11 +36,40 @@ def conditions(item: dict) -> list[str]:
 
 
 class MetadataBackupTests(unittest.TestCase):
-    def test_defaults_keep_the_full_backup_and_all_snapshots(self) -> None:
+    def test_defaults_are_metadata_only_and_keep_all_snapshots(self) -> None:
         defaults = load(BACKUP / "defaults" / "main.yml")
-        self.assertIs(defaults["minio_backup_include_data"], True)
+        self.assertIs(defaults["minio_backup_include_data"], False)
         self.assertEqual(defaults["minio_backup_keep_count"], 0)
         self.assertGreater(defaults["minio_backup_metadata_min_free_bytes"], 0)
+
+    def test_full_scope_refuses_a_backup_root_on_the_root_filesystem(self) -> None:
+        # In validate.yml, which always runs (disk_check.yml can be switched off).
+        disk = load(BACKUP / "tasks" / "validate.yml")
+        names = [t.get("name") for t in disk]
+        mount = task(disk, "Find the filesystem of the backup root (full backup)")
+        refuse = task(disk, "Refuse a full backup onto the root filesystem")
+        self.assertLess(
+            names.index("Ensure backup root exists (full backup)"),
+            names.index("Find the filesystem of the backup root (full backup)"),
+        )
+        self.assertEqual(
+            mount["ansible.builtin.command"]["cmd"],
+            'df --output=target "{{ minio_backup_root }}"',
+        )
+        self.assertIn("minio_backup_include_data | bool", conditions(mount))
+        self.assertIn("minio_backup_include_data | bool", conditions(refuse))
+        self.assertEqual(
+            refuse["ansible.builtin.assert"]["that"],
+            ["(minio_backup_root_mount.stdout_lines | last | trim) != '/'"],
+        )
+        # validate.yml runs unconditionally, first in prepare.yml (before the
+        # disk check and anything that stops MinIO or copies data).
+        prepare = load(BACKUP / "tasks" / "prepare.yml")
+        self.assertEqual(prepare[0]["ansible.builtin.import_tasks"], "validate.yml")
+        self.assertNotIn("when", prepare[0])
+        main = load(BACKUP / "tasks" / "main.yml")
+        self.assertEqual(main[0]["ansible.builtin.import_tasks"], "prepare.yml")
+        self.assertNotIn("when", main[0])
 
     def test_service_stop_and_data_copy_only_in_full_scope(self) -> None:
         main = load(BACKUP / "tasks" / "main.yml")
