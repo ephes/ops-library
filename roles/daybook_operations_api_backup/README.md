@@ -105,8 +105,27 @@ fixed target/bucket. It invokes application Python and reads source archives as
 the service account, then uploads a root-private copy. It verifies the download
 checksum before reporting success. The v1 lifecycle validator requires exactly
 four archive members, which is the reported file count. Temporary copies are
-removed on ordinary success/failure and handled SIGTERM/SIGINT. Each external command
-has a 240-second limit (five commands, below the 1800-second Echoport limit).
+removed on ordinary success/failure and handled SIGTERM/SIGINT. The backup,
+validate and source-copy commands each have a 240-second limit. The two object-store
+transfers (the `mc cp` upload and the verify download) have their own 300-second
+limit per attempt and up to three attempts, 30 seconds apart, within one shared
+900-second budget, so a run stays below the 1800-second Echoport limit
+(3 × 240 s + 900 s). Only a timeout or a failed `mc` exit is retried; SIGTERM/SIGINT
+ends the run. A retry writes the same new key with the same bytes. The
+store can stall a transfer while it proxies the HEAD of a new key to its
+replication target, which MinIO and RustFS both do: on 2026-11-05 one dial to the
+unreachable replica took about 135 seconds and two hourly runs hit the old single
+240-second limit. FastDeploy shows each retry as `upload` (or `verify`) `running`
+with `attempt N of 3`; when all attempts fail the result is `upload_timeout`,
+`upload_failed`, `verify_timeout`, `verify_failed` or `transfer_budget_exhausted`.
+A retry is announced only when at least 60 seconds of the budget remain after the
+delay. Retries do not help while the replica accepts connections but never answers; the
+replication target's proxying must then be turned off on the store. An attempt that
+was stopped may leave data on the store: a noncurrent version of the same key when its
+PUT had already finished (the replicated `backups` bucket is versioned; its lifecycle
+expires noncurrent versions), or, for an archive large enough for a multipart upload,
+an incomplete multipart upload. List those with `mc ls --incomplete` and remove them
+with `mc rm --incomplete` after the outage.
 A hard kill or host crash can leave private `echoport-*`/`upload-*` directories:
 pause and drain the target, verify no bridge child remains, and remove only those
 identified stale directories from the two configured roots. There is no automatic
