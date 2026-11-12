@@ -14,6 +14,58 @@
   ansible.builtin.import_tasks: config.yml
   when: not (minio_backup_include_data | bool)
 
+# Fail closed: no snapshot file (or ZIP member) may hold the root password.
+# Full scope copies object data and the env file for its restore, so only the
+# metadata exports are checked there. The password reaches the helper on
+# stdin only (never argv or the task environment).
+- name: Scan the snapshot for the root password
+  when: &minio_backup_secret_scan_when
+    - minio_backup_verify_secret_absent | bool
+    - minio_backup_redact_target_secrets | bool
+    - (minio_backup_include_data | bool) or (minio_backup_redact_env_secrets | bool)
+  block:
+    - name: Create a private directory for the scan helper
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: minio-backup-scan
+      register: minio_backup_scan_dir
+
+    - name: Install the scan helper
+      ansible.builtin.copy:
+        src: redact_backup_secrets.py
+        dest: "{{ minio_backup_scan_dir.path }}/redact_backup_secrets.py"
+        mode: "0700"
+
+    - name: Verify the root password is absent from the snapshot
+      ansible.builtin.command:
+        argv:
+          - "{{ minio_backup_python }}"
+          - "{{ minio_backup_scan_dir.path }}/redact_backup_secrets.py"
+          - verify-absent
+          - "{{ minio_backup_dir if not (minio_backup_include_data | bool) else minio_backup_metadata_dir }}"
+        stdin: "{{ minio_root_password }}"
+        stdin_add_newline: false
+      register: minio_backup_secret_scan
+      changed_when: false
+      failed_when: false
+      no_log: true
+  always:
+    - name: Remove the scan helper
+      ansible.builtin.file:
+        path: "{{ minio_backup_scan_dir.path }}"
+        state: absent
+      when: minio_backup_scan_dir.path is defined
+
+# The scan prints file names only; show both streams.
+- name: Fail when the root password is in the snapshot
+  ansible.builtin.assert:
+    that:
+      - minio_backup_secret_scan.rc == 0
+    fail_msg: >-
+      secret scan failed:
+      {{ ((minio_backup_secret_scan.stdout | default('')) ~ ' ' ~ (minio_backup_secret_scan.stderr | default(''))) | trim }}
+  when: *minio_backup_secret_scan_when
+
 - name: Generate backup metadata, manifests, and report
   ansible.builtin.import_tasks: finalize.yml
 

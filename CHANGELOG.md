@@ -22,6 +22,23 @@
   the old full default must set `minio_backup_include_data: true` and a backup
   root on a separate mount.
 
+- `minio_backup`: the root password no longer ends up in backups. The bucket
+  metadata export drops every `<bucket>/bucket-targets.json` (remote targets
+  with their access and secret key; for a replication target set up with root
+  credentials that is the root password) before it is stored
+  (`minio_backup_redact_target_secrets`, default true). In metadata scope the
+  env file copy has the values of `*PASSWORD*`/`*SECRET*`/`*TOKEN*` keys
+  replaced by `REDACTED-BY-MINIO-BACKUP` (`minio_backup_redact_env_secrets`,
+  default true there; full scope keeps the env file for its full restore).
+  `metadata.yml` records both under `redacted_secrets`. A metadata restore now
+  leaves existing remote targets alone; on a rebuilt MinIO re-run the
+  replication setup. Env files with backslash continuations or multi-line
+  quoted values are refused instead of guessed at, and the run fails when the
+  root password still appears in a snapshot file or ZIP member
+  (`minio_backup_verify_secret_absent`, default true; file names only).
+  `minio_restore` refuses to put back a redacted env file during validation,
+  before preparation and outside the rollback block.
+
 - `echoport_remote_command_guard`: a restore scratch mode for a second key
   (`--restore-scratch` before the policy; the fact
   `echoport_remote_command_guard_scratch_forced_command`, impl `python`
@@ -33,7 +50,7 @@
   `mkdir <scratch dir>` creates it exclusively; `rm -rf -- <scratch dir>` is
   a new descriptor-based removal (`rmtree`) as the root's owner. The live key's decisions and log lines are unchanged
   (the Rust port's Layer-1 fixtures only change their guard checksum); the
-  scratch mode logs ` in restore-scratch mode`. The Rust port has no scratch
+  scratch mode logs `in restore-scratch mode`. The Rust port has no scratch
   mode yet.
 - `echoport_backup`: `_restore_scratch.py.j2`, included by
   `marina_staging_backup.py.j2`: `ECHOPORT_ACTION=restore-scratch` restores

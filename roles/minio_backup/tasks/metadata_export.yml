@@ -76,6 +76,18 @@
     minio_backup_bucket_metadata_filename: "{{ minio_backup_bucket_find.files[0].path | basename }}"
   when: minio_backup_export_bucket_metadata | bool
 
+- name: Drop remote targets (with their credentials) from the bucket metadata export
+  ansible.builtin.script:
+    cmd: >-
+      redact_backup_secrets.py bucket-zip
+      {{ (minio_backup_metadata_temp_dir ~ '/' ~ minio_backup_bucket_metadata_filename) | quote }}
+    executable: "{{ minio_backup_python }}"
+  register: minio_backup_redact_targets
+  changed_when: true
+  when:
+    - minio_backup_export_bucket_metadata | bool
+    - minio_backup_redact_target_secrets | bool
+
 - name: Copy IAM metadata into backup directory
   ansible.builtin.copy:
     src: "{{ minio_backup_metadata_temp_dir }}/iam-metadata.zip"

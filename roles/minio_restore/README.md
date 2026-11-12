@@ -24,7 +24,8 @@ A snapshot from `minio_backup` with `minio_backup_include_data: false` has `scop
 
 - re-imports bucket metadata and IAM (users, groups, policies, service accounts) into the **running** MinIO with `mc admin cluster bucket|iam import`;
 - never stops MinIO, never rsyncs data and never touches the data directories (they are not checked or measured either);
-- puts the env file, systemd unit and Traefik config back only with `minio_restore_metadata_restore_system_files: true` (MinIO is restarted then);
+- puts the env file, systemd unit and Traefik config back only with `minio_restore_metadata_restore_system_files: true` (MinIO is restarted then) and refuses during validation (before anything is prepared or stopped) when the snapshot's `config/minio.env` was redacted by `minio_backup` (`REDACTED-BY-MINIO-BACKUP` values);
+- does not recreate remote targets: `minio_backup` drops `bucket-targets.json` from the export, so re-run the replication setup after restoring onto a rebuilt MinIO;
 - fails instead when `minio_restore_allow_metadata_only: false`.
 
 Snapshots without `scope` (made before this option existed) are full snapshots. A full restore refuses to run when it would have no data directory to restore.

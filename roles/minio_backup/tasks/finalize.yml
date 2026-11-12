@@ -24,6 +24,9 @@
       metadata_exports:
         iam: "{{ minio_backup_export_iam | bool }}"
         bucket: "{{ minio_backup_export_bucket_metadata | bool }}"
+      redacted_secrets:
+        remote_target_credentials: "{{ (minio_backup_export_bucket_metadata | bool) and (minio_backup_redact_target_secrets | bool) }}"
+        env_file: "{{ (not (minio_backup_include_data | bool)) and (minio_backup_redact_env_secrets | bool) }}"
       backup_options:
         rsync_delete: "{{ minio_backup_use_delete | bool }}"
         archive_format: "{{ minio_backup_archive_format }}"
