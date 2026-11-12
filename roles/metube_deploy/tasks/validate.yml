@@ -16,7 +16,7 @@
       - metube_mounts_required is sequence
       - metube_mounts_required is not string
       - metube_mounts_required is not mapping
-      - metube_mounts_required | select('match', '^(/[A-Za-z0-9_.-]+)+$') | list | length == metube_mounts_required | length
+      - metube_mounts_required | select('match', '^(/[A-Za-z0-9_.-]+)+\Z') | list | length == metube_mounts_required | length
       - metube_mounts_required | select('search', '/[.][.]?(/|$)') | list | length == 0
     fail_msg: "metube_mounts_required must be a list of absolute paths of letters, digits and _ . -, without . or .. parts (rendered into RequiresMountsFor=)."
 
