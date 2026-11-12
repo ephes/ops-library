@@ -27,6 +27,11 @@ metube_sync_dependencies: true
 
 # Systemd resource knobs
 metube_systemd_after: "network.target"
+# Mount points the service needs (for example the media mount): rendered as
+# RequiresMountsFor= in [Unit], so systemd orders MeTube after them, does not
+# start it while one is missing and stops it when one is unmounted. Empty
+# (the default) renders no line and leaves the unit unchanged.
+metube_mounts_required: []
 metube_systemd_restart: on-failure
 metube_systemd_restart_sec: 5s
 metube_systemd_nofile: 65535

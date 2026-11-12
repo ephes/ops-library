@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- `metube_deploy`: new `metube_mounts_required` (default `[]`). A non-empty
+  list renders `RequiresMountsFor=<paths>` in the unit's `[Unit]` section, so
+  systemd orders MeTube after those mounts, does not start it without them and
+  stops it when one is unmounted. The default renders no line; existing units
+  stay byte-identical. ops-deploy's native MeTube renders the same line from
+  its `mounts_required`.
+
 - `echoport_remote_command_guard`: the fact
   `echoport_remote_command_guard_scratch_forced_command` is set with every
   `echoport_remote_command_guard_impl`, always the Python guard in

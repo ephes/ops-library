@@ -20,6 +20,7 @@ Key defaults:
 | `metube_ui_build` | `true` | Build the Angular UI (see below). |
 | `metube_ui_build_root` | `/var/cache/metube` | UI staging checkout and corepack/pnpm/npm caches (`HOME` of the build). |
 | `metube_ui_build_dir` | `{{ metube_ui_build_root }}/src` | Staging checkout the UI is built in. |
+| `metube_mounts_required` | `[]` | Mount points rendered as `RequiresMountsFor=` in the unit's `[Unit]` section (see below). |
 
 Outputs:
 - Systemd unit `metube.service` bound to `{{ metube_host }}:{{ metube_port }}` (default 127.0.0.1:8081)
@@ -67,6 +68,21 @@ Enabling or disabling rewrites the unit on the next deploy.
 With hardening disabled, existing unit rendering is preserved. Setting both
 `metube_systemd_tasks_max` and `metube_systemd_memory_max` currently joins the
 settings on one line; correcting that existing behavior is a separate follow-up.
+
+## Required mounts
+
+`metube_mounts_required` lists mount points MeTube needs, for example the
+mount that holds `metube_download_dir`. Each non-empty list renders one line
+in `[Unit]`:
+
+```ini
+RequiresMountsFor=/mnt/cryptdata/media
+```
+
+systemd then orders MeTube after those mounts, does not start it while one is
+missing, and stops it when one is unmounted. The default `[]` renders no
+line, so the unit stays byte-identical. Adding or changing the list rewrites
+the unit, which reloads systemd and restarts MeTube on that deploy.
 
 ## Certifi/pip security floor
 
