@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- `echoport_remote_command_guard`: the fact
+  `echoport_remote_command_guard_scratch_forced_command` is set with every
+  `echoport_remote_command_guard_impl`, always the Python guard in
+  `--restore-scratch` mode (before: impl `python` only). The Python guard is
+  installed with every impl, so a host with the restore scratch key can run
+  the deploy key's line in shadow or Rust mode; retiring the Python guard
+  there (PLAN.md S12) needs a Rust port of the mode first.
+
 - `daybook_operations_api_backup`: the bridge (`files/echoport_runner.py`)
   gives the upload and the verify download their own limit: 300 seconds per
   attempt, up to three attempts 30 seconds apart, within one shared 900-second
