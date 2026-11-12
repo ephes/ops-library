@@ -27,7 +27,7 @@ and paths named in a per-host policy.
   port of the guard as well (below).
 - sets the fact `echoport_remote_command_guard_scratch_forced_command` for a
   second, optional key: the same command with `--restore-scratch` before the
-  policy (impl `python` only; undefined otherwise), see [Restore scratch
+  policy, always the Python guard whatever the impl, see [Restore scratch
   mode](#restore-scratch-mode).
 
 The role does not touch `authorized_keys`. The consumer pins the key, for
@@ -210,7 +210,11 @@ owner, so it can only remove what that user could remove anyway.
 The mode protects the live data from a scratch restore (a runner bug or a
 wrong context), not from the root's owner, who can change the live data
 anyway. The Rust port has no scratch mode yet: with impl `shadow` or `rust`
-the scratch fact is undefined and no scratch key may be pinned.
+the scratch fact still names the Python guard (installed with every impl
+until S12), so the scratch key keeps the Python guard's `--restore-scratch`
+mode while the deploy key's line runs the Rust guard in shadow or alone.
+Retiring the Python guard on a host with the scratch key needs a Rust port
+of the mode first.
 
 ## Variables
 

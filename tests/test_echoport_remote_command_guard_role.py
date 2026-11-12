@@ -462,7 +462,7 @@ class PlaybookTests(unittest.TestCase):
         result = self.ok(self.include("forced_command.yml", "python"))
         self.assertEqual(result["facts"]["command"], PYTHON_COMMAND)
 
-    def test_scratch_forced_command_only_with_the_python_guard(self):
+    def test_scratch_forced_command_is_the_python_guard_with_every_impl(self):
         result = self.ok(self.include("forced_command.yml", "python"))
         self.assertEqual(
             result["facts"]["scratch"],
@@ -475,7 +475,13 @@ class PlaybookTests(unittest.TestCase):
                     self.include("forced_command.yml", impl, "0.1.0"),
                     fact_vars={"_echoport_guard_rust_ok": True},
                 )
-                self.assertIsNone(result["facts"]["scratch"])
+                # The Rust guard has no --restore-scratch mode: the scratch
+                # key keeps the Python guard; only the deploy key's line moves.
+                self.assertEqual(
+                    result["facts"]["scratch"],
+                    PYTHON_COMMAND.replace(" /etc/echoport/", " --restore-scratch /etc/echoport/"),
+                )
+                self.assertNotIn("--restore-scratch", result["facts"]["command"])
 
     def test_rust_forced_command_needs_a_checked_binary(self):
         for impl in ("shadow", "rust"):
