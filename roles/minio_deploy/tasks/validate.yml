@@ -117,6 +117,16 @@
       Please update your playbook with the correct domain.
   when: minio_expose_via_traefik | bool
 
+- name: Validate the internal-only S3 API switch
+  assert:
+    that:
+      - minio_traefik_api_internal_only is boolean
+      - not minio_traefik_api_internal_only or (minio_internal_ip_ranges | length > 0)
+    fail_msg: |
+      ERROR: minio_traefik_api_internal_only must be a boolean, and when true
+      minio_internal_ip_ranges must list at least one range.
+  when: minio_expose_via_traefik | bool
+
 - name: Validate console basic auth password if enabled
   assert:
     that:

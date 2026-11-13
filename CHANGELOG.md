@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- `minio_deploy`: new `minio_traefik_api_internal_only` (default `false`).
+  `true` adds the `ClientIP` list of `minio_internal_ip_ranges` to both S3
+  API routers, so only LAN and Tailscale clients get an answer (everyone else
+  Traefik's 404), as the console's internal router already does. Meant for a
+  read-only archive behind its own name. The default renders the routes
+  byte-identical to before. ops-deploy's native MinIO vendors the template.
+
 - `metube_deploy`: new `metube_mounts_required` (default `[]`). A non-empty
   list renders `RequiresMountsFor=<paths>` in the unit's `[Unit]` section, so
   systemd orders MeTube after those mounts, does not start it without them and

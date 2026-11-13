@@ -118,6 +118,7 @@ Deploys MinIO object storage server as a hardened systemd service with optional 
 | `minio_console_port` | `9002` | Web console port |
 | `minio_traefik_host` | `minio.home.example.com` | Console host when exposed via Traefik |
 | `minio_traefik_api_host` | `s3.{{ minio_traefik_host }}` | S3 API host when exposed via Traefik |
+| `minio_traefik_api_internal_only` | `false` | `true`: the S3 API routers answer only `minio_internal_ip_ranges` (LAN/Tailscale), e.g. for a read-only archive |
 | `minio_data_dirs` | `[/var/lib/minio/data]` | Data directory paths |
 | `minio_tls_enable` | `false` | Enable TLS |
 | `minio_bootstrap_with_mc` | `false` | Enable bucket/policy bootstrap |

@@ -39,6 +39,9 @@ minio_expose_via_traefik: false
 minio_traefik_host: "minio.home.example.com"  # Console host
 minio_traefik_api_host: "s3.{{ minio_traefik_host }}"  # S3 API host
 minio_traefik_cert_resolver: ""  # empty -> use file-provider certs
+# true: the S3 API routers answer only clients in minio_internal_ip_ranges
+# (LAN/Tailscale); everyone else gets Traefik's 404. false keeps the API public.
+minio_traefik_api_internal_only: false
 minio_traefik_config_path: "/etc/traefik/dynamic/minio.yml"
 
 # Traefik dual router authentication (Console Web UI only)
