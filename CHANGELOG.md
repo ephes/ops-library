@@ -38,6 +38,18 @@
   weeks. `MINIO_TEST_SERVER_BIN` and `MINIO_TEST_CLIENT_BIN` build args name
   the binary paths for another image.
 
+- Molecule test fixes (no role changes): `uv_install`'s check-mode verify
+  compared the installed uv with a literal 0.13.0 that went stale when the
+  pin moved to 0.13.5; it now requires the version to be unchanged by the
+  `--check` run, and the converge verify requires the role's pinned
+  `uv_version`. The shared Vaultwarden prepare replaced `/usr/bin/rsync`
+  with a shell stub that only knew `-a`, `-r` and `--delete`, so
+  `vaultwarden_backup`'s `ansible.posix.synchronize` options became `mkdir`
+  and `cp` arguments; the scenarios now install the real rsync.
+  `vaultwarden_deploy`'s verify rejected the word `WEBSOCKET_PORT` anywhere
+  in `vaultwarden.env`, including the template's explaining comment; it now
+  rejects `WEBSOCKET_PORT=` and `WEBSOCKET_ADDRESS=` settings.
+
 - `minio_deploy`: new `minio_traefik_api_internal_only` (default `false`).
   `true` adds the `ClientIP` list of `minio_internal_ip_ranges` to both S3
   API routers, so only LAN and Tailscale clients get an answer (everyone else

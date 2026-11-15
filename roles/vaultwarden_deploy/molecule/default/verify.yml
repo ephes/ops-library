@@ -50,9 +50,11 @@
         that:
           - "'DOMAIN=https://vault.molecule.test' in env_text"
           - "'ROCKET_PORT=8000' in env_text"
-          # No WEBSOCKET_PORT: the standalone listener was removed upstream and
-          # rendering it invited a proxy to route live sync at a dead port.
-          - "'WEBSOCKET_PORT' not in env_text"
+          # No WEBSOCKET_PORT or WEBSOCKET_ADDRESS setting: the standalone
+          # listener was removed upstream and rendering it invited a proxy to
+          # route live sync at a dead port. The template's comment names both
+          # settings, so match assignments, not the bare word.
+          - env_text is not search('(?m)^\\s*WEBSOCKET_(PORT|ADDRESS)\\s*=')
           - "'ADMIN_TOKEN=molecule-admin-token' in env_text"
         fail_msg: "vaultwarden.env missing expected values"
 

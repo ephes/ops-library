@@ -25,12 +25,17 @@
       register: uv_version
       changed_when: false
 
-    - name: Verify | Assert uv reports version
+    - name: Verify | Read the role's pinned uv_version
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../defaults/main.yml"
+        name: uv_role_defaults
+
+    - name: Verify | Assert uv reports the pinned version
       ansible.builtin.assert:
         that:
           - uv_version.rc == 0
-          - uv_version.stdout is search('uv ')
-        fail_msg: "uv version check failed"
+          - uv_version.stdout is search('^uv ' ~ (uv_role_defaults.uv_version | regex_escape) ~ '( |$)')
+        fail_msg: "uv version check failed: {{ uv_version.stdout }} (pinned {{ uv_role_defaults.uv_version }})"
 
 
 # --check must work without -e uv_update_existing=false. Check mode is only

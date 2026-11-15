@@ -41,24 +41,16 @@
       mkdir -p "$(dirname "$src")"
       echo "stub-db" >"$src"
 
-- name: Provide stub rsync binary for molecule
-  ansible.builtin.copy:
-    dest: /usr/bin/rsync
-    mode: "0755"
-    content: |
-      #!/bin/sh
-      # Minimal rsync stub that copies files recursively
-      while [ "$#" -gt 0 ]; do
-        case "$1" in
-          -a|-r) shift ;;
-          --delete) shift ;;
-          *) break ;;
-        esac
-      done
-      src="$1"
-      dest="$2"
-      mkdir -p "$dest"
-      cp -a "$src"/. "$dest"/
+# The roles run the real rsync (vaultwarden_backup via ansible.posix.synchronize,
+# which passes --delay-updates, -F, --compress and --out-format; the restore
+# rollback via `rsync -a --delete --checksum`). A shell stub that only knew
+# -a/-r/--delete turned those options into mkdir/cp arguments, so install the
+# real package instead.
+- name: Install the real rsync for the roles under test
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+    update_cache: true
 
 - name: Create build directories
   ansible.builtin.file:
