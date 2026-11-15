@@ -35,6 +35,12 @@ class CollectionBuildIgnoreTest(unittest.TestCase):
         for entry in (*EXCLUDED, "tests"):
             self.assertIn(entry, galaxy["build_ignore"])
 
+    def test_build_ignore_lists_the_sphinx_output(self):
+        # docs/build (`just docs-build`, hundreds of MB) would otherwise be
+        # packed into every Molecule scenario's collection install.
+        galaxy = yaml.safe_load((ROOT / "galaxy.yml").read_text(encoding="utf-8"))
+        self.assertIn("docs/build", galaxy["build_ignore"])
+
     @unittest.skipUnless(ansible_galaxy(), "ansible-galaxy not available")
     def test_built_archive_has_no_rust_or_github_members(self):
         # The checkout has both directories, so the build really exercises
@@ -62,7 +68,10 @@ class CollectionBuildIgnoreTest(unittest.TestCase):
         offending = [
             name
             for name in names
-            if any(name == top or name.startswith(f"{top}/") for top in EXCLUDED)
+            if any(
+                name == top or name.startswith(f"{top}/")
+                for top in (*EXCLUDED, "docs/build")
+            )
         ]
         self.assertEqual(offending, [])
         self.assertTrue(any(name.startswith("roles/") for name in names))

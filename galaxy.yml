@@ -32,3 +32,6 @@ build_ignore:
   # (rust/PLAN-foundation.md section 5; tests/test_collection_build_ignore.py).
   - rust
   - .github
+  # Sphinx output of `just docs-build` (git-ignored, over 250 MB); Molecule's
+  # prerun builds the checkout into every scenario's collection install.
+  - docs/build

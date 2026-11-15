@@ -81,6 +81,11 @@ shared_collections="${ANSIBLE_HOME:-$HOME/.ansible}/collections:/usr/share/ansib
 export ANSIBLE_HOME="$run_dir/ansible"
 export ANSIBLE_COLLECTIONS_PATH="$ANSIBLE_HOME/collections:${ANSIBLE_COLLECTIONS_PATH:-$shared_collections}"
 mkdir -p "$MOLECULE_EPHEMERAL_DIRECTORY" "$ANSIBLE_HOME/collections"
+# Pipelining sends each module over the existing connection instead of
+# copying it to a remote temp file first (fewer docker exec round trips per
+# task). Test containers run without requiretty, so become works with it.
+# Export ANSIBLE_PIPELINING=0 to turn it off.
+export ANSIBLE_PIPELINING="${ANSIBLE_PIPELINING:-1}"
 
 echo "Molecule run id: $MOLECULE_RUN_ID (roles/$role/molecule/$scenario)"
 

@@ -307,14 +307,18 @@ class RebootRequiredDetectionTests(unittest.TestCase):
         """Ubuntu hosts keep their existing behaviour."""
         module = self._module()
         module.stale_kernel = lambda: None
-        module.REBOOT_REQUIRED_FLAG = type("P", (), {"exists": staticmethod(lambda: True)})()
+        module.REBOOT_REQUIRED_FLAG = type(
+            "P", (), {"exists": staticmethod(lambda: True)}
+        )()
         details = module.reboot_required_details()
         self.assertTrue(details["required"])
         self.assertIn("reboot_required_flag", details["reasons"])
 
     def test_the_reason_is_reported_so_operators_can_tell_them_apart(self) -> None:
         module = self._module()
-        module.REBOOT_REQUIRED_FLAG = type("P", (), {"exists": staticmethod(lambda: False)})()
+        module.REBOOT_REQUIRED_FLAG = type(
+            "P", (), {"exists": staticmethod(lambda: False)}
+        )()
         module.stale_kernel = lambda: {"newest_installed_kernel": "6.1.0-52"}
         details = module.reboot_required_details()
         self.assertTrue(details["required"])
@@ -399,7 +403,9 @@ class EndpointRebootStateTests(unittest.TestCase):
     def test_the_live_marker_still_wins_on_its_own(self) -> None:
         module = self._module()
         details = module.reboot_state(
-            {"reboot_required": False}, flag_present=True, running_release="6.8.0-138-generic"
+            {"reboot_required": False},
+            flag_present=True,
+            running_release="6.8.0-138-generic",
         )
         self.assertTrue(details["required"])
         self.assertEqual(details["reasons"], ["reboot_required_flag"])
@@ -413,7 +419,11 @@ class EndpointRebootStateTests(unittest.TestCase):
 
     def test_old_state_files_without_details_keep_marker_only_behaviour(self) -> None:
         module = self._module()
-        for legacy in ({"reboot_required": True}, {"reboot_required_details": None}, {}):
+        for legacy in (
+            {"reboot_required": True},
+            {"reboot_required_details": None},
+            {},
+        ):
             details = module.reboot_state(
                 legacy, flag_present=False, running_release="5.10.0-23-amd64"
             )
@@ -534,9 +544,7 @@ class TailscaleCollectorTimerArmingTests(unittest.TestCase):
             with self.subTest(gate=label):
                 self.assertIn("NextElapseUSecRealtime", expression)
                 self.assertIn("NextElapseUSecMonotonic", expression)
-                self.assertEqual(
-                    expression.count("['', 'infinity', '0', 'n/a']"), 2
-                )
+                self.assertEqual(expression.count("['', 'infinity', '0', 'n/a']"), 2)
                 self.assertEqual(expression.count("| lower"), 2)
 
         armed = self._task_named(
@@ -709,18 +717,22 @@ class ExecutableCoverageTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.justfile = (ROOT / "justfile").read_text()
-        self.default_recipe = next(
-            line for line in self.justfile.splitlines() if line.startswith("test:")
+        # `just test` runs the targets of these two lists.
+        self.default_recipe = " ".join(
+            line
+            for line in self.justfile.splitlines()
+            if line.startswith(("test_serial_targets :=", "test_parallel_targets :="))
         )
 
     def test_a_failing_apt_run_is_exercised_in_molecule(self) -> None:
         verify = (
-            ROOT
-            / "roles/os_apt_maintenance/molecule/default/verify.yml"
+            ROOT / "roles/os_apt_maintenance/molecule/default/verify.yml"
         ).read_text()
 
         self.assertIn("Install an apt-get stub that always fails", verify)
-        self.assertIn("Reset the state file to the unreadable pre-fix permissions", verify)
+        self.assertIn(
+            "Reset the state file to the unreadable pre-fix permissions", verify
+        )
         self.assertIn("Assert the failed run left a readable state file", verify)
         self.assertIn("Assert the writer stamps the permissions itself", verify)
         self.assertIn("Assert the failure is reported, not hidden behind a 503", verify)
@@ -730,14 +742,15 @@ class ExecutableCoverageTests(unittest.TestCase):
 
     def test_a_parked_collector_timer_is_exercised_in_molecule(self) -> None:
         verify = (
-            ROOT
-            / "roles/tailscale_metrics_endpoint/molecule/default/verify.yml"
+            ROOT / "roles/tailscale_metrics_endpoint/molecule/default/verify.yml"
         ).read_text()
 
         self.assertIn("Assert the deployed timer is armed", verify)
         self.assertIn("Assert the collector really runs again", verify)
         self.assertIn("Park the collector timer", verify)
-        self.assertIn("Assert the parking reproduction actually parked the timer", verify)
+        self.assertIn(
+            "Assert the parking reproduction actually parked the timer", verify
+        )
         self.assertIn("Assert a permanently parked timer fails the deployment", verify)
         self.assertIn("Assert the role left the timer armed", verify)
 

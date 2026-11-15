@@ -54,4 +54,12 @@ several checkouts at once. New scenarios must name platforms
 `<name>-${MOLECULE_RUN_ID:-local}`; see "Run-scoped container names" in
 `TESTING.md`.
 
+`just test` runs its targets in parallel (at most 8, and at most half the
+host's CPUs; `OPS_LIBRARY_TEST_JOBS` overrides, `just test 1` runs them one
+after another) and `just molecule-test-all` its scenarios (at most 4, and at
+most half the CPUs; `OPS_LIBRARY_MOLECULE_JOBS` overrides, `1` for one at a
+time); Docker-backed `just test` targets
+always run one after another. Logs go to `~/.cache/ops-library-runs/`. See
+"Parallel runs" in `TESTING.md`.
+
 Use `just lint` only as a summary helper. It does not fail the run.

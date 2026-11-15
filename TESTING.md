@@ -48,6 +48,36 @@ runs. Each check owns an isolated project and removes it afterward.
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
 
+### Parallel runs
+
+`just test` runs its targets through `scripts/run-parallel.sh`, by default at
+most 8 at a time and at most half the host's CPU count (several agents often
+test on the same machine). Set `OPS_LIBRARY_TEST_JOBS=4` (or `just test 4`)
+to choose another number. The justfile
+keeps them in two lists:
+
+- `test_serial_targets`: targets that use Docker (Molecule scenarios, Docker
+  Compose, test containers) or fixed scratch paths, plus `docs-build` and
+  `docs-lint`. They run one after another, as a single job beside the others.
+- `test_parallel_targets`: everything else; these targets do not share files,
+  containers or ports with each other or with the serial ones. The longest run
+  first.
+
+Before the targets start, `just test` syncs `.venv` once (`uv run --extra
+docs`), so no target's `uv run` installs into or recreates the environment
+while others use it. Every target runs even when an earlier one fails. Each
+writes its output to
+`~/.cache/ops-library-runs/just-test-<time>-<pid>/<target>.log` (the serial
+ones under `serial/`); the run ends with the targets by duration, the tail of
+every failing log and exit status 1 if any target failed. `just test 1` runs
+all targets one after another and also streams their output.
+
+A new target goes into one of the two lists. Put it in `test_serial_targets`
+when it starts containers or writes a fixed path outside a temporary
+directory. `just test-just-test-targets` (part of `just test`) fails on a
+name that is not a recipe, on a target listed twice, and on a parallel target
+whose recipe runs Molecule or Docker.
+
 ## Credentials and no_log
 
 `just test` and `just lint-strict` run `just test-secret-no-log`, a static check
@@ -265,6 +295,9 @@ sets `ANSIBLE_COLLECTIONS_PATH` in its provisioner env must start it with
   `OPS_LIBRARY_MOLECULE_ASYNC_MAX_WAIT` seconds, default 7200, and destroys
   again), and then runs `molecule destroy` for the same ID, which only touches that run's
   containers.
+- The wrapper exports `ANSIBLE_PIPELINING=1` unless it is already set, so
+  modules run over the existing docker connection without a temp-file copy
+  per task; `ANSIBLE_PIPELINING=0` turns it off for a run.
 - `molecule-converge`, `-verify`, `-login` and `-destroy` use an ID that is
   stable per checkout, role and scenario, so a debugging session across
   separate invocations addresses the same containers.
@@ -272,6 +305,19 @@ sets `ANSIBLE_COLLECTIONS_PATH` in its provisioner env must start it with
   characters) overrides both; give each scenario that runs at the same time
   its own value. Running `molecule` directly without the wrapper falls back to
   the shared `local` suffix and is not isolated.
+
+`just molecule-test-all` runs every scenario this way, by default at most 4 at
+a time and at most half the host's CPU count (`OPS_LIBRARY_MOLECULE_JOBS=2`,
+or `just molecule-test-all 2`, to choose another number); `just
+molecule-test-all 1` runs them one after another. It first builds the local
+`ops-library-molecule-minio-backup:local` image for `minio_backup` (as `just
+test-minio-backup-molecule` does) and starts the slowest scenarios
+(`molecule_slow_scenarios` in the justfile) first. Every scenario keeps its own
+converge, idempotence, verify and destroy steps; the logs go to
+`~/.cache/ops-library-runs/molecule-test-all-<time>-<pid>/<role>__<scenario>.log`,
+and the run fails if any scenario failed. Each parallel scenario runs its own
+containers, so the Docker host needs CPU and memory for all of them (with
+Colima, `colima start --cpu` and `--memory`).
 
 Playbook-based tests under `tests/*.yml` follow the same rule for scratch
 files: build `/tmp` paths from the play variable
@@ -311,7 +357,9 @@ write `rust/target/`). They are not part of `just test`, so the Ansible suite
 keeps working without a Rust toolchain.
 
 `just test` does run `just test-collection-build-ignore`: it checks that
-`galaxy.yml` `build_ignore` lists `rust` and `.github` and, with
+`galaxy.yml` `build_ignore` lists `rust`, `.github` and `docs/build` (the
+Sphinx output of `just docs-build`, which Molecule's prerun would otherwise
+pack into every scenario's collection install) and, with
 `ansible-galaxy` from the project environment, builds the collection into a
 temporary directory and fails if any archive member comes from `rust/` or
 `.github/` (a checkout's `rust/target/` can be hundreds of MB).

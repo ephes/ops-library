@@ -10,10 +10,43 @@ setup:
     @echo "Setting up development environment..."
     @./setup-pre-commit.sh
 
-# Run the default contributor validation path
-test: venv test-graphyard-image-pin test-apt-repository-cleanup test-nyxmon-storage-exporter test-mail-relay-client test-mail-backend-local-delivery test-rustup-security test-ca-trust-consumers test-voxhelm-trust-refresh test-container-ca-activate test-chrome-ca-distrust test-container-ca-remediate test-macos-python-ca-remediate test-linuxserver-ca-remediate test-macos-ca-remediate test-security-trust-remediate test-aws-ca-bundle test-python-security-floor test-homeassistant-uv-system-certs test-homeassistant-llama-cpp test-homeassistant-assist-autodetection test-homeassistant-live-registry test-homeassistant-custom-conversation-version test-homeassistant-gps-timeline test-root-downloads test-vibe-coding-chezmoi test-lowfindings test-mail-monitoring-probe test-docker-cache-cleanup test-host-storage-migrate test-time-sync-check test-paperless-search-index test-daybook-operations test-macos-ssh-tunnel test-macos-java-trust test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-live-impl test-software-live-rust-fixtures test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-gateway-config test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-doctor-activation test-openclaw-compose-lifecycle test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-mailgun-relay-deploy test-graphyard-deploy-agent test-graphyard-deploy-env test-rsync-git-excludes test-deploy-restart-notifications test-certbot-dns-renewal-hooks test-certbot-dns-rfc2136 test-ddns-update test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-bind-authoritative-dynamic test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-work-app-deploy test-opaq-app-deploy test-homelab-lifecycle-safety test-heis-production-backup test-fastdeploy-backup-key test-fastdeploy-retired-restore test-echoport-remote-command-guard test-metrics-httpd-fixtures test-python-podcast-production-db-backup test-postfixadmin-echoport-backup test-unifi-echoport-backup-workdir test-homepage-echoport-backup-workdir test-echoport-runner-work-dirs test-mail-db-echoport-backup test-django-chat-staging-db-backup test-takahe-deploy test-gotosocial-deploy test-gotosocial-echoport-backup test-mastodon-slim test-mastodon-nginx test-mastodon-traefik test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf test-voxhelm-parakeet test-secret-file-modes test-unifi-traefik-allowlist test-unifi-log-permissions test-snappymail-vaultwarden-allowlist test-paperless-backup-exposure test-fetched-backup-archive-modes test-backup-archive-modes test-secret-no-log test-task-credentials test-become-environment-secrets test-shell-pipefail test-backup-service-restart test-graphyard-auth-bootstrap-changed-when test-metube-uv-sync-changed-when test-metube-mounts-required test-minio-traefik-api-internal-only test-ansible-core-floor test-logyard-ingress test-delve-recorder-flags test-server-ad-analysis test-molecule-run-isolation test-restore-safety test-fastdeploy-service-token-settings test-fastdeploy-runner-step-states test-voxhelm-prune-and-service-knobs test-traefik-frame-options test-traefik-hsts test-traefik-logrotate test-traefik-backup-dynamic test-minio-backup-accounts test-echoport-sqlite-backup test-encrypted-volume-fstab test-minio-metadata-backup test-ssh-authorized-keys-manage test-opsgate-deploy-keys test-opsgate-rsync-excludes test-opsgate-deploy-impl test-collection-build-ignore test-rust-release-binary test-metrics-httpd-switch lint docs-build docs-lint
-    @echo ""
-    @echo "✅ Validation completed!"
+# Targets of `just test`. The serial ones use Docker (Molecule, Docker Compose)
+# or fixed paths; they run one after another as a single job beside the others.
+# The parallel ones are independent of each other and of the serial ones; the
+# longest come first so they start early. A new target goes into one of the
+# two lists (tests/test_just_test_targets.py checks that both stay consistent).
+test_serial_targets := "test-container-ca-activate test-security-trust-remediate test-openclaw-compose-lifecycle test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-ssh-forwarding-integration test-bind-authoritative-secondary test-bind-authoritative-dynamic test-takahe-deploy docs-build docs-lint"
+test_parallel_targets := "test-software-live-impl test-metrics-httpd-switch test-rust-release-binary test-daybook-operations test-opsgate-deploy-impl lint test-echoport-remote-command-guard test-ssh-authorized-keys-manage test-graphyard-image-pin test-apt-repository-cleanup test-nyxmon-storage-exporter test-mail-relay-client test-mail-backend-local-delivery test-rustup-security test-ca-trust-consumers test-voxhelm-trust-refresh test-chrome-ca-distrust test-container-ca-remediate test-macos-python-ca-remediate test-linuxserver-ca-remediate test-macos-ca-remediate test-aws-ca-bundle test-python-security-floor test-homeassistant-uv-system-certs test-homeassistant-llama-cpp test-homeassistant-assist-autodetection test-homeassistant-live-registry test-homeassistant-custom-conversation-version test-homeassistant-gps-timeline test-root-downloads test-vibe-coding-chezmoi test-lowfindings test-mail-monitoring-probe test-docker-cache-cleanup test-host-storage-migrate test-time-sync-check test-paperless-search-index test-macos-ssh-tunnel test-macos-java-trust test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-live-rust-fixtures test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-gateway-config test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-doctor-activation test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-nyxmon-deploy test-mailgun-relay-deploy test-graphyard-deploy-agent test-graphyard-deploy-env test-rsync-git-excludes test-deploy-restart-notifications test-certbot-dns-renewal-hooks test-certbot-dns-rfc2136 test-ddns-update test-ssh-forwarding-roles test-vaultwarden-maintenance test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-work-app-deploy test-opaq-app-deploy test-homelab-lifecycle-safety test-heis-production-backup test-fastdeploy-backup-key test-fastdeploy-retired-restore test-metrics-httpd-fixtures test-python-podcast-production-db-backup test-postfixadmin-echoport-backup test-unifi-echoport-backup-workdir test-homepage-echoport-backup-workdir test-echoport-runner-work-dirs test-mail-db-echoport-backup test-django-chat-staging-db-backup test-gotosocial-deploy test-gotosocial-echoport-backup test-mastodon-slim test-mastodon-nginx test-mastodon-traefik test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf test-voxhelm-parakeet test-secret-file-modes test-unifi-traefik-allowlist test-unifi-log-permissions test-snappymail-vaultwarden-allowlist test-paperless-backup-exposure test-fetched-backup-archive-modes test-backup-archive-modes test-secret-no-log test-task-credentials test-become-environment-secrets test-shell-pipefail test-backup-service-restart test-graphyard-auth-bootstrap-changed-when test-metube-uv-sync-changed-when test-metube-mounts-required test-minio-traefik-api-internal-only test-ansible-core-floor test-logyard-ingress test-delve-recorder-flags test-server-ad-analysis test-molecule-run-isolation test-restore-safety test-fastdeploy-service-token-settings test-fastdeploy-runner-step-states test-voxhelm-prune-and-service-knobs test-traefik-frame-options test-traefik-hsts test-traefik-logrotate test-traefik-backup-dynamic test-minio-backup-accounts test-echoport-sqlite-backup test-encrypted-volume-fstab test-minio-metadata-backup test-opsgate-deploy-keys test-opsgate-rsync-excludes test-collection-build-ignore test-just-test-targets"
+
+# `jobs` targets run at a time: OPS_LIBRARY_TEST_JOBS, else at most 8 and at
+# most half the host's CPUs (auto:8); jobs=1 runs them one after another. Every target runs even when one fails; logs go
+# to ~/.cache/ops-library-runs/.
+[doc("Run the default contributor validation path (jobs=1: one target at a time)")]
+test jobs=env("OPS_LIBRARY_TEST_JOBS", "auto:8"): venv
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Sync the project environment once (with the docs extra of docs-build), so
+    # the targets' own `uv run` calls never install into or recreate .venv
+    # while other targets use it.
+    UV_PROJECT_ENVIRONMENT=.venv uv run --extra docs python -c ''
+    if [[ {{quote(jobs)}} == 1 ]]; then
+        printf '%s\n' {{test_serial_targets}} {{test_parallel_targets}} \
+            | scripts/run-parallel.sh --jobs 1 --label just-test -- 'just "$JOB"'
+    else
+        log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/ops-library-runs/just-test-$(date +%Y%m%d-%H%M%S)-$$"
+        export OPS_LIBRARY_TEST_SERIAL_LOG_DIR="$log_dir/serial"
+        printf '%s\n' _test-serial {{test_parallel_targets}} \
+            | scripts/run-parallel.sh --jobs {{quote(jobs)}} --log-dir "$log_dir" --label just-test -- 'just "$JOB"'
+    fi
+    echo ""
+    echo "✅ Validation completed!"
+
+# Internal: the serial targets of `just test`, one after another
+_test-serial:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    printf '%s\n' {{test_serial_targets}} \
+        | scripts/run-parallel.sh --jobs 1 --label just-test-serial ${OPS_LIBRARY_TEST_SERIAL_LOG_DIR:+--log-dir "$OPS_LIBRARY_TEST_SERIAL_LOG_DIR"} -- 'just "$JOB"'
 
 # Run the strict validation gate
 validate-strict: venv test-roles lint-strict docs-build docs-lint
@@ -99,6 +132,10 @@ test-nyxmon-deploy: venv
     @echo "Testing Nyxmon rsync safety and notification policy contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_deploy
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_lifecycle
+
+# The two target lists of `just test` stay consistent (no target twice, Docker ones serial)
+test-just-test-targets: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_just_test_targets
 
 # Builds the collection into a temp dir (rust/PLAN-foundation.md section 5).
 # galaxy.yml build_ignore keeps rust/ and .github/ out of the collection archive
@@ -711,8 +748,17 @@ molecule-login role:
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
     scripts/molecule-run.sh {{quote(role)}} default login
 
-# Run molecule tests for all roles that have molecule configs
-molecule-test-all:
+# Scenarios that took longest on studio (M4 Max, Colima 6 CPUs); they start
+# first so the parallel run does not end waiting on one of them.
+molecule_slow_scenarios := "echoport_remote_command_guard/pins mailgun_relay_deploy/default graphyard_deploy/default ssh_restricted_forwarding_account/default nyxmon_deploy/default unifi_restore/default fastdeploy_deploy/default fastdeploy_restore/default"
+
+# Every scenario runs through scripts/molecule-run.sh (own run ID, containers,
+# Molecule state and ANSIBLE_HOME), `jobs` at a time: OPS_LIBRARY_MOLECULE_JOBS,
+# else at most 4 and at most half the host's CPUs (auto:4); jobs=1 runs them
+# one after another as before.
+# Logs: ~/.cache/ops-library-runs/molecule-test-all-*/<role>__<scenario>.log
+[doc("Run molecule tests for all roles that have molecule configs (jobs=1: serial)")]
+molecule-test-all jobs=env("OPS_LIBRARY_MOLECULE_JOBS", "auto:4"):
     #!/usr/bin/env bash
     set -euo pipefail
     eval "$(just _export-docker-host)"
@@ -726,26 +772,31 @@ molecule-test-all:
         exit 0
     fi
 
-    failed_roles=()
+    # minio_backup runs a locally built image (see test-minio-backup-molecule).
+    if [[ -f roles/minio_backup/molecule/default/molecule.yml ]]; then
+        echo "Building ops-library-molecule-minio-backup:local for minio_backup..."
+        docker build -q -t ops-library-molecule-minio-backup:local \
+            ${MINIO_TEST_IMAGE:+--build-arg MINIO_TEST_IMAGE="$MINIO_TEST_IMAGE"} \
+            roles/minio_backup/molecule/default \
+            || echo "warning: image build failed; minio_backup/default will fail" >&2
+    fi
+
+    scenarios=()
     for molecule_file in "${molecule_files[@]}"; do
         role_name=$(basename "$(dirname "$(dirname "$(dirname "$molecule_file")")")")
         scenario_name=$(basename "$(dirname "$molecule_file")")
-        echo "========================================"
-        echo "Testing role: $role_name (scenario: $scenario_name)"
-        echo "========================================"
-        if ! scripts/molecule-run.sh "$role_name" "$scenario_name" test; then
-            failed_roles+=("$role_name/$scenario_name")
-        fi
+        scenarios+=("$role_name/$scenario_name")
     done
-
-    if [[ ${#failed_roles[@]} -gt 0 ]]; then
-        echo "========================================"
-        echo "FAILED ROLES: ${failed_roles[*]}"
-        echo "========================================"
-        exit 1
-    fi
-
-    echo "All molecule tests passed!"
+    slow=({{molecule_slow_scenarios}})
+    {
+        for scenario in "${slow[@]}"; do
+            if [[ " ${scenarios[*]} " == *" $scenario "* ]]; then echo "$scenario"; fi
+        done
+        for scenario in "${scenarios[@]}"; do
+            if [[ " ${slow[*]} " != *" $scenario "* ]]; then echo "$scenario"; fi
+        done
+    } | scripts/run-parallel.sh --jobs {{quote(jobs)}} --label molecule-test-all --tail 60 -- \
+        'scripts/molecule-run.sh "${JOB%%/*}" "${JOB#*/}" test'
 
 # Run molecule tests for all PostfixAdmin roles
 molecule-test-postfixadmin:

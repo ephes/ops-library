@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+- Test tooling: `just test` and `just molecule-test-all` run in parallel
+  through the new `scripts/run-parallel.sh` (one log per target or scenario
+  under `~/.cache/ops-library-runs/`, a summary by duration, exit status 1 if
+  any failed). By default `just test` runs at most 8 targets at a time and at most half
+  the host's CPU count (`OPS_LIBRARY_TEST_JOBS` or the `jobs` argument
+  override it); its Docker-backed and fixed-path targets
+  (`test_serial_targets` in the justfile) still run one after another, as one
+  job. `just molecule-test-all` runs at most 4 scenarios at a time, capped
+  the same way (`OPS_LIBRARY_MOLECULE_JOBS` or `jobs`), each still isolated by
+  `scripts/molecule-run.sh`, and builds the local `minio_backup` image first.
+  `jobs=1` keeps the serial order for both. Unlike the old chain of
+  dependencies, `just test` no longer stops at the first failing target.
+  New `just test-just-test-targets` keeps the two target lists consistent.
+  `galaxy.yml` `build_ignore` now also excludes `docs/build`, so Molecule no
+  longer packs the Sphinx output into every scenario's collection install.
+  No role behaviour changes.
+
+- Molecule: `scripts/molecule-run.sh` exports `ANSIBLE_PIPELINING=1`
+  (unless already set; `0` turns it off), so each module runs over the
+  existing docker connection instead of being copied to a remote temp file
+  first. No scenario changes its converge, idempotence, verify or destroy
+  steps.
+
 - `minio_deploy`: new `minio_traefik_api_internal_only` (default `false`).
   `true` adds the `ClientIP` list of `minio_internal_ip_ranges` to both S3
   API routers, so only LAN and Tailscale clients get an answer (everyone else
