@@ -103,7 +103,7 @@ Metadata-only example:
 
 ## Testing
 
-`just test-minio-backup-molecule` builds the platform image and runs `just molecule-test minio_backup`. The scenario starts a real MinIO server in Docker, makes a metadata-only backup with retention while MinIO keeps running, deletes a user, and restores it with `minio_restore` from the metadata snapshot. dl.min.io no longer serves the pinned builds, so the image copies `minio` and `mc` from a MinIO container image (`MINIO_TEST_IMAGE`, default `minio/minio:RELEASE.2025-01-20T14-49-07Z`, available locally or pullable for the Docker host's architecture).
+`just test-minio-backup-molecule` builds the platform image and runs `just molecule-test minio_backup`. The scenario starts a real MinIO server in Docker, makes a metadata-only backup with retention while MinIO keeps running, deletes a user, and restores it with `minio_restore` from the metadata snapshot. MinIO, Inc. no longer publishes binaries or container images (dl.min.io and the `minio/minio` tags are gone), so the image copies the server and client from SILO, the community-maintained MinIO fork by Pigsty (`MINIO_TEST_IMAGE`, default `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` pinned by digest, amd64 and arm64): its `silo` server keeps MinIO's `server` CLI and `MINIO_*` environment and is installed as `/usr/local/bin/minio`, its `mcli` client as `/usr/local/bin/mc`. A different image needs `MINIO_TEST_SERVER_BIN` and `MINIO_TEST_CLIENT_BIN` build args with its binary paths (`/usr/bin/minio` and `/usr/bin/mc` for a `minio/minio` image). `just molecule-test-all` builds the image too.
 
 - `manifest.sha256` covering every file (when enabled).
 - Optional archive `tar.gz`/`tar.zst` file plus fetched copy on the controller.

@@ -62,8 +62,10 @@ class Store:
 STORES = {
     "minio": Store(
         "minio",
-        "minio/minio:RELEASE.2025-01-20T14-49-07Z"
-        "@sha256:ed9be66eb5f2636c18289c34c3b725ddf57815f2777c77b5938543b78a44f144",
+        # SILO, the community-maintained MinIO fork by Pigsty (minio/minio
+        # tags can no longer be pulled); its entrypoint runs `silo server`.
+        "pgsty/silo:RELEASE.2026-10-26T00-00-00Z"
+        "@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7",
         {"MINIO_ROOT_USER": ROOT_USER, "MINIO_ROOT_PASSWORD": ROOT_PASSWORD},
         ("server", "/data"),
     ),
@@ -76,15 +78,23 @@ STORES = {
 }
 
 
-def docker(*args: str, stdin: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(["docker", *args], input=stdin, capture_output=True, text=True, timeout=900)
+def docker(
+    *args: str, stdin: str | None = None, check: bool = True
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["docker", *args], input=stdin, capture_output=True, text=True, timeout=900
+    )
     if check and result.returncode != 0:
-        raise AssertionError(f"docker {' '.join(args[:3])} failed ({result.returncode}): {result.stderr[-2000:]}")
+        raise AssertionError(
+            f"docker {' '.join(args[:3])} failed ({result.returncode}): {result.stderr[-2000:]}"
+        )
     return result
 
 
 def client_image() -> str:
-    digest = hashlib.sha256((CLIENT_CONTEXT / "Dockerfile").read_bytes()).hexdigest()[:12]
+    digest = hashlib.sha256((CLIENT_CONTEXT / "Dockerfile").read_bytes()).hexdigest()[
+        :12
+    ]
     tag = f"{NAME_PREFIX}-client:{digest}"
     if docker("image", "inspect", tag, check=False).returncode != 0:
         docker("build", "--quiet", "--tag", tag, str(CLIENT_CONTEXT))
@@ -92,7 +102,11 @@ def client_image() -> str:
 
 
 def render(directory: Path, template: str, **variables: object) -> str:
-    env = Environment(loader=FileSystemLoader(directory), undefined=ChainableUndefined, trim_blocks=True)
+    env = Environment(
+        loader=FileSystemLoader(directory),
+        undefined=ChainableUndefined,
+        trim_blocks=True,
+    )
     # Ansible's filters where Jinja has none; Jinja's own ``default`` stays (Ansible's
     # does not apply to ChainableUndefined, and the runners' defaults would vanish).
     for name, function in FilterModule().filters().items():
@@ -115,13 +129,36 @@ class Lab:
     client: str
     url: str
 
-    def sh(self, script: str, *, stdin: str | None = None, env: dict[str, str] | None = None,
-           check: bool = True) -> subprocess.CompletedProcess[str]:
-        flags = [arg for key, value in (env or {}).items() for arg in ("-e", f"{key}={value}")]
-        return docker("exec", "-i", *flags, self.client, "sh", "-c", script, stdin=stdin, check=check)
+    def sh(
+        self,
+        script: str,
+        *,
+        stdin: str | None = None,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        flags = [
+            arg
+            for key, value in (env or {}).items()
+            for arg in ("-e", f"{key}={value}")
+        ]
+        return docker(
+            "exec",
+            "-i",
+            *flags,
+            self.client,
+            "sh",
+            "-c",
+            script,
+            stdin=stdin,
+            check=check,
+        )
 
     def put_file(self, path: str, content: str, mode: str = "0600") -> None:
-        self.sh(f"mkdir -p \"$(dirname '{path}')\" && cat > '{path}' && chmod {mode} '{path}'", stdin=content)
+        self.sh(
+            f"mkdir -p \"$(dirname '{path}')\" && cat > '{path}' && chmod {mode} '{path}'",
+            stdin=content,
+        )
 
     def scoped_account(self, target: str, *, alias: str | None = None) -> None:
         """minio_deploy backup_account plus echoport_backup minio_alias for one target."""
@@ -136,26 +173,57 @@ class Lab:
             minio_backup_account_whole_bucket=False,
         )
         self.put_file(f"/etc/minio/policies/backup-{target}.json", policy)
-        self.sh(f"mc admin policy create admin backup-{target} /etc/minio/policies/backup-{target}.json")
-        self.sh("mc admin user add admin >/dev/null", stdin=f"{scoped_user(target)}\n{scoped_secret(target)}\n")
-        self.sh(f"mc admin policy attach admin backup-{target} --user {scoped_user(target)}")
+        self.sh(
+            f"mc admin policy create admin backup-{target} /etc/minio/policies/backup-{target}.json"
+        )
+        self.sh(
+            "mc admin user add admin >/dev/null",
+            stdin=f"{scoped_user(target)}\n{scoped_secret(target)}\n",
+        )
+        self.sh(
+            f"mc admin policy attach admin backup-{target} --user {scoped_user(target)}"
+        )
         if alias:
-            wanted = {"url": self.url, "accessKey": scoped_user(target), "secretKey": scoped_secret(target),
-                      "api": "s3v4", "path": "auto"}
+            wanted = {
+                "url": self.url,
+                "accessKey": scoped_user(target),
+                "secretKey": scoped_secret(target),
+                "api": "s3v4",
+                "path": "auto",
+            }
             self.sh(f"mc alias import {alias} >/dev/null", stdin=json.dumps(wanted))
 
-    def run_runner(self, script: str, cfg_env: dict[str, str], *,
-                   env: dict[str, str] | None = None) -> tuple[dict, list[dict]]:
+    def run_runner(
+        self, script: str, cfg_env: dict[str, str], *, env: dict[str, str] | None = None
+    ) -> tuple[dict, list[dict]]:
         """Run a rendered runner like FastDeploy; return its ECHOPORT result and all events."""
 
-        self.put_file("/run/echoport-lab/config.json", json.dumps({"context": {"env": cfg_env}}))
+        self.put_file(
+            "/run/echoport-lab/config.json", json.dumps({"context": {"env": cfg_env}})
+        )
         # rclone and mc retry for a long time; a hung runner fails the test instead.
-        result = self.sh(f"timeout 300 python3 {script}", env={"DEPLOY_CONFIG_FILE": "/run/echoport-lab/config.json", **(env or {})},
-                         check=False)
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
-        results = [e for e in events if str(e.get("message", "")).startswith("ECHOPORT_RESULT:")]
-        assert results, f"no result (rc {result.returncode}): {result.stdout[-2000:]} {result.stderr[-2000:]}"
-        return json.loads(results[-1]["message"].removeprefix("ECHOPORT_RESULT:")), events
+        result = self.sh(
+            f"timeout 300 python3 {script}",
+            env={"DEPLOY_CONFIG_FILE": "/run/echoport-lab/config.json", **(env or {})},
+            check=False,
+        )
+        events = [
+            json.loads(line)
+            for line in result.stdout.splitlines()
+            if line.startswith("{")
+        ]
+        results = [
+            e
+            for e in events
+            if str(e.get("message", "")).startswith("ECHOPORT_RESULT:")
+        ]
+        assert (
+            results
+        ), f"no result (rc {result.returncode}): {result.stdout[-2000:]} {result.stderr[-2000:]}"
+        return (
+            json.loads(results[-1]["message"].removeprefix("ECHOPORT_RESULT:")),
+            events,
+        )
 
 
 @pytest.fixture(scope="module", params=sorted(STORES))
@@ -169,18 +237,49 @@ def lab(request: pytest.FixtureRequest) -> Iterator[Lab]:
     docker("network", "create", "--internal", network)
     started: list[str] = []
     try:
-        env = [arg for key, value in store.env.items() for arg in ("-e", f"{key}={value}")]
-        docker("run", "-d", "--name", server, "--network", network, *env, store.image, *store.command)
+        env = [
+            arg for key, value in store.env.items() for arg in ("-e", f"{key}={value}")
+        ]
+        docker(
+            "run",
+            "-d",
+            "--name",
+            server,
+            "--network",
+            network,
+            *env,
+            store.image,
+            *store.command,
+        )
         started.append(server)
         # The runners require their work dir on a separate mount (_work_dir.py.j2).
-        docker("run", "-d", "--name", client, "--network", network, "--tmpfs", "/mnt/work", image,
-               "sleep", "infinity")
+        docker(
+            "run",
+            "-d",
+            "--name",
+            client,
+            "--network",
+            network,
+            "--tmpfs",
+            "/mnt/work",
+            image,
+            "sleep",
+            "infinity",
+        )
         started.append(client)
         current = Lab(store, client, f"http://{server}:9000")
         deadline = time.monotonic() + 90
-        while current.sh(f"mc alias set admin {current.url} {ROOT_USER} {ROOT_PASSWORD} >/dev/null && "
-                         "mc ls admin >/dev/null", check=False).returncode != 0:
-            assert time.monotonic() < deadline, docker("logs", server, check=False).stderr[-2000:]
+        while (
+            current.sh(
+                f"mc alias set admin {current.url} {ROOT_USER} {ROOT_PASSWORD} >/dev/null && "
+                "mc ls admin >/dev/null",
+                check=False,
+            ).returncode
+            != 0
+        ):
+            assert time.monotonic() < deadline, docker(
+                "logs", server, check=False
+            ).stderr[-2000:]
             time.sleep(1)
         current.sh(f"mc mb admin/{BUCKET} && mc version enable admin/{BUCKET}")
         yield current
@@ -227,28 +326,48 @@ def test_generic_runner_backs_up_and_restores_with_a_scoped_account(lab: Lab) ->
         "ECHOPORT_BACKUP_FILES": "/var/lib/nyxmon/files/note.txt,/var/lib/nyxmon/files/blob.bin",
         "ECHOPORT_BUCKET": BUCKET,
     }
-    result, _ = lab.run_runner(runner, {**env, "ECHOPORT_ACTION": "backup",
-                                        "ECHOPORT_KEY_PREFIX": "nyxmon/2026-11-03T02-00-00"})
+    result, _ = lab.run_runner(
+        runner,
+        {
+            **env,
+            "ECHOPORT_ACTION": "backup",
+            "ECHOPORT_KEY_PREFIX": "nyxmon/2026-11-03T02-00-00",
+        },
+    )
     assert result["success"], result
     assert result["key"] == "nyxmon/2026-11-03T02-00-00.tar.gz"
     assert result["size_bytes"] > 16 * 1024 * 1024
     stored = json.loads(lab.sh(f"mc stat --json admin/{BUCKET}/{result['key']}").stdout)
     assert stored["size"] == result["size_bytes"]
 
-    lab.sh("sqlite3 /var/lib/nyxmon/db.sqlite3 \"update t set v = 'changed';\"; "
-           "echo changed > /var/lib/nyxmon/files/note.txt; rm /var/lib/nyxmon/files/blob.bin")
-    restored, _ = lab.run_runner(runner, {**env, "ECHOPORT_ACTION": "restore", "ECHOPORT_KEY": result["key"],
-                                          "ECHOPORT_CHECKSUM": result["checksum_sha256"]})
+    lab.sh(
+        "sqlite3 /var/lib/nyxmon/db.sqlite3 \"update t set v = 'changed';\"; "
+        "echo changed > /var/lib/nyxmon/files/note.txt; rm /var/lib/nyxmon/files/blob.bin"
+    )
+    restored, _ = lab.run_runner(
+        runner,
+        {
+            **env,
+            "ECHOPORT_ACTION": "restore",
+            "ECHOPORT_KEY": result["key"],
+            "ECHOPORT_CHECKSUM": result["checksum_sha256"],
+        },
+    )
     assert restored["success"], restored
-    assert lab.sh("sqlite3 /var/lib/nyxmon/db.sqlite3 'select v from t;'").stdout.strip() == "original"
+    assert (
+        lab.sh("sqlite3 /var/lib/nyxmon/db.sqlite3 'select v from t;'").stdout.strip()
+        == "original"
+    )
     assert lab.sh("cat /var/lib/nyxmon/files/note.txt").stdout.strip() == "original"
     lab.sh("sha256sum -c /root/blob.sha256 >/dev/null")
 
 
 def test_scoped_account_stays_in_its_prefix(lab: Lab) -> None:
     lab.scoped_account("chesslab", alias="backup-chesslab")
-    lab.sh(f"echo foreign | mc pipe admin/{BUCKET}/other/foreign.txt >/dev/null && "
-           f"echo own | mc pipe admin/{BUCKET}/chesslab/own.txt >/dev/null")
+    lab.sh(
+        f"echo foreign | mc pipe admin/{BUCKET}/other/foreign.txt >/dev/null && "
+        f"echo own | mc pipe admin/{BUCKET}/chesslab/own.txt >/dev/null"
+    )
     denied = {
         "write a foreign prefix": f"echo x | mc pipe backup-chesslab/{BUCKET}/other/x.txt",
         "read a foreign prefix": f"mc cat backup-chesslab/{BUCKET}/other/foreign.txt",
@@ -257,23 +376,45 @@ def test_scoped_account_stays_in_its_prefix(lab: Lab) -> None:
         "delete its own object": f"mc rm backup-chesslab/{BUCKET}/chesslab/own.txt",
         "use the admin API": "mc admin user list backup-chesslab",
     }
-    allowed = {name: script for name, script in denied.items() if lab.sh(script, check=False).returncode == 0}
+    allowed = {
+        name: script
+        for name, script in denied.items()
+        if lab.sh(script, check=False).returncode == 0
+    }
     assert not allowed, f"{lab.store.name} allowed: {sorted(allowed)}"
-    assert lab.sh(f"mc cat backup-chesslab/{BUCKET}/chesslab/own.txt").stdout.strip() == "own"
+    assert (
+        lab.sh(f"mc cat backup-chesslab/{BUCKET}/chesslab/own.txt").stdout.strip()
+        == "own"
+    )
 
     # A runner whose alias map hands the key of another target to this
     # account: the store refuses the upload and the runner reports it.
     lab.sh("mkdir -p /var/lib/other && echo data > /var/lib/other/data.txt")
-    runner = generic_runner(lab, {"chesslab": "backup-chesslab", "other": "backup-chesslab"})
-    result, _ = lab.run_runner(runner, {"ECHOPORT_ACTION": "backup", "ECHOPORT_TARGET": "other",
-                                        "ECHOPORT_BACKUP_FILES": "/var/lib/other/data.txt",
-                                        "ECHOPORT_KEY_PREFIX": "other/2026-11-03T02-00-00"})
+    runner = generic_runner(
+        lab, {"chesslab": "backup-chesslab", "other": "backup-chesslab"}
+    )
+    result, _ = lab.run_runner(
+        runner,
+        {
+            "ECHOPORT_ACTION": "backup",
+            "ECHOPORT_TARGET": "other",
+            "ECHOPORT_BACKUP_FILES": "/var/lib/other/data.txt",
+            "ECHOPORT_KEY_PREFIX": "other/2026-11-03T02-00-00",
+        },
+    )
     assert not result["success"]
     assert result["error"] == "MinIO upload failed"
-    assert lab.sh(f"mc stat admin/{BUCKET}/other/2026-11-03T02-00-00.tar.gz", check=False).returncode != 0
+    assert (
+        lab.sh(
+            f"mc stat admin/{BUCKET}/other/2026-11-03T02-00-00.tar.gz", check=False
+        ).returncode
+        != 0
+    )
 
 
-def test_media_runner_copies_and_restores_with_a_prefix_scoped_account(lab: Lab) -> None:
+def test_media_runner_copies_and_restores_with_a_prefix_scoped_account(
+    lab: Lab,
+) -> None:
     lab.scoped_account("homepage-media")
     lab.sh(
         "set -e; mc mb --ignore-existing admin/media-src >/dev/null; "
@@ -283,13 +424,15 @@ def test_media_runner_copies_and_restores_with_a_prefix_scoped_account(lab: Lab)
     )
     lab.put_file(
         "/etc/echoport-media/homepage-media-backup.json",
-        json.dumps({
-            # The source is the stand-in for the site's AWS bucket.
-            "source_access_key": ROOT_USER,
-            "source_secret_key": ROOT_PASSWORD,
-            "dest_access_key": scoped_user("homepage-media"),
-            "dest_secret_key": scoped_secret("homepage-media"),
-        }),
+        json.dumps(
+            {
+                # The source is the stand-in for the site's AWS bucket.
+                "source_access_key": ROOT_USER,
+                "source_secret_key": ROOT_PASSWORD,
+                "dest_access_key": scoped_user("homepage-media"),
+                "dest_secret_key": scoped_secret("homepage-media"),
+            }
+        ),
     )
     script = render(
         RUNNER_TEMPLATES,
@@ -307,22 +450,38 @@ def test_media_runner_copies_and_restores_with_a_prefix_scoped_account(lab: Lab)
     # The source remote is AWS (virtual-hosted buckets); the stand-in bucket on the
     # test store needs an endpoint and path-style requests, which rclone only
     # makes for a non-AWS provider. The destination side stays as rendered.
-    source = {"RCLONE_CONFIG_SRC_ENDPOINT": lab.url, "RCLONE_CONFIG_SRC_PROVIDER": "Minio"}
+    source = {
+        "RCLONE_CONFIG_SRC_ENDPOINT": lab.url,
+        "RCLONE_CONFIG_SRC_PROVIDER": "Minio",
+    }
 
-    result, _ = lab.run_runner("/opt/runner/homepage_media_backup.py",
-                               {"ECHOPORT_ACTION": "backup", "ECHOPORT_KEY_PREFIX": "homepage-media/2026-11-03T02-00-00"},
-                               env=source)
+    result, _ = lab.run_runner(
+        "/opt/runner/homepage_media_backup.py",
+        {
+            "ECHOPORT_ACTION": "backup",
+            "ECHOPORT_KEY_PREFIX": "homepage-media/2026-11-03T02-00-00",
+        },
+        env=source,
+    )
     assert result["success"], result
     assert (result["file_count"], result["size_bytes"]) == (2, 20000006)
-    lab.sh(f"mc stat admin/{BUCKET}/homepage-media/2026-11-03T02-00-00/manifest.json >/dev/null && "
-           f"mc stat admin/{BUCKET}/homepage-media/current/objects/images/big.bin >/dev/null")
+    lab.sh(
+        f"mc stat admin/{BUCKET}/homepage-media/2026-11-03T02-00-00/manifest.json >/dev/null && "
+        f"mc stat admin/{BUCKET}/homepage-media/current/objects/images/big.bin >/dev/null"
+    )
 
     lab.sh("mc rm -q --recursive --force admin/media-src/ >/dev/null")
     restored, _ = lab.run_runner(
         "/opt/runner/homepage_media_backup.py",
-        {"ECHOPORT_ACTION": "restore", "ECHOPORT_KEY": result["key"], "ECHOPORT_CHECKSUM": result["checksum_sha256"]},
+        {
+            "ECHOPORT_ACTION": "restore",
+            "ECHOPORT_KEY": result["key"],
+            "ECHOPORT_CHECKSUM": result["checksum_sha256"],
+        },
         env=source,
     )
     assert restored["success"], restored
-    lab.sh("mc cat admin/media-src/images/big.bin | cmp - /root/big.bin && "
-           "mc cat admin/media-src/small.txt | cmp - /root/small.txt")
+    lab.sh(
+        "mc cat admin/media-src/images/big.bin | cmp - /root/big.bin && "
+        "mc cat admin/media-src/small.txt | cmp - /root/small.txt"
+    )

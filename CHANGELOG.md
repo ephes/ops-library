@@ -25,6 +25,19 @@
   first. No scenario changes its converge, idempotence, verify or destroy
   steps.
 
+- `minio_backup` Molecule scenario: MinIO, Inc. no longer publishes images,
+  and `minio/minio:RELEASE.2025-01-20T14-49-07Z` can no longer be pulled, so
+  the scenario image (and `tests/integration/test_echoport_s3_backends.py`)
+  now uses SILO, the community-maintained MinIO fork by Pigsty (PGSTY):
+  `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`, pinned by digest, amd64 and
+  arm64. Chosen because it is the widely used maintained fork (Docker Hub
+  publisher PGSTY, releases every few weeks, millions of pulls), its `silo`
+  server keeps MinIO's `server` CLI and `MINIO_*` environment and its
+  `mcli` client is MinIO's `mc`; the Dockerfile installs them as
+  `/usr/local/bin/minio` and `/usr/local/bin/mc`. The tag is older than two
+  weeks. `MINIO_TEST_SERVER_BIN` and `MINIO_TEST_CLIENT_BIN` build args name
+  the binary paths for another image.
+
 - `minio_deploy`: new `minio_traefik_api_internal_only` (default `false`).
   `true` adds the `ClientIP` list of `minio_internal_ip_ranges` to both S3
   API routers, so only LAN and Tailscale clients get an answer (everyone else
