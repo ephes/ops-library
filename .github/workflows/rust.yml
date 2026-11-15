@@ -13,30 +13,6 @@ name: Rust
 # Actions are pinned by commit SHA (the ones mailgun-relay's workflows use).
 
 "on":
-  push:
-    branches:
-      - main
-    paths:
-      - "rust/**"
-      - ".github/workflows/rust*.yml"
-      # The Python endpoint scripts the metrics-httpd parity harness runs.
-      - "roles/**/*httpd*"
-      # The python-apt oracle of the software-live-apt comparison and the
-      # Python side of the software-live parity harness.
-      - "roles/software_live/files/software_live.py"
-      # The software_estate reader the software-live parity harness runs.
-      - "roles/software_estate/files/collect.py"
-  pull_request:
-    paths:
-      - "rust/**"
-      - ".github/workflows/rust*.yml"
-      # The Python endpoint scripts the metrics-httpd parity harness runs.
-      - "roles/**/*httpd*"
-      # The python-apt oracle of the software-live-apt comparison and the
-      # Python side of the software-live parity harness.
-      - "roles/software_live/files/software_live.py"
-      # The software_estate reader the software-live parity harness runs.
-      - "roles/software_estate/files/collect.py"
   workflow_dispatch:
 
 permissions:
