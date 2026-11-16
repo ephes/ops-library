@@ -225,6 +225,7 @@ Notes:
 | `dns_ddns_ipv6_enabled` | `true` | Update IPv6 (AAAA records) |
 | `dns_ddns_ipv4_source_url` / `dns_ddns_ipv6_source_url` | icanhazip | WAN address detection |
 | `dns_ddns_verify_nameservers` | `[]` | Nameservers asked for the public view (empty: the zone's NS records) |
+| `dns_ddns_static_records` | `[]` | Names pinned to fixed addresses: `[{name: "s3.home", a: ["100.64.0.1"], aaaa: []}]` (see [Static records](#static-records)) |
 | `dns_ddns_state_dir` | `"/var/lib/ddns"` | Dedicated state directory (basename must contain `ddns`) |
 | `dns_ddns_status_path` | `"{{ dns_ddns_state_dir }}/status.json"` | Status file written by every run |
 | `dns_ddns_script_path` | `"/usr/local/bin/ddns-update"` | Updater (Python 3, stdlib only) |
@@ -303,16 +304,19 @@ Settings live in `/etc/ddns/config.json`; credentials in `/etc/ddns/credentials.
 2. For `subdomain` and `*.subdomain`, A and AAAA: reads the record from the provider,
    writes it only when it differs, then reads it back. Every record is logged as
    `unchanged`, `updated <old> -> <new>` or `ERROR` (credentials are never logged).
-3. Asks the authoritative nameservers (`dig +norecurse`) what the public sees: those
+3. Does the same for each entry of `dns_ddns_static_records` with its fixed A and
+   AAAA sets (see [Static records](#static-records)).
+4. Asks the authoritative nameservers (`dig +norecurse`) what the public sees: those
    in `dns_ddns_verify_nameservers`, or else the NS set of the closest enclosing zone
    that has one (so `home` in a delegated child zone `home.example.com` is checked at
    the child's servers once the delegation exists, and at the parent's before).
-4. Writes `/var/lib/ddns/status.json`: WAN addresses, per-record provider and public
+5. Writes `/var/lib/ddns/status.json`: WAN addresses, per-record provider and public
    values, `summary.run_ok`, `summary.consecutive_failures`,
    `summary.public_ok` and `summary.public_mismatch_seconds` (how long the public
    view has differed from the WAN address).
-5. Exits non-zero, so the unit fails, on any non-2xx API answer, a read-back mismatch,
-   a failed address detection, a missing credential or an unknown provider. A public
+6. Exits non-zero, so the unit fails, on any non-2xx API answer, a failed or
+   non-authoritative DNS query, a read-back mismatch, a failed address detection, a
+   missing credential, an unknown provider or an invalid static record. A public
    mismatch alone does not fail the run (propagation lags); monitor it through the
    status file instead.
 
@@ -335,6 +339,38 @@ redacted from error output. The server needs an `update-policy` that lets the ke
 change exactly these owners and types, for example with `bind_authoritative_deploy`:
 `grant "ddns-home" name home.example.com. A AAAA` and
 `grant "ddns-home" name *.home.example.com. A AAAA`.
+
+DNS answers are judged by their header, not by empty output: every query runs
+`dig +noall +comments +answer`; NOERROR gives the answer records (none for NODATA),
+NXDOMAIN gives none, and any other status (SERVFAIL, REFUSED, a timeout) is a failed
+query. A query sent to a named nameserver must also carry the `aa` flag.
+
+#### Static records
+
+`dns_ddns_static_records` pins names to fixed addresses, for example an internal
+service name that should resolve publicly to a VPN address:
+
+```yaml
+dns_ddns_static_records:
+  - {name: "s3.home", a: ["100.64.0.1"], aaaa: []}
+```
+
+Each entry is an owner name relative to the zone (like `dns_ddns_subdomain`) with the
+complete A and AAAA sets; both keys are required, since an empty set deletes that type. Every run writes and reads them back like the WAN records,
+at every provider, independent of the WAN address and of `dns_ddns_ipv4_enabled` /
+`dns_ddns_ipv6_enabled`. An empty set means the type must not exist on the name: an
+explicit name answers NODATA for it instead of the `*.subdomain` wildcard's address.
+The types with values are written first, because until the name owns a record the
+wildcard answers for it. An entry needs at least one value, must not be one of the
+dynamic names, a wildcard or a duplicate, and its values must be IPv4 for `a` and
+IPv6 for `aaaa`; a bad entry fails the run and is skipped, the others still apply.
+Static records appear in `status.json` under `records` with `"static": true` and the
+wanted list as `desired`, and count towards the `summary` fields.
+
+The updater does not delete names that are removed from the list: delete them once
+with `nsupdate` (or keep the entry). With `rfc2136` the server's `update-policy` must
+grant the key each static owner, for example
+`grant "ddns-home" name s3.home.example.com. A AAAA`.
 
 Several providers: with `dns_ddns_providers: ["gandi", "rfc2136"]` every record is
 written to both, which keeps the old and the new DNS host correct while resolvers

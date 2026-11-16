@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- `dns_deploy`: new `dns_ddns_static_records` (default `[]`) pins names to fixed
+  A/AAAA sets, e.g. `[{name: "s3.home", a: ["100.64.0.1"], aaaa: []}]`; every run
+  writes and reads them back like the WAN records, and an empty set removes that
+  type from the name, so it answers NODATA instead of the wildcard's address.
+  `ddns-config.json` gains the key `static_records`. All updater DNS queries
+  now run `dig +noall +comments +answer` and judge the header: SERVFAIL, REFUSED,
+  a timeout or (at a named nameserver) a missing `aa` flag is a failed query
+  instead of an empty record set. The Gandi backend deletes an empty set.
+
 - Test tooling: `just test` and `just molecule-test-all` run in parallel
   through the new `scripts/run-parallel.sh` (one log per target or scenario
   under `~/.cache/ops-library-runs/`, a summary by duration, exit status 1 if

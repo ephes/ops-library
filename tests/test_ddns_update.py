@@ -186,20 +186,59 @@ class DdnsUpdateTests(unittest.TestCase):
 TSIG = "FAKEKEYFORTESTSONLYNOTREALAAAAAAAAAAAAAAAAA="
 
 
-class FakeNameserver:
-    """In-memory primary answering dig queries and applying nsupdate scripts."""
+def dig_output(status, name="", rtype="A", answers=(), aa=True):
+    """What `dig +noall +comments +answer` prints (format of BIND 9.18/9.20)."""
+    lines = [
+        ";; Got answer:",
+        f";; ->>HEADER<<- opcode: QUERY, status: {status}, id: 34895",
+        f";; flags: {'qr aa' if aa else 'qr'}; QUERY: 1, ANSWER: {len(answers)}, "
+        "AUTHORITY: 2, ADDITIONAL: 1",
+        "",
+        ";; OPT PSEUDOSECTION:",
+        "; EDNS: version: 0, flags:; udp: 1232",
+    ]
+    if answers:
+        lines.append(";; ANSWER SECTION:")
+        lines += [f"{name}.\t300\tIN\t{rtype}\t{value}" for value in answers]
+    return "\n".join(lines) + "\n"
 
-    def __init__(self, records=None, refuse=False, ignore_updates=False):
+
+class FakeNameserver:
+    """In-memory primary answering dig queries and applying nsupdate scripts.
+
+    Like BIND it synthesizes answers from a wildcard owner for names that own no
+    record at all, and answers NODATA for an existing name without that type.
+    """
+
+    def __init__(self, records=None, refuse=False, ignore_updates=False, dig_status=None,
+                 dig_aa=True):
         self.records = {k: list(v) for k, v in (records or {}).items()}
         self.refuse = refuse
         self.ignore_updates = ignore_updates
+        self.dig_status = dig_status
+        self.dig_aa = dig_aa
         self.calls = []
+        self.updates = []
+
+    def lookup(self, name, rtype):
+        if (name, rtype) in self.records:
+            return "NOERROR", self.records[(name, rtype)]
+        if any(owner == name for owner, _ in self.records):
+            return "NOERROR", []
+        if not name.startswith("*.") and "." in name:
+            wildcard = "*." + name.split(".", 1)[1]
+            if any(owner == wildcard for owner, _ in self.records):
+                return "NOERROR", self.records.get((wildcard, rtype), [])
+        return "NXDOMAIN", []
 
     def __call__(self, argv, stdin):
         self.calls.append((list(argv), stdin))
         if argv[0] == "dig":
             name, rtype = argv[-2].rstrip("."), argv[-1]
-            return 0, "\n".join(self.records.get((name, rtype), []))
+            if self.dig_status:
+                return 0, dig_output(self.dig_status, aa=self.dig_aa)
+            status, values = self.lookup(name, rtype)
+            return 0, dig_output(status, name, rtype, values, aa=self.dig_aa)
         assert argv == ["nsupdate", "-v"], argv
         if self.refuse:
             return 2, f"update failed: REFUSED (key {TSIG})"
@@ -209,6 +248,7 @@ class FakeNameserver:
             parts = line.split()
             if parts[:2] == ["update", "delete"]:
                 self.records.pop((parts[2].rstrip("."), parts[3]), None)
+                self.updates.append(("delete", parts[2].rstrip("."), parts[3]))
             elif parts[:2] == ["update", "add"]:
                 self.records.setdefault((parts[2].rstrip("."), parts[4]), []).append(parts[5])
         return 0, ""
@@ -255,6 +295,17 @@ class Rfc2136Tests(unittest.TestCase):
         digs = [argv for argv, _ in server.calls if argv[0] == "dig"]
         self.assertIn("+norecurse", digs[0])
         self.assertIn("@192.0.2.53", digs[0])
+        self.assertNotIn("+short", digs[0])
+        self.assertIn("+comments", digs[0])
+
+    def test_failed_or_unauthoritative_query_is_an_error_not_an_empty_set(self):
+        for status, aa in (("REFUSED", False), ("SERVFAIL", False), ("NOERROR", False)):
+            with self.subTest(status=status, aa=aa):
+                server = FakeNameserver(current_public(NEW4, NEW6), dig_status=status, dig_aa=aa)
+                code, status_json, _ = self.run_ddns(server, self.rfc_config())
+                self.assertEqual(code, 1)
+                self.assertFalse([c for c in server.calls if c[0][0] == "nsupdate"])
+                self.assertEqual(status_json["records"]["home_A"]["action"], "failed")
 
     def test_unchanged_records_send_no_update(self):
         server = FakeNameserver(current_public(NEW4, NEW6))
@@ -347,6 +398,208 @@ class Rfc2136Tests(unittest.TestCase):
         self.assertEqual(status["records"]["home_A"]["providers"]["gandi"]["action"], "updated")
 
 
+TS4 = "100.93.155.101"
+S3 = f"s3.home.{ZONE}"
+
+
+def static_public(a=(TS4,), aaaa=()):
+    public = current_public(NEW4, NEW6)
+    public[(S3, "A")] = list(a)
+    public[(S3, "AAAA")] = list(aaaa)
+    return public
+
+
+class StaticRecordTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(ddns.Rfc2136Backend, "command", None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def cfg(self, static=None, **overrides):
+        base = config(provider="rfc2136",
+                      rfc2136={"server": "192.0.2.53", "key_name": "ddns-home"},
+                      static_records=static if static is not None
+                      else [{"name": "s3.home", "a": [TS4], "aaaa": []}])
+        base.update(overrides)
+        return base
+
+    def run_ddns(self, server, cfg, public=None, resolve=None):
+        ddns.Rfc2136Backend.command = staticmethod(server)
+        lines = []
+        code, status = ddns.run(cfg, {"DDNS_TSIG_SECRET": TSIG}, http=FakeGandi(),
+                                resolve=resolve or make_resolver(public or static_public()),
+                                log=lines.append, now=lambda: 1_000_000)
+        return code, status, lines
+
+    def test_creates_explicit_name_over_the_wildcard(self):
+        server = FakeNameserver(current_public(NEW4, NEW6))
+        self.assertEqual(server.lookup(S3, "AAAA"), ("NOERROR", [NEW6]))
+        code, status, lines = self.run_ddns(server, self.cfg())
+        self.assertEqual(code, 0, status["errors"])
+        self.assertEqual(server.records[(S3, "A")], [TS4])
+        self.assertNotIn((S3, "AAAA"), server.records)
+        self.assertEqual(server.lookup(S3, "AAAA"), ("NOERROR", []))
+        # The A set is written first; the name then exists and AAAA reads back empty.
+        self.assertEqual([u for u in server.updates if u[1] == S3], [("delete", S3, "A")])
+        self.assertEqual(status["records"]["s3.home_A"]["action"], "updated")
+        self.assertEqual(status["records"]["s3.home_AAAA"]["action"], "unchanged")
+        self.assertTrue(status["records"]["s3.home_A"]["static"])
+        self.assertEqual(status["records"]["s3.home_A"]["desired"], [TS4])
+        self.assertNotIn("static", status["records"]["home_A"])
+        self.assertEqual(status["summary"]["records_total"], 6)
+        self.assertTrue(status["summary"]["public_ok"])
+        self.assertIn(f"DDNS run: provider=rfc2136 zone={ZONE} names=home,*.home static=s3.home",
+                      lines)
+        # Other names keep following the wildcard.
+        self.assertEqual(server.lookup(f"archive.home.{ZONE}", "A"), ("NOERROR", [NEW4]))
+        self.assertEqual(server.records[(f"*.home.{ZONE}", "AAAA")], [NEW6])
+
+    def test_second_run_writes_nothing(self):
+        server = FakeNameserver(current_public(NEW4, NEW6))
+        self.run_ddns(server, self.cfg())
+        server.calls.clear()
+        code, status, _ = self.run_ddns(server, self.cfg())
+        self.assertEqual(code, 0)
+        self.assertFalse([c for c in server.calls if c[0][0] == "nsupdate"])
+        self.assertEqual(status["summary"]["records_updated"], 0)
+
+    def test_repairs_drift_and_removes_an_unwanted_aaaa(self):
+        records = current_public(NEW4, NEW6)
+        records[(S3, "A")] = ["100.64.0.9"]
+        records[(S3, "AAAA")] = [OLD6]
+        server = FakeNameserver(records)
+        code, status, _ = self.run_ddns(server, self.cfg())
+        self.assertEqual(code, 0, status["errors"])
+        self.assertEqual(server.records[(S3, "A")], [TS4])
+        self.assertNotIn((S3, "AAAA"), server.records)
+        self.assertEqual(status["records"]["s3.home_AAAA"]["action"], "updated")
+        aaaa_update = [stdin for argv, stdin in server.calls
+                       if argv[0] == "nsupdate" and f"{S3}. AAAA" in stdin][0]
+        self.assertNotIn("update add", aaaa_update)
+
+    def test_static_names_ignore_family_switches_and_wan_detection(self):
+        server = FakeNameserver(current_public(NEW4, NEW6))
+        records = [{"name": "s3.home", "a": [TS4], "aaaa": ["2001:DB8::0:1"]}]
+        public = static_public(aaaa=["2001:db8::1"])
+        code, status, _ = self.run_ddns(server, self.cfg(records, ipv6=False), public=public)
+        self.assertEqual(code, 0, status["errors"])
+        self.assertEqual(server.records[(S3, "AAAA")], ["2001:db8::1"])
+        self.assertNotIn("home_AAAA", status["records"])
+
+    def test_public_view_needs_empty_answers_from_every_nameserver(self):
+        server = FakeNameserver(current_public(NEW4, NEW6))
+        public = static_public()
+
+        def resolve(name, rtype, ns):
+            if rtype == "NS":
+                return ["ns-a.example.", "ns-b.example."]
+            if (name, rtype) == (S3, "AAAA") and ns == "ns-b.example.":
+                return None  # failed query, e.g. SERVFAIL
+            return public.get((name, rtype))
+
+        code, status, _ = self.run_ddns(server, self.cfg(), resolve=resolve)
+        self.assertEqual(code, 0)
+        self.assertFalse(status["records"]["s3.home_AAAA"]["public_ok"])
+        self.assertTrue(status["records"]["s3.home_A"]["public_ok"])
+        self.assertFalse(status["summary"]["public_ok"])
+        _, status, _ = self.run_ddns(server, self.cfg(), public=static_public(aaaa=[NEW6]))
+        self.assertFalse(status["records"]["s3.home_AAAA"]["public_ok"])
+
+    def test_invalid_entries_fail_the_run_and_valid_ones_still_apply(self):
+        bad = [
+            {"name": "home", "a": [TS4], "aaaa": []},
+            {"name": "*.x.home", "a": [TS4], "aaaa": []},
+            {"name": "v6.home", "a": [NEW6], "aaaa": []},
+            {"name": "v4.home", "a": [], "aaaa": [TS4]},
+            {"name": "empty.home", "a": [], "aaaa": []},
+            {"name": "bad.home", "a": "100.64.0.1", "aaaa": []},
+            {"name": "extra.home", "a": [TS4], "aaaa": [], "ttl": 5},
+            {"name": "noaaaa.home", "a": [TS4]},
+            {"name": "s3.home.", "a": [TS4], "aaaa": []},
+            {"name": "s3.home", "a": [TS4], "aaaa": []},
+            {"name": "S3.HOME", "a": [TS4], "aaaa": []},
+            "s3.home",
+        ]
+        server = FakeNameserver(current_public(NEW4, NEW6))
+        code, status, _ = self.run_ddns(server, self.cfg(bad))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(status["errors"]), len(bad) - 1, status["errors"])
+        self.assertEqual(server.records[(S3, "A")], [TS4])
+        self.assertTrue(all(e.startswith("static_records[") for e in status["errors"]))
+        code, status, _ = self.run_ddns(server, self.cfg({"name": "s3.home"}))
+        self.assertEqual(code, 1)
+        self.assertIn("static_records must be a list", status["errors"])
+
+    def test_gandi_empty_set_is_a_delete(self):
+        gandi = FakeGandi({("s3.home", "AAAA"): [NEW6], ("s3.home", "A"): [TS4]})
+        original = gandi.__call__
+
+        def http(method, url, headers, body):
+            if method == "DELETE":
+                gandi.calls.append((method, url, dict(headers), body))
+                name, rtype = url[len(BASE) + 1:].rsplit("/", 1)
+                gandi.records.pop((name, rtype), None)
+                return 204, b""
+            return original(method, url, headers, body)
+
+        cfg = config(static_records=[{"name": "s3.home", "a": [TS4], "aaaa": []}])
+        code, status = ddns.run(cfg, {"GANDI_API_TOKEN": SECRET}, http=http,
+                                resolve=make_resolver(static_public()), log=lambda _l: None,
+                                now=lambda: 1)
+        self.assertEqual(code, 0, status["errors"])
+        self.assertNotIn(("s3.home", "AAAA"), gandi.records)
+        self.assertEqual([c[0] for c in gandi.calls if "s3.home" in c[1]],
+                         ["GET", "GET", "DELETE", "GET"])
+
+
+class ParseDigTests(unittest.TestCase):
+    def test_statuses(self):
+        answer = dig_output("NOERROR", S3, "AAAA", [NEW6])
+        self.assertEqual(ddns.parse_dig(answer, "AAAA", authoritative=True), [NEW6])
+        self.assertEqual(ddns.parse_dig(answer, "A", authoritative=True), [])
+        nodata = dig_output("NOERROR", S3, "AAAA")
+        self.assertEqual(ddns.parse_dig(nodata, "AAAA", authoritative=True), [])
+        self.assertEqual(ddns.parse_dig(dig_output("NXDOMAIN"), "A", authoritative=True), [])
+        for status in ("SERVFAIL", "REFUSED", "NOTAUTH", "FORMERR"):
+            with self.subTest(status=status), self.assertRaises(ddns.DdnsError):
+                ddns.parse_dig(dig_output(status), "A", authoritative=False)
+        with self.assertRaises(ddns.DdnsError):
+            ddns.parse_dig(";; connection timed out; no servers could be reached\n", "A", False)
+        with self.assertRaises(ddns.DdnsError):
+            ddns.parse_dig("", "A", False)
+
+    def test_authoritative_flag(self):
+        recursive = dig_output("NOERROR", ZONE, "NS", ["ns1.example.", "ns2.example."], aa=False)
+        self.assertEqual(ddns.parse_dig(recursive, "NS", authoritative=False),
+                         ["ns1.example", "ns2.example"])
+        with self.assertRaises(ddns.DdnsError):
+            ddns.parse_dig(recursive, "NS", authoritative=True)
+
+    def test_cname_and_tcp_retry(self):
+        output = (";; Truncated, retrying in TCP mode.\n"
+                  + dig_output("NOERROR", S3, "A", [TS4]).replace(
+                      ";; ANSWER SECTION:\n",
+                      f";; ANSWER SECTION:\n{S3}.\t300\tIN\tCNAME\tother.example.\n"))
+        self.assertEqual(ddns.parse_dig(output, "A", authoritative=True), [TS4])
+
+    def test_dig_helper_maps_failures_to_none(self):
+        def fake_run(stdout, code=0):
+            return mock.Mock(returncode=code, stdout=stdout, stderr="")
+
+        with mock.patch.object(ddns.subprocess, "run",
+                               return_value=fake_run(dig_output("REFUSED"))) as run:
+            self.assertIsNone(ddns.dig(S3, "AAAA", "ns1.example."))
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[-2:], [S3, "AAAA"])
+        self.assertIn("+norecurse", argv)
+        with mock.patch.object(ddns.subprocess, "run",
+                               return_value=fake_run(dig_output("NOERROR", S3, "AAAA"))):
+            self.assertEqual(ddns.dig(S3, "AAAA", "ns1.example."), [])
+        with mock.patch.object(ddns.subprocess, "run",
+                               return_value=fake_run(dig_output("NOERROR", S3, "AAAA"), 9)):
+            self.assertIsNone(ddns.dig(S3, "AAAA", "ns1.example."))
+
+
 class TemplateTests(unittest.TestCase):
     def render(self, name, **variables):
         env = Environment(undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True)
@@ -371,7 +624,10 @@ class TemplateTests(unittest.TestCase):
             dns_ddns_rfc2136_server="CHANGEME", dns_ddns_rfc2136_port=53,
             dns_ddns_rfc2136_key_name="CHANGEME", dns_ddns_rfc2136_key_algorithm="hmac-sha256",
             dns_ddns_rfc2136_update_zone="",
+            dns_ddns_static_records=[{"name": "s3.home", "a": [TS4], "aaaa": []}],
         ))
+        self.assertEqual(rendered["static_records"],
+                         [{"name": "s3.home", "a": [TS4], "aaaa": []}])
         self.assertEqual(rendered["names"], ["home", "*.home"])
         self.assertEqual(rendered["providers"], ["gandi"])
         self.assertEqual(rendered["gandi"]["auth_scheme"], "apikey")
