@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- `unifi_deploy`: the unit's `ExecStart`/`ExecStop` run
+  `{{ unifi_java_home }}/bin/java` (default
+  `/usr/lib/jvm/java-17-openjdk-amd64`) instead of `/usr/bin/java`, and the
+  role's Java check runs that binary. `/usr/bin/java` follows the alternatives
+  link, which another service's JDK can move: on macmini it pointed to
+  OpenJDK 25 after the Minecraft 26.3 switch, outside UniFi 9.5's supported
+  17-24, and UniFi exited with status 255 on every start after the next
+  reboot. New `just test-unifi-java-home` (`tests/test_unifi_java_home.py`)
+  also refuses `/usr/bin/java` anywhere in the `unifi_*` roles. Redeploy
+  UniFi to rewrite the unit.
+
 - `dns_deploy`: new `dns_ddns_static_records` (default `[]`) pins names to fixed
   A/AAAA sets, e.g. `[{name: "s3.home", a: ["100.64.0.1"], aaaa: []}]`; every run
   writes and reads them back like the WAN records, and an empty set removes that

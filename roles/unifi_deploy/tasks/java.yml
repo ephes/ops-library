@@ -5,8 +5,14 @@
     state: present
     update_cache: true
 
+# The unit runs {{ unifi_java_home }}/bin/java, not the system java: its
+# alternatives link can point to a newer Java (another service's JDK) that
+# UniFi refuses.
 - name: "java | Verify installation"
-  ansible.builtin.command: java -version
+  ansible.builtin.command:
+    argv:
+      - "{{ unifi_java_home }}/bin/java"
+      - "-version"
   register: unifi_java_version_cmd
   changed_when: false
   failed_when: unifi_java_version_cmd.rc != 0

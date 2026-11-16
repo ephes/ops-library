@@ -22,6 +22,7 @@ All tunables live in `defaults/main.yml`. The highlights:
 | `unifi_systemd_extra_env` | `[]` | Extra `Environment=` lines for the unit. The unit is world-readable: never put secrets here. |
 | `unifi_deb_url` | `https://dl.ui.com/.../unifi_sysvinit_all.deb` | URL for the UniFi package. Keep in sync with `unifi_version`. |
 | `unifi_deb_checksum` | `""` | Optional checksum (sha256:xxxx). Set to enforce artifact integrity. |
+| `unifi_java_package` / `unifi_java_home` | `openjdk-17-jre-headless` / `/usr/lib/jvm/java-17-openjdk-amd64` | Java runtime the role installs and the JDK directory the unit runs. `ExecStart`/`ExecStop` call `{{ unifi_java_home }}/bin/java`, never `/usr/bin/java`, because the alternatives link may point to a newer Java (e.g. a Minecraft JDK) outside UniFi's supported range (17-24 for UniFi 9.5). Change both together; `java.yml` fails the run when that binary does not start. |
 | `unifi_jvm_min_heap_mb` / `unifi_jvm_max_heap_mb` | `1024 / 2048` | Heap sizes used in the systemd service. |
 | `unifi_external_domain` | `home.xn--wersdrfer-47a.de` | External domain used in the Traefik router + debug output. |
 | `unifi_traefik_enabled` | `true` | Toggle Traefik dynamic file management. |
