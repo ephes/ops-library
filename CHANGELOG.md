@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- `unifi_deploy`: the unit sets `RuntimeDirectory=unifi`,
+  `RuntimeDirectoryMode=0750` and `RuntimeDirectoryPreserve=yes`, like the
+  vendor unit. `/usr/lib/unifi/run` links to `/run/unifi`, a tmpfs directory
+  that only the vendor unit or init script created, so it was missing after
+  every reboot of macmini and the deploy admission refused the host. The role
+  now gives `unifi_run_dir` the unit's mode `0750` (was `0755`, which every
+  controller start would reset). New `just test-unifi-runtime-dir`. Redeploy UniFi to rewrite
+  the unit.
+
+- `unifi_deploy`: a newly created MongoDB user also gets `readWrite` on
+  `<unifi_mongodb_database>_audit`. UniFi 9.x ensures indexes in that database
+  on every start and logged `Failure while ensuring index` (Unauthorized on
+  `unifi_audit.traffic_flow`) without it. The role does not change the roles of
+  an existing user; such a user needs a one-time grant by a MongoDB
+  administrator (see the role README). New `just test-unifi-mongo-roles`.
+
 - `unifi_deploy`: the unit's `ExecStart`/`ExecStop` run
   `{{ unifi_java_home }}/bin/java` (default
   `/usr/lib/jvm/java-17-openjdk-amd64`) instead of `/usr/bin/java`, and the

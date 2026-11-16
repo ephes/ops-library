@@ -10,6 +10,7 @@ db.createUser({
     { role: "dbOwner", db: {{ unifi_mongodb_database | to_json }} },
     { role: "readWrite", db: {{ (unifi_mongodb_database ~ '_stat') | to_json }} },
     { role: "dbOwner", db: {{ (unifi_mongodb_database ~ '_stat') | to_json }} },
+    { role: "readWrite", db: {{ (unifi_mongodb_database ~ '_audit') | to_json }} },
     { role: "clusterMonitor", db: "admin" }
   ]
 });

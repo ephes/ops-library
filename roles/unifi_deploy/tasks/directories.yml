@@ -10,8 +10,18 @@
     - "{{ unifi_cache_dir }}"
     - "{{ unifi_install_dir }}"
     - "{{ unifi_data_dir }}"
-    - "{{ unifi_run_dir }}"
     - "{{ unifi_backup_dir }}"
+
+# The unit's RuntimeDirectory= creates /run/unifi (where the vendor layout
+# links unifi_run_dir) as 0750 on every start; matching it here avoids a
+# mode that flips between role runs and controller starts.
+- name: "directories | Ensure UniFi runtime directory exists"
+  ansible.builtin.file:
+    path: "{{ unifi_run_dir }}"
+    state: directory
+    owner: "{{ unifi_user }}"
+    group: "{{ unifi_group }}"
+    mode: "0750"
 
 # Private: server.log carries the MongoDB URI with its password (logs.yml).
 - name: "directories | Ensure UniFi log directory exists"
